@@ -535,7 +535,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               e.stopPropagation();
               onSelectItem(item.id);
             }}
-            data-tip={`物件：${item.name} · 单击选中整个物件`}
+            data-tip="单击选中整个物件"
             className="group/item flex items-center h-6 px-1 rounded-md text-(--ui-accent-2) hover:bg-(--ui-accent-2)/15 transition-colors shrink-0"
           >
             <span className="max-w-0 overflow-hidden whitespace-nowrap text-[10px] opacity-0 transition-all duration-200 group-hover/item:max-w-24 group-hover/item:opacity-100 group-hover/item:mr-1">
