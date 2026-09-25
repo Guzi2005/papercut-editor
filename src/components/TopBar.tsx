@@ -670,7 +670,6 @@ export const TopBar: React.FC<TopBarProps> = ({
                     setEditingDocName(doc.name);
                   }}
                   className="truncate max-w-[120px] text-[11px]"
-                  data-tip={`${doc.name} (${doc.width}×${doc.height}) - 双击重命名`}
                 >
                   {doc.name}
                 </span>

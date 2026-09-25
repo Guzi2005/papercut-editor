@@ -38,6 +38,7 @@ export const DocThumbnail: React.FC<{ project: PapercutProject; name: string; x:
           {project.width}×{project.height}
         </span>
       </div>
+      <div className="text-[10px] text-(--ui-faint)">双击标签重命名</div>
     </div>
   );
 };
