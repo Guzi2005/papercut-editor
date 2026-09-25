@@ -23,18 +23,22 @@ import {
   SprayCan,
   Feather,
   Activity,
-  Settings2,
   Box,
   MousePointerClick,
   Group,
   Waves,
   Droplet,
   Sparkles,
+  Pentagon,
+  Minus,
+  CornerDownRight,
+  Spline,
   Link2,
   Unlink2,
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
+import { DEFAULT_STROKE, PathCap } from '../utils/strokePath';
 import { DEFAULT_SYMMETRY, SymmetryKind } from '../utils/symmetry';
 
 const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
@@ -96,8 +100,16 @@ export const GEOM_SHAPES: { id: GeomShapeType; tip: string; icon: React.Componen
   { id: 'circle', tip: '圆形', icon: Circle },
   { id: 'triangle', tip: '三角形', icon: Triangle },
   { id: 'diamond', tip: '菱形', icon: Diamond },
-  { id: 'star', tip: '星形 · 右键设置', icon: Star },
-  { id: 'polyline', tip: '折线：单击加点，双击闭合', icon: Activity },
+  { id: 'star', tip: '星形', icon: Star },
+  { id: 'polyline', tip: '不规则多边形：单击加点，双击闭合', icon: Pentagon },
+  { id: 'path', tip: '折线：单击加点，双击或回车结束，Backspace 撤一点', icon: Activity },
+];
+
+export const PATH_CAPS: { id: PathCap; tip: string; icon: React.ReactNode }[] = [
+  { id: 'round', tip: '两端圆头', icon: <Glyph d="M5 5h6a3 3 0 0 1 0 6H5a3 3 0 0 1 0-6z" fill /> },
+  { id: 'butt', tip: '两端平头', icon: <Glyph d="M2 5h12v6H2z" fill /> },
+  { id: 'square', tip: '两端方头（延出半个宽度）', icon: <Glyph d="M1 5h14v6H1z M3 8h10" /> },
+  { id: 'taper', tip: '两端尖头', icon: <Glyph d="M1 8Q8 3 15 8Q8 13 1 8z" fill /> },
 ];
 
 const HARDNESS_NAMES = ['极软', '软', '中', '硬', '极硬'];
@@ -138,8 +150,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   canvasWidth,
   canvasHeight,
 }) => {
-  const [showStarSettings, setShowStarSettings] = useState(false);
-  const starRef = useRef<HTMLDivElement>(null);
   const [showSym, setShowSym] = useState(false);
   const symRef = useRef<HTMLDivElement>(null);
   const sym = brushSettings.symmetry ?? DEFAULT_SYMMETRY;
@@ -156,14 +166,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   const set = onChangeBrushSettings;
   const carving = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand'].includes(currentTool);
 
-  useEffect(() => {
-    if (!showStarSettings) return;
-    const close = (e: PointerEvent) => {
-      if (!starRef.current?.contains(e.target as Node)) setShowStarSettings(false);
-    };
-    window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
-  }, [showStarSettings]);
 
   const willowOptions = (
     <>
@@ -216,7 +218,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
       {currentTool === 'willow_leaf' && willowOptions}
 
       {currentTool === 'geom_shape' && (
-        <div className="relative flex items-center gap-2" ref={starRef}>
+        <div className="flex items-center gap-2">
           <Segmented>
             {GEOM_SHAPES.map((g) => (
               <IconButton
@@ -227,27 +229,45 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                   playCrispClick();
                   set({ geomShapeType: g.id });
                 }}
-                onContextMenu={(e) => {
-                  if (g.id !== 'star') return;
-                  e.preventDefault();
-                  set({ geomShapeType: 'star' });
-                  setShowStarSettings((v) => !v);
-                }}
               >
                 <g.icon className="w-3.5 h-3.5" />
               </IconButton>
             ))}
           </Segmented>
           {brushSettings.geomShapeType === 'star' && (
-            <IconButton active={showStarSettings} tip="星形设置" onClick={() => setShowStarSettings((v) => !v)}>
-              <Settings2 className="w-3.5 h-3.5" />
-            </IconButton>
-          )}
-          {showStarSettings && (
-            <div className="absolute top-full left-0 mt-2 z-50 p-2 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-150">
               <WheelNumber tip="角数" icon={<Star className="w-3 h-3" />} value={brushSettings.starPoints ?? 5} min={3} max={16} onChange={(v) => set({ starPoints: v })} />
               <WheelNumber tip="圆角" icon={<Circle className="w-3 h-3" />} value={brushSettings.starRoundness ?? 0} min={0} max={25} onChange={(v) => set({ starRoundness: v })} />
               <WheelNumber tip="不规则" icon={<Sparkles className="w-3 h-3" />} value={brushSettings.starIrregularity ?? 0} min={0} max={100} step={5} format={(v) => `${v}%`} onChange={(v) => set({ starIrregularity: v })} />
+            </div>
+          )}
+          {brushSettings.geomShapeType === 'path' && (
+            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-150">
+              <WheelNumber tip="宽度" icon={<Minus className="w-3 h-3" />} value={brushSettings.pathWidth ?? DEFAULT_STROKE.width} min={1} max={120} onChange={(v) => set({ pathWidth: v })} />
+              <WheelNumber
+                tip="折角圆度"
+                icon={<CornerDownRight className="w-3 h-3" />}
+                value={Math.round((brushSettings.pathRound ?? DEFAULT_STROKE.round) * 100)}
+                min={0}
+                max={100}
+                step={5}
+                format={(v) => `${v}%`}
+                onChange={(v) => set({ pathRound: v / 100 })}
+              />
+              <Segmented>
+                {PATH_CAPS.map((c) => (
+                  <IconButton key={c.id} active={(brushSettings.pathCap ?? DEFAULT_STROKE.cap) === c.id} tip={c.tip} onClick={() => set({ pathCap: c.id })}>
+                    {c.icon}
+                  </IconButton>
+                ))}
+              </Segmented>
+              <IconButton
+                active={!!brushSettings.pathCurve}
+                tip={brushSettings.pathCurve ? '曲线：锚点平滑穿过（锚点微调里双击单个锚点可切换）' : '尖角：锚点处折转（锚点微调里双击单个锚点可切换）'}
+                onClick={() => set({ pathCurve: !brushSettings.pathCurve })}
+              >
+                <Spline className="w-3.5 h-3.5" />
+              </IconButton>
             </div>
           )}
         </div>

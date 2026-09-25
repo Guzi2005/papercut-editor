@@ -13,10 +13,11 @@ export function newId(prefix: string): string {
 /** Bakes an affine transform or warp into every path of a layer. */
 export function transformLayer(layer: Layer, m: Transform): Layer {
   const s = matrixScale(linearPart(m));
-  const tc = <T extends { d: string; points?: { x: number; y: number }[] }>(c: T): T => ({
+  const tc = <T extends { d: string; points?: { x: number; y: number }[]; stroke?: { width: number } }>(c: T): T => ({
     ...c,
     d: transformPathD(c.d, m),
     points: c.points?.map((p) => applyTransform(m, p)),
+    ...(c.stroke ? { stroke: { ...c.stroke, width: c.stroke.width * s } } : {}),
   });
   return {
     ...layer,

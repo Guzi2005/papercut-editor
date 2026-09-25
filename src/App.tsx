@@ -511,7 +511,7 @@ export default function App() {
     updateActiveLayer((layer) => ({ ...layer, drawings: [...(layer.drawings || []), stroke] }));
   };
 
-  const handleUpdateCutout = (cutoutId: string, updates: Partial<CutoutPath>) => {
+  const handleUpdateCutout = (cutoutId: string, updates: Partial<CutoutPath>, commit = false) => {
     if (!activeLayerId || !project.layers[activeLayerId]) return;
     const layer = project.layers[activeLayerId];
     const newProject: PapercutProject = {
@@ -524,6 +524,10 @@ export default function App() {
         },
       },
     };
+    if (commit) {
+      pushHistory(newProject);
+      return;
+    }
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => (doc.id === activeDocId ? { ...doc, project: newProject } : doc))
     );

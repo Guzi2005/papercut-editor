@@ -4,6 +4,7 @@
  */
 
 import type { SymmetrySettings } from '../utils/symmetry';
+import type { PathCap, StrokeStyle } from '../utils/strokePath';
 
 export interface Point {
   x: number;
@@ -34,6 +35,7 @@ export interface CutoutPath {
   createdAt: number;
   points?: Point[]; // Anchor / vertex points for editing
   geomType?: GeomShapeType; // If geom_shape: rect, circle, triangle, star, diamond
+  stroke?: StrokeStyle; // 折线：由 points 生成的带宽度开放路径，锚点编辑时据此重建轮廓
 }
 
 export type BaseShapeType =
@@ -159,7 +161,8 @@ export type GeomShapeType =
   | 'triangle'
   | 'star'
   | 'diamond'
-  | 'polyline';
+  | 'polyline' // 不规则多边形：单击加点，双击闭合
+  | 'path'; // 折线：单击加点，双击结束为开放路径
 
 export type ToolType =
   | 'select' // 选择/移动/缩放/旋转 (V)
@@ -206,6 +209,12 @@ export interface BrushSettings {
   starPoints?: number; // 角的个数 (3 ~ 16)
   starRoundness?: number; // 圆角程度 (0 ~ 25)
   starIrregularity?: number; // 不规则程度 (0 ~ 100)
+
+  // 折线 (open path)
+  pathWidth?: number;
+  pathRound?: number; // 折角圆度 0 ~ 1
+  pathCap?: PathCap;
+  pathCurve?: boolean; // 新锚点默认平滑（曲线）
 
   symmetry?: SymmetrySettings; // 对称：轴对称 / 中心对称
   lockAspect?: boolean; // 选择工具缩放时锁定长宽比（默认锁定，Shift 临时切换）

@@ -13,6 +13,7 @@ import {
   Point,
   CutoutPath,
   LayerDrawStroke,
+  GeomShapeType,
 } from '../types/papercut';
 import {
   generateFreehandDrawPath,
@@ -55,6 +56,7 @@ import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
 import { splitSubpaths } from '../utils/layerSvg';
 import { ShortcutHints } from './ShortcutHints';
+import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
 
 export type SelectionScope = 'part' | 'item';
 
@@ -68,7 +70,7 @@ interface CanvasProps {
   onZoomChange: (newZoom: number) => void;
   onAddCutout: (cutout: CutoutPath) => void;
   onRemoveCutouts: (cutoutIds: string[]) => void;
-  onUpdateCutout: (cutoutId: string, updates: Partial<CutoutPath>) => void;
+  onUpdateCutout: (cutoutId: string, updates: Partial<CutoutPath>, commit?: boolean) => void;
   onAddDrawingStroke?: (stroke: LayerDrawStroke) => void;
   onCommitCutoutEdit?: () => void;
   onExitAnchorEdit?: () => void;
@@ -236,8 +238,16 @@ export const Canvas: React.FC<CanvasProps> = ({
   const zoomRef = useRef(zoom);
   const panRef = useRef<Point>({ x: 0, y: 0 });
 
-  // Polyline shape drawing state (单击新增锚点，双击终止)
+  // Click-placed shape state (单击新增锚点，双击终止)
   const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
+  const [polyHover, setPolyHover] = useState<Point | null>(null);
+  const multiPoint = brushSettings.geomShapeType === 'polyline' || brushSettings.geomShapeType === 'path';
+  const pathStyle = (n: number): StrokeStyle => ({
+    width: brushSettings.pathWidth ?? DEFAULT_STROKE.width,
+    round: brushSettings.pathRound ?? DEFAULT_STROKE.round,
+    cap: brushSettings.pathCap ?? DEFAULT_STROKE.cap,
+    smooth: Array(n).fill(!!brushSettings.pathCurve),
+  });
   const [lastClickTime, setLastClickTime] = useState<number>(0);
 
   // Anchor Edit Tool State
@@ -262,6 +272,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const activeLocked = !!activeLayer && (activeLayer.locked || !!activeGroup?.locked);
   const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
   const activeDoodle = activeLayer?.kind === 'doodle';
+  const editingStroke = currentTool === 'anchor_edit' && selectedCutoutId ? activeLayer?.cutouts.find((c) => c.id === selectedCutoutId)?.stroke : undefined;
   const shadowOpts = useMemo(
     () => projectShadowOptions(project),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -946,40 +957,25 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
-    // 2. Polyline shape in geom_shape (折线：单击新增锚点，双击终止)
-    if (currentTool === 'geom_shape' && brushSettings.geomShapeType === 'polyline') {
+    // 2. Click-placed shapes: 不规则多边形 closes, 折线 stays an open band (单击加点，双击 / Enter 结束)
+    if (currentTool === 'geom_shape' && multiPoint) {
       if (!activeLayer || activeLocked || activeHidden || activeDoodle) return;
 
       const now = Date.now();
       const closeNearStart =
+        brushSettings.geomShapeType === 'polyline' &&
         polylinePoints.length >= 3 &&
         Math.hypot(pt.x - polylinePoints[0].x, pt.y - polylinePoints[0].y) < 20 / zoom;
       const doubleClick = now - lastClickTime < 320 && polylinePoints.length >= 2;
 
       if (closeNearStart || doubleClick) {
-        const finalPts = [...polylinePoints];
-        const d = withSymmetry(`M ${finalPts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
-        const isHole = decideHole(activeLayer, d, finalPts, finalPts[0]);
-        const newCutout: CutoutPath = {
-          id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          name: `折线切口 ${activeLayer.cutouts.length + 1}`,
-          type: 'geom_shape',
-          geomType: 'polyline',
-          d,
-          isHole,
-          fillColor: isHole ? undefined : brushSettings.brushColor,
-          createdAt: Date.now(),
-          points: finalPts,
-        };
-        onAddCutout(newCutout);
-        if (isHole) playPaperRustle();
-        else playPaperPlace();
-        setPolylinePoints([]);
+        finishMultiPoint(polylinePoints);
         return;
       }
 
       setLastClickTime(now);
       setPolylinePoints((prev) => [...prev, pt]);
+      setPolyHover(pt);
       playCrispClick();
       return;
     }
@@ -1032,7 +1028,8 @@ export const Canvas: React.FC<CanvasProps> = ({
         setEditableAnchors(nextAnchors);
         setHasDraggedAnchor(true);
 
-        const newD = rebuildPathFromPoints(nextAnchors);
+        const editing = activeLayer?.cutouts.find((c) => c.id === selectedCutoutId);
+        const newD = editing?.stroke ? strokeOutline(nextAnchors, editing.stroke) : rebuildPathFromPoints(nextAnchors);
         onUpdateCutout(selectedCutoutId, {
           d: newD,
           points: nextAnchors,
@@ -1172,13 +1169,13 @@ export const Canvas: React.FC<CanvasProps> = ({
           cutoutPoints = strokePoints;
         }
       } else if (currentTool === 'geom_shape') {
-        if (brushSettings.geomShapeType === 'polyline') {
+        if (multiPoint) {
           setIsDrawing(false);
           return;
         }
         const p1 = dist < 8 ? { x: startPoint.x - 40, y: startPoint.y - 40 } : startPoint;
         const p2 = dist < 8 ? { x: startPoint.x + 40, y: startPoint.y + 40 } : currentPoint;
-        const geom = generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2, {
+        const geom = generateGeomShape((brushSettings.geomShapeType || 'rect') as Exclude<GeomShapeType, 'path'>, p1, p2, {
           starPoints: brushSettings.starPoints ?? 5,
           starRoundness: brushSettings.starRoundness ?? 0,
           starIrregularity: brushSettings.starIrregularity ?? 0,
@@ -1304,6 +1301,60 @@ export const Canvas: React.FC<CanvasProps> = ({
   const decideHole = (layer: Layer, d: string, pts: Point[], start: Point) =>
     carveMode === 'positive' ? false : carveMode === 'erase' ? true : classifyCarve(layer, d, pts, start) === 'hole';
 
+  const finishMultiPoint = (pts: Point[]) => {
+    setPolylinePoints([]);
+    setPolyHover(null);
+    if (!activeLayer || pts.length < 2) return;
+    const open = brushSettings.geomShapeType === 'path';
+    if (!open && pts.length < 3) return;
+    const stroke = open ? pathStyle(pts.length) : undefined;
+    const d = withSymmetry(stroke ? strokeOutline(pts, stroke) : `M ${pts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
+    if (!d) return;
+    const isHole = decideHole(activeLayer, d, pts, pts[0]);
+    onAddCutout({
+      id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: `${open ? '折线' : '多边形'} ${activeLayer.cutouts.length + 1}`,
+      type: 'geom_shape',
+      geomType: open ? 'path' : 'polyline',
+      d,
+      isHole,
+      fillColor: isHole ? undefined : brushSettings.brushColor,
+      createdAt: Date.now(),
+      points: pts,
+      stroke,
+    });
+    if (isHole) playPaperRustle();
+    else playPaperPlace();
+  };
+  const finishRef = useRef(finishMultiPoint);
+  finishRef.current = finishMultiPoint;
+  const pendingRef = useRef(polylinePoints);
+  pendingRef.current = polylinePoints;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (pendingRef.current.length === 0) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finishRef.current(pendingRef.current);
+      } else if (e.key === 'Escape') {
+        setPolylinePoints([]);
+        setPolyHover(null);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        setPolylinePoints((p) => p.slice(0, -1));
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+  useEffect(() => {
+    if (currentTool !== 'geom_shape' || !multiPoint) {
+      setPolylinePoints([]);
+      setPolyHover(null);
+    }
+  }, [currentTool, multiPoint]);
+
   const [symDragging, setSymDragging] = useState(false);
   const symmetryRef = useRef(symmetry);
   symmetryRef.current = symmetry;
@@ -1344,7 +1395,8 @@ export const Canvas: React.FC<CanvasProps> = ({
       const dist = Math.hypot(cur.x - origin.x, cur.y - origin.y);
       const p1 = dist < 8 ? { x: origin.x - 40, y: origin.y - 40 } : origin;
       const p2 = dist < 8 ? { x: origin.x + 40, y: origin.y + 40 } : cur;
-      return generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2, {
+      if (multiPoint) return '';
+      return generateGeomShape((brushSettings.geomShapeType || 'rect') as Exclude<GeomShapeType, 'path'>, p1, p2, {
         starPoints: brushSettings.starPoints ?? 5,
         starRoundness: brushSettings.starRoundness ?? 0,
         starIrregularity: brushSettings.starIrregularity ?? 0,
@@ -1420,6 +1472,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       onPointerDown={handleMouseDown}
       onPointerMove={(e) => {
         hoverRef.current = { x: e.clientX, y: e.clientY };
+        if (polylinePoints.length > 0) setPolyHover(clientToCanvas(e.clientX, e.clientY));
         if (!isDrawing) moveBrush(e.clientX, e.clientY, e.pointerType !== 'touch' && !isSpacePressed && !isPanning);
       }}
       onPointerLeave={() => {
@@ -1588,10 +1641,21 @@ export const Canvas: React.FC<CanvasProps> = ({
               />
             )}
 
-            {/* Polyline in progress */}
+            {/* Click-placed shape in progress */}
+            {polylinePoints.length > 0 && brushSettings.geomShapeType === 'path' && (
+              <path
+                d={withSymmetry(strokeOutline([...polylinePoints, ...(polyHover ? [polyHover] : [])], pathStyle(polylinePoints.length + 1)))}
+                fill={carveMode === 'cutout' ? '#FAF8F2' : brushSettings.brushColor}
+                fillOpacity={0.6}
+                stroke="#2652D0"
+                strokeWidth={1.2 / zoom}
+                strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+                pointerEvents="none"
+              />
+            )}
             {polylinePoints.length > 0 && (
               <polyline
-                points={polylinePoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                points={[...polylinePoints, ...(polyHover ? [polyHover] : [])].map((p) => `${p.x},${p.y}`).join(' ')}
                 fill="none"
                 stroke="#2652D0"
                 strokeWidth={2 / zoom}
@@ -1739,12 +1803,33 @@ export const Canvas: React.FC<CanvasProps> = ({
             {/* Interactive Anchor Points Handles (when in anchor_edit mode) */}
             {currentTool === 'anchor_edit' && editableAnchors.length > 0 && (
               <g className="cursor-move">
+                {editingStroke && (
+                  <polyline
+                    points={editableAnchors.map((p) => `${p.x},${p.y}`).join(' ')}
+                    fill="none"
+                    stroke="#2652D0"
+                    strokeOpacity={0.45}
+                    strokeWidth={1 / zoom}
+                    strokeDasharray={`${3 / zoom} ${3 / zoom}`}
+                    pointerEvents="none"
+                  />
+                )}
                 {editableAnchors.map((pt, idx) => {
                   const isAnchorActive = activeAnchorIndex === idx;
+                  const corner = !!editingStroke && !editingStroke.smooth[idx];
                   return (
                     <g
                       key={`anchor_${idx}`}
                       pointerEvents="all"
+                      data-tip={editingStroke ? '双击切换尖角 / 曲线' : undefined}
+                      onDoubleClick={(e) => {
+                        if (!editingStroke || !selectedCutoutId) return;
+                        e.stopPropagation();
+                        const smooth = editableAnchors.map((_, i) => (i === idx ? !editingStroke.smooth[i] : !!editingStroke.smooth[i]));
+                        const stroke = { ...editingStroke, smooth };
+                        onUpdateCutout(selectedCutoutId, { stroke, d: strokeOutline(editableAnchors, stroke) }, true);
+                        playCrispClick();
+                      }}
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -1756,14 +1841,26 @@ export const Canvas: React.FC<CanvasProps> = ({
                       }}
                     >
                       <circle cx={pt.x} cy={pt.y} r={18 / zoom} fill="transparent" style={{ pointerEvents: 'all' }} />
-                      <circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={isAnchorActive ? 8 / zoom : 6 / zoom}
-                        fill={isAnchorActive ? '#2652D0' : '#FFFFFF'}
-                        stroke="#2652D0"
-                        strokeWidth={2.5 / zoom}
-                      />
+                      {corner ? (
+                        <rect
+                          x={pt.x - (isAnchorActive ? 7 : 5.5) / zoom}
+                          y={pt.y - (isAnchorActive ? 7 : 5.5) / zoom}
+                          width={(isAnchorActive ? 14 : 11) / zoom}
+                          height={(isAnchorActive ? 14 : 11) / zoom}
+                          fill={isAnchorActive ? '#2652D0' : '#FFFFFF'}
+                          stroke="#2652D0"
+                          strokeWidth={2.5 / zoom}
+                        />
+                      ) : (
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={isAnchorActive ? 8 / zoom : 6 / zoom}
+                          fill={isAnchorActive ? '#2652D0' : '#FFFFFF'}
+                          stroke="#2652D0"
+                          strokeWidth={2.5 / zoom}
+                        />
+                      )}
                       <circle cx={pt.x} cy={pt.y} r={2.5 / zoom} fill={isAnchorActive ? '#FFFFFF' : '#2652D0'} />
                     </g>
                   );
