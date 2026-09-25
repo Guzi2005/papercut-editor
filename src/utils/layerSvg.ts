@@ -3,13 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Layer, LayerPattern } from '../types/papercut';
+import { Layer, LayerPattern, PaperMode } from '../types/papercut';
 
 export interface LayerRenderOptions {
   /** Prefix for def ids so several renders can share one DOM without collisions. */
   idPrefix: string;
   /** Paper drop shadow strength 0..1 (0 disables). */
   shadow?: number;
+  /** How the shadow is drawn; 'vector' disables shadow and grain entirely. */
+  paperMode?: PaperMode;
   /** Whether to apply the layer's gouache grain filter. */
   grain?: boolean;
   /** Omit the element id (the canvas wraps each layer in its own hit-test group). */
@@ -68,6 +70,27 @@ function grainFilterMarkup(id: string, amount: number): string {
   );
 }
 
+function darken(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return '#1B1626';
+  const n = parseInt(m[1], 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount));
+  return `#${[16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Hard-edged offset shadow tinted with a darker shade of the paper itself, like a thick card edge. */
+export function hardShadowFilterMarkup(id: string, strength: number, color: string): string {
+  const d = (2 + strength * 4).toFixed(1);
+  return (
+    `<filter id="${id}" x="-10%" y="-10%" width="125%" height="125%">` +
+    `<feOffset in="SourceAlpha" dx="${d}" dy="${d}" result="off"/>` +
+    `<feFlood flood-color="${darken(color, 0.55)}" flood-opacity="${(0.55 + strength * 0.4).toFixed(2)}"/>` +
+    `<feComposite in2="off" operator="in" result="edge"/>` +
+    `<feMerge><feMergeNode in="edge"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+    `</filter>`
+  );
+}
+
 export function shadowFilterMarkup(id: string, strength: number): string {
   return (
     `<filter id="${id}" x="-15%" y="-15%" width="130%" height="135%">` +
@@ -86,8 +109,9 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
 
   const holes = layer.cutouts.filter((c) => c.isHole && c.d);
   const positives = layer.positiveElements.concat(layer.cutouts.filter((c) => !c.isHole));
-  const useGrain = !!opts.grain && (layer.grain ?? 0) > 0;
-  const shadow = opts.shadow ?? 0;
+  const mode = opts.paperMode ?? 'soft';
+  const useGrain = !!opts.grain && mode !== 'vector' && (layer.grain ?? 0) > 0;
+  const shadow = mode === 'vector' ? 0 : opts.shadow ?? 0;
   const base = layer.baseShape?.d || '';
 
   const defs: string[] = [];
@@ -104,7 +128,9 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
     );
   }
   if (useGrain) defs.push(grainFilterMarkup(grainId, layer.grain ?? 0));
-  if (shadow > 0) defs.push(shadowFilterMarkup(shadowId, shadow));
+  if (shadow > 0) {
+    defs.push(mode === 'hard' ? hardShadowFilterMarkup(shadowId, shadow, layer.color) : shadowFilterMarkup(shadowId, shadow));
+  }
 
   const body: string[] = [];
   if (base) {
@@ -114,6 +140,10 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
       body.push(`<path d="${base}" fill="url(#${patId})" opacity="${layer.pattern.opacity}"/>`);
     }
     (layer.drawings || []).forEach((drw) => {
+      if (drw.fill) {
+        body.push(`<path d="${drw.d}" fill="${escapeAttr(drw.color)}" fill-opacity="${drw.opacity}"/>`);
+        return;
+      }
       const blur = drw.blur ? ` style="filter: blur(${drw.blur}px)"` : '';
       body.push(
         `<path d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`

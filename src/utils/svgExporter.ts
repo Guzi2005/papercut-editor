@@ -35,6 +35,7 @@ export function generateSvgMarkup(
     idPrefix: 'x_',
     grain: includePaperTexture,
     shadow: includeShadow ? project.shadowStrength ?? 0.5 : 0,
+    paperMode: project.paperMode ?? 'soft',
   };
 
   const lines: string[] = [];

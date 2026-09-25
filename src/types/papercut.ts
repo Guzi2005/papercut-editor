@@ -53,10 +53,13 @@ export interface BaseShape {
   radius?: number;
 }
 
+/** soft 柔和纸影 · vector 无影平面矢量 · hard 硬边加深色阴影 */
+export type PaperMode = 'soft' | 'vector' | 'hard';
+
 export type PaperTextureType = 'xuan' | 'rough' | 'smooth' | 'speckle';
 
 export type KnifeTipShape = 'round' | 'flat' | 'chisel' | 'slash';
-export type DrawBrushType = 'pencil' | 'pen' | 'airbrush';
+export type DrawBrushType = 'pencil' | 'pen' | 'airbrush' | 'willow';
 export type PencilHardness = 1 | 2 | 3 | 4 | 5;
 
 export interface LayerDrawStroke {
@@ -70,6 +73,7 @@ export interface LayerDrawStroke {
   strokeLinejoin?: 'round' | 'miter' | 'bevel';
   pencilHardness?: PencilHardness;
   blur?: number; // for airbrush
+  fill?: boolean; // 柳叶笔：闭合填色的叶形，而非描边
 }
 
 export interface Layer {
@@ -180,7 +184,7 @@ export type BackgroundStyle =
   | 'rice_paper'; // 宣纸衬底
 
 export interface BrushSettings {
-  willowMode: 'chord' | 'symmetric'; // 柳叶笔成型：单弧连弦成叶 (画世界/HiPaint) vs 对称双弧
+  willowMode: 'chord' | 'symmetric'; // 剪纸/柳叶笔成型：单弧连弦成叶 (画世界/HiPaint) vs 对称双弧
   stabilizer: number; // 平滑防抖 (0, 0.55, 0.8)
   simplifyTolerance: number; // 道格拉斯-普克曲线净化 (0, 2.5, 4.5, 7.5)
   curvature: number; // 弯曲偏度
@@ -223,4 +227,5 @@ export interface PapercutProject {
   items?: PapercutItem[];
   reference?: ReferenceImage;
   shadowStrength?: number; // 纸影强度 0 ~ 1
+  paperMode?: PaperMode; // 剪贴模式
 }

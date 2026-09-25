@@ -13,10 +13,10 @@ import {
   Point,
   CutoutPath,
   LayerDrawStroke,
+  PaperMode,
 } from '../types/papercut';
 import {
   generateRealtimeWillowLeaf,
-  generateFreehandKnifePath,
   generateFreehandDrawPath,
   generateGeomShape,
   rebuildPathFromPoints,
@@ -29,6 +29,7 @@ import {
   playCrispClick,
 } from '../utils/soundEffects';
 import { renderLayerMarkup } from '../utils/layerSvg';
+import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
 import {
   Matrix,
   IDENTITY,
@@ -94,15 +95,17 @@ const MODE_LABELS: Record<string, string> = { cutout: '刻纸', positive: '贴�
 const LayerMarkup = React.memo(function LayerMarkup({
   layer,
   shadow,
+  paperMode,
   transform,
 }: {
   layer: Layer;
   shadow: number;
+  paperMode: PaperMode;
   transform?: string;
 }) {
   const html = useMemo(
-    () => renderLayerMarkup(layer, { idPrefix: 'cv_', shadow, grain: true, interactive: true }),
-    [layer, shadow]
+    () => renderLayerMarkup(layer, { idPrefix: 'cv_', shadow, paperMode, grain: true, interactive: true }),
+    [layer, shadow, paperMode]
   );
   return <g data-layer-id={layer.id} transform={transform} dangerouslySetInnerHTML={{ __html: html }} />;
 });
@@ -168,7 +171,6 @@ export const Canvas: React.FC<CanvasProps> = ({
   const rectRef = useRef<DOMRect | null>(null);
   const brushRef = useRef<SVGGElement>(null);
   const previewRef = useRef<SVGPathElement>(null);
-  const predictedRef = useRef<Point[]>([]);
   const lastClientRef = useRef<{ x: number; y: number } | null>(null);
   const previewFnRef = useRef<(pts: Point[], cur: Point) => string>(() => '');
 
@@ -353,13 +355,13 @@ export const Canvas: React.FC<CanvasProps> = ({
       // Stroke preview and brush ring are written straight to the DOM in the same frame,
       // so the drawn tip never trails the ring by a React render.
       if (curRef.current) {
-        const pts = strokeRef.current.concat(predictedRef.current);
-        const tip = pts[pts.length - 1] || curRef.current;
+        const pts = strokeRef.current;
+        const tip = curRef.current;
         previewRef.current?.setAttribute('d', previewFnRef.current(pts, curRef.current) || 'M 0 0');
         const g = brushRef.current;
         if (g && lastClientRef.current) {
           g.setAttribute('transform', `translate(${tip.x} ${tip.y})`);
-          g.setAttribute('visibility', g.dataset.radius === '0' ? 'hidden' : 'visible');
+          g.setAttribute('visibility', g.dataset.show === '1' ? 'visible' : 'hidden');
         }
       }
     });
@@ -367,12 +369,22 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
-  const brushRadius =
-    currentTool === 'pen_knife' || currentTool === 'freehand'
-      ? (brushSettings.stampSize || 26) / 2
-      : currentTool === 'hand_draw'
-      ? (brushSettings.drawSize || 6) / 2
-      : 0;
+  // The canvas cursor is the brush itself, so there is only one pointer on screen and it is
+  // drawn in the same frame as the stroke it leaves.
+  const brushCursor: { d: string; cross: boolean } | null = (() => {
+    if (activeLocked || activeHidden) return null;
+    if (currentTool === 'pen_knife' || currentTool === 'freehand') {
+      return { d: knifeCursorPath(brushSettings.stampSize || 26, brushSettings.knifeTipShape || 'round'), cross: false };
+    }
+    if (currentTool === 'hand_draw') {
+      if (brushSettings.drawBrushType === 'willow') return { d: '', cross: true };
+      const r = Math.max(1, (brushSettings.drawSize || 6) / 2);
+      return { d: `M ${-r} 0 A ${r} ${r} 0 1 1 ${r} 0 A ${r} ${r} 0 1 1 ${-r} 0 Z`, cross: false };
+    }
+    if (currentTool === 'willow_leaf' || currentTool === 'geom_shape') return { d: '', cross: true };
+    return null;
+  })();
+  const brushRadius = brushCursor ? 1 : 0;
 
   const moveBrush = (clientX: number, clientY: number, visible: boolean) => {
     const g = brushRef.current;
@@ -705,8 +717,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     // 3. Normal drawing (Willow Leaf, Geom Shapes, Pen Knife, Hand Draw)
     strokeRef.current = [pt];
-    predictedRef.current = [];
-    lastClientRef.current = { x: e.clientX, y: e.clientY };
+        lastClientRef.current = { x: e.clientX, y: e.clientY };
     curRef.current = pt;
     setIsDrawing(true);
     setStartPoint(pt);
@@ -757,11 +768,6 @@ export const Canvas: React.FC<CanvasProps> = ({
           sp.pressure = getEventPressure(ev);
           strokeRef.current.push(sp);
         });
-        predictedRef.current = (e.getPredictedEvents?.() || []).map((ev) => {
-          const pp = clientToCanvas(ev.clientX, ev.clientY);
-          pp.pressure = getEventPressure(ev);
-          return pp;
-        });
       }
       curRef.current = pt;
       scheduleFlush();
@@ -802,7 +808,25 @@ export const Canvas: React.FC<CanvasProps> = ({
 
       // 1. Hand Draw Tool (手绘：铅笔/钢笔/喷枪，附属于当前图层蒙版)
       if (currentTool === 'hand_draw') {
-        if (activeLayer && canEdit && strokePoints.length >= 2) {
+        if (activeLayer && canEdit && strokePoints.length >= 2 && brushSettings.drawBrushType === 'willow') {
+          const leafD = generateRealtimeWillowLeaf(
+            strokePoints,
+            brushSettings.willowMode || 'chord',
+            brushSettings.stabilizer ?? 0.55,
+            brushSettings.simplifyTolerance ?? 4.5
+          );
+          if (leafD) {
+            onAddDrawingStroke?.({
+              id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              brushType: 'willow',
+              d: leafD,
+              color: brushSettings.brushColor,
+              opacity: brushSettings.drawOpacity ?? 0.85,
+              strokeWidth: 0,
+              fill: true,
+            });
+          }
+        } else if (activeLayer && canEdit && strokePoints.length >= 2) {
           const drawD = generateFreehandDrawPath(strokePoints);
           if (drawD) {
             const brushType = brushSettings.drawBrushType || 'pencil';
@@ -876,7 +900,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         cutoutPoints = geom.points;
       } else if (currentTool === 'pen_knife' || currentTool === 'freehand') {
         if (strokePoints.length >= 2) {
-          baseD = generateFreehandKnifePath(
+          baseD = generateKnifeCut(
             strokePoints,
             brushSettings.stampSize || 26,
             brushSettings.knifeTipShape || 'round',
@@ -1035,7 +1059,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       }).d;
     } else if (currentTool === 'pen_knife' || currentTool === 'freehand') {
       if (pts.length >= 2) {
-        return generateFreehandKnifePath(
+        return generateKnifeCut(
           pts,
           brushSettings.stampSize || 26,
           brushSettings.knifeTipShape || 'round',
@@ -1043,7 +1067,16 @@ export const Canvas: React.FC<CanvasProps> = ({
         );
       }
     } else if (currentTool === 'hand_draw') {
-      if (pts.length >= 2) return generateFreehandDrawPath(pts);
+      if (pts.length < 2) return '';
+      if (brushSettings.drawBrushType === 'willow') {
+        return generateRealtimeWillowLeaf(
+          pts,
+          brushSettings.willowMode || 'chord',
+          brushSettings.stabilizer ?? 0.55,
+          brushSettings.simplifyTolerance ?? 4.5
+        );
+      }
+      return generateFreehandDrawPath(pts);
     }
     return '';
   };
@@ -1099,6 +1132,8 @@ export const Canvas: React.FC<CanvasProps> = ({
     ? 'cursor-default'
     : activeLocked || activeHidden
     ? 'cursor-not-allowed'
+    : brushCursor
+    ? 'cursor-none'
     : 'cursor-crosshair';
 
   return (
@@ -1162,6 +1197,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                   key={layer.id}
                   layer={layer}
                   shadow={shadow}
+                  paperMode={project.paperMode ?? 'soft'}
                   transform={selectedSet.has(layer.id) ? previewTransform : undefined}
                 />
               ))}
@@ -1230,8 +1266,9 @@ export const Canvas: React.FC<CanvasProps> = ({
               <g mask={`url(#cv_${activeLayer.id}_mask)`}>
                 <path
                   ref={previewRef}
-                  fill="none"
-                  stroke={brushSettings.brushColor}
+                  fill={brushSettings.drawBrushType === 'willow' ? brushSettings.brushColor : 'none'}
+                  fillOpacity={brushSettings.drawOpacity ?? 0.85}
+                  stroke={brushSettings.drawBrushType === 'willow' ? 'none' : brushSettings.brushColor}
                   strokeWidth={brushSettings.drawSize || 6}
                   strokeOpacity={brushSettings.drawOpacity ?? 0.85}
                   strokeLinecap="round"
@@ -1412,9 +1449,34 @@ export const Canvas: React.FC<CanvasProps> = ({
               </g>
             )}
             {/* Brush size ring following the pointer */}
-            <g ref={brushRef} data-radius={brushRadius} visibility="hidden" pointerEvents="none">
-              <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#FBFBFC" strokeWidth={2.5 / zoom} opacity={0.9} />
-              <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#1B2352" strokeWidth={1 / zoom} />
+            <g ref={brushRef} data-show={brushCursor && !isSpacePressed && !isPanning ? '1' : '0'} visibility="hidden" pointerEvents="none">
+              {brushCursor?.d && (
+                <>
+                  <path d={brushCursor.d} fill="none" stroke="#FBFBFC" strokeWidth={2.5 / zoom} opacity={0.9} />
+                  <path
+                    d={brushCursor.d}
+                    fill={brushSettings.drawBrushType === 'airbrush' && currentTool === 'hand_draw' ? 'none' : 'none'}
+                    stroke="#1B2352"
+                    strokeWidth={1 / zoom}
+                    strokeDasharray={currentTool === 'hand_draw' && brushSettings.drawBrushType === 'airbrush' ? `${3 / zoom} ${2 / zoom}` : undefined}
+                  />
+                </>
+              )}
+              {brushCursor?.cross && (
+                <>
+                  <path
+                    d={`M ${-9 / zoom} 0 H ${-2.5 / zoom} M ${2.5 / zoom} 0 H ${9 / zoom} M 0 ${-9 / zoom} V ${-2.5 / zoom} M 0 ${2.5 / zoom} V ${9 / zoom}`}
+                    stroke="#FBFBFC"
+                    strokeWidth={3 / zoom}
+                  />
+                  <path
+                    d={`M ${-9 / zoom} 0 H ${-2.5 / zoom} M ${2.5 / zoom} 0 H ${9 / zoom} M 0 ${-9 / zoom} V ${-2.5 / zoom} M 0 ${2.5 / zoom} V ${9 / zoom}`}
+                    stroke="#1B2352"
+                    strokeWidth={1.2 / zoom}
+                  />
+                </>
+              )}
+              <circle r={1.2 / zoom} fill="#1B2352" />
             </g>
           </svg>
         </div>

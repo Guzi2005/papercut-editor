@@ -1,6 +1,29 @@
 @import "tailwindcss";
 
+/* Scroll areas that must scroll (layer lists) get a thin themed thumb and no track. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--ui-border-strong, #3a4766) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--ui-border-strong, #3a4766);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-muted, #8e9fca);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

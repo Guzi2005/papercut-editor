@@ -46,7 +46,6 @@ import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
 import { GodotExportModal } from './components/GodotExportModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
-import { RecentColorsBar } from './components/RecentColorsBar';
 
 interface DocumentItem {
   id: string;
@@ -134,20 +133,12 @@ export default function App() {
     Object.fromEntries(FOLK_PALETTE.map((c) => [c.hex.toLowerCase(), c.name]))
   );
 
+  const [recentBrushColors, setRecentBrushColors] = useState<string[]>([]);
+
   const handleUpdateColorNote = (hex: string, note: string) => {
     setColorNotes((prev) => ({ ...prev, [hex.toLowerCase()]: note }));
   };
 
-  const [recentColors, setRecentColors] = useState<string[]>(() =>
-    FOLK_PALETTE.slice(0, 8).map((c) => c.hex)
-  );
-
-  const pushRecentColor = (hex: string) => {
-    setRecentColors((prev) => {
-      const filtered = prev.filter((c) => c.toLowerCase() !== hex.toLowerCase());
-      return [hex, ...filtered].slice(0, 9);
-    });
-  };
 
   // ---------- Persistence: restore on boot, autosave after edits ----------
   useEffect(() => {
@@ -395,6 +386,16 @@ export default function App() {
       }
       if (mod || e.altKey) return;
 
+      if (e.key === '[' || e.key === ']') {
+        const dir = e.key === ']' ? 1 : -1;
+        setBrushSettings((prev) => {
+          const bump = (v: number) => Math.max(1, Math.min(120, Math.round(v * (dir > 0 ? 1.15 : 1 / 1.15)) + (dir > 0 ? 1 : -1)));
+          if (currentTool === 'pen_knife' || currentTool === 'freehand') return { ...prev, stampSize: bump(prev.stampSize || 26) };
+          if (currentTool === 'hand_draw') return { ...prev, drawSize: bump(prev.drawSize || 6) };
+          return prev;
+        });
+        return;
+      }
       if (e.key === '?') {
         setIsShortcutsOpen((v) => !v);
         return;
@@ -552,7 +553,6 @@ export default function App() {
   const handleAddLayer = (groupId?: string) => {
     const newLayerId = newId('layer');
     const defaultColor = FOLK_PALETTE[Object.keys(project.layers).length % FOLK_PALETTE.length].hex;
-    pushRecentColor(defaultColor);
 
     const w = project.width * 0.36;
     const h = project.height * 0.36;
@@ -601,16 +601,12 @@ export default function App() {
 
   const handleUpdateLayer = (layerId: string, updates: Partial<Layer>) => {
     if (!project.layers[layerId]) return;
-    if (updates.color) pushRecentColor(updates.color);
     pushHistory({
       ...project,
       layers: { ...project.layers, [layerId]: { ...project.layers[layerId], ...updates } },
     });
   };
 
-  const handleSelectRecentColor = (hex: string) => {
-    if (activeLayerId) handleUpdateLayer(activeLayerId, { color: hex });
-  };
 
   const handleDeleteLayers = useCallback(
     (layerIds: string[]) => {
@@ -893,6 +889,8 @@ export default function App() {
         onFitZoom={handleFitZoom}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenGodotExport={() => setIsGodotModalOpen(true)}
+        paperMode={project.paperMode ?? 'soft'}
+        onChangePaperMode={(mode) => handleUpdateProject({ paperMode: mode })}
         onQuickCopySvg={handleQuickCopySvg}
         onQuickDownloadSvg={handleQuickDownloadSvg}
         onQuickDownloadPng={handleQuickDownloadPng}
@@ -929,7 +927,11 @@ export default function App() {
           pressure={brushSettings.pressure}
           onTogglePressure={() => setBrushSettings((prev) => ({ ...prev, pressure: !prev.pressure }))}
           brushColor={brushSettings.brushColor}
-          onChangeBrushColor={(hex) => setBrushSettings((prev) => ({ ...prev, brushColor: hex }))}
+          onChangeBrushColor={(hex) => {
+            setBrushSettings((prev) => ({ ...prev, brushColor: hex }));
+            setRecentBrushColors((prev) => [hex, ...prev.filter((c) => c.toLowerCase() !== hex.toLowerCase())].slice(0, 6));
+          }}
+          recentBrushColors={recentBrushColors}
         />
 
         <div className="flex-1 flex flex-col relative overflow-hidden">
@@ -957,12 +959,7 @@ export default function App() {
             onDeleteLayers={handleDeleteLayers}
           />
 
-          <RecentColorsBar
-            recentColors={recentColors}
-            activeColor={activeLayer?.color || ''}
-            onSelectColor={handleSelectRecentColor}
-            colorNotes={colorNotes}
-          />
+
         </div>
 
         <LayersPanel

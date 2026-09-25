@@ -146,7 +146,7 @@ function blendBakedMarkup(
   }
   parts.push(`<g mask="url(#${clipId})"><g style="isolation:isolate">`);
   belowIds.forEach((bid, i) => {
-    parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, shadow }));
+    parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, shadow, paperMode: project.paperMode }));
   });
   parts.push(renderLayerMarkup(layer, { idPrefix: 'gx_', grain, shadow: 0 }));
   parts.push('</g></g>');
@@ -199,7 +199,7 @@ export async function buildGodotExport(
   const bounds = measureLayers(project, allParts);
   const pad = options.bakeShadow ? 14 : 2;
   const s = options.textureScale;
-  const shadow = options.bakeShadow ? project.shadowStrength ?? 0.5 : 0;
+  const shadow = options.bakeShadow && project.paperMode !== 'vector' ? project.shadowStrength ?? 0.5 : 0;
 
   const files: Zippable = {};
   const usedItemSlugs = new Set<string>();
@@ -241,7 +241,7 @@ export async function buildGodotExport(
       const markup =
         blended && below.length > 0
           ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
-          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, shadow });
+          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, shadow, paperMode: project.paperMode });
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w * s}" height="${h * s}">${markup}</svg>`;
       const canvas = await rasterizeSvg(svg, w * s, h * s);
       const png = await canvasToPng(canvas);

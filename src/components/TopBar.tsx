@@ -25,9 +25,38 @@ import {
   Save,
   Gamepad2,
   CloudCheck,
+  Settings,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
+import { PaperMode } from '../types/papercut';
+
+const ModeGlyph: React.FC<{ kind: PaperMode }> = ({ kind }) => (
+  <svg viewBox="0 0 24 24" className="w-6 h-6">
+    <defs>
+      <filter id="mg-soft" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="1.4" />
+      </filter>
+    </defs>
+    <rect x="0" y="0" width="24" height="24" rx="5" fill="#FAF8F2" />
+    {kind === 'soft' && <rect x="7" y="8" width="11" height="11" rx="1" fill="#1B1626" opacity="0.45" filter="url(#mg-soft)" />}
+    {kind === 'hard' && <rect x="8" y="8" width="11" height="11" rx="1" fill="#16266B" />}
+    <rect x="5" y="5" width="11" height="11" rx="1" fill="#2E58D6" />
+  </svg>
+);
+
+const PAPER_MODES: { id: PaperMode; tip: string; icon: React.ReactNode }[] = [
+  { id: 'soft', tip: '剪贴模式：柔和纸影', icon: <ModeGlyph kind="soft" /> },
+  { id: 'vector', tip: '剪贴模式：平面矢量', icon: <ModeGlyph kind="vector" /> },
+  { id: 'hard', tip: '剪贴模式：硬边加深阴影', icon: <ModeGlyph kind="hard" /> },
+];
+
+const TAB_COLORS = ['#2E58D6', '#D0574B', '#2F9E6A', '#8A62D6', '#D69A2E', '#2FA8B0', '#D66A9E'];
+const tabColor = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return TAB_COLORS[h % TAB_COLORS.length];
+};
 
 export interface DocumentTabItem {
   id: string;
@@ -48,6 +77,8 @@ interface TopBarProps {
   onSaveProjectFile: () => void;
   saveStatus: 'idle' | 'saving' | 'saved';
   onOpenGodotExport: () => void;
+  paperMode: PaperMode;
+  onChangePaperMode: (mode: PaperMode) => void;
   currentWidth: number;
   currentHeight: number;
   onUpdateCanvasSize: (w: number, h: number) => void;
@@ -75,6 +106,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSaveProjectFile,
   saveStatus,
   onOpenGodotExport,
+  paperMode,
+  onChangePaperMode,
   currentWidth,
   currentHeight,
   onUpdateCanvasSize,
@@ -168,20 +201,15 @@ export const TopBar: React.FC<TopBarProps> = ({
     <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-40 shrink-0 px-2 sm:px-4 gap-2">
       {/* 1. Left: Brand Icon + 文件 / 设置 (皮肤选择) Menu Tabs */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* Brand Seal */}
-        <div className="flex items-center gap-2 pr-2 border-r border-(--ui-divider)">
-          <div className="w-6 h-6 rounded-lg bg-(--ui-accent) flex items-center justify-center text-white text-[12px] font-bold shadow-md shadow-blue-950/60 border border-(--ui-text-2)/40">
+        <div className="flex items-center gap-1.5 pr-2 border-r border-(--ui-divider)">
+          <div className="w-6 h-6 rounded-lg bg-(--ui-accent) flex items-center justify-center text-white text-[12px] font-bold" data-tip="Weave 剪纸工坊">
             ❖
           </div>
-          <span className="text-sm font-bold tracking-tight text-(--ui-strong) hidden md:inline">
-            Weave 剪纸工坊
-          </span>
           <span
-            className={`hidden lg:flex items-center gap-1 text-[10px] ${saveStatus === 'saving' ? 'text-(--ui-muted)' : 'text-[#438B6E]'}`}
-            data-tip="作品自动保存在本浏览器中；Ctrl+S 另存为 .weave.json 文件"
+            className={saveStatus === 'saving' ? 'text-(--ui-muted)' : 'text-[#438B6E]'}
+            data-tip={saveStatus === 'saving' ? '保存中…' : '已自动保存 · Ctrl+S 另存为文件'}
           >
-            <CloudCheck className="w-3 h-3" />
-            {saveStatus === 'saving' ? '保存中' : '已保存'}
+            <CloudCheck className="w-4 h-4" />
           </span>
         </div>
 
@@ -193,14 +221,14 @@ export const TopBar: React.FC<TopBarProps> = ({
               setShowCanvasSubmenu(false);
               setShowSettingsMenu(false);
             }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            data-tip="文件"
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               showFileMenu
                 ? 'bg-(--ui-hover) text-(--ui-strong)'
                 : 'text-(--ui-text-2) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
             }`}
           >
-            <span>文件</span>
-            <ChevronDown className="w-3 h-3 text-(--ui-muted)" />
+            <FolderOpen className="w-4 h-4" />
           </button>
 
           {/* File Dropdown */}
@@ -315,7 +343,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     <div className="flex items-center justify-between pb-2 border-b border-(--ui-divider) font-semibold text-(--ui-strong)">
                       <div className="flex items-center gap-1.5">
                         <Sliders className="w-3.5 h-3.5 text-(--ui-accent)" />
-                        <span>画板尺寸 (宽 × 高)</span>
+                        <span>画板尺寸</span>
                       </div>
                       <span className="text-[10px] text-(--ui-muted) font-mono">
                         {currentWidth} × {currentHeight}
@@ -326,7 +354,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     <div className="grid grid-cols-2 gap-2 py-2">
                       <div>
                         <label className="text-[10px] text-(--ui-muted) block mb-1">
-                          宽度 (px):
+                          宽
                         </label>
                         <input
                           type="number"
@@ -340,7 +368,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       </div>
                       <div>
                         <label className="text-[10px] text-(--ui-muted) block mb-1">
-                          高度 (px):
+                          高
                         </label>
                         <input
                           type="number"
@@ -356,13 +384,12 @@ export const TopBar: React.FC<TopBarProps> = ({
 
                     {/* Quick Presets */}
                     <div className="space-y-1 pt-1 border-t border-(--ui-divider)">
-                      <div className="text-[10px] text-(--ui-muted) mb-1">常用画板规格:</div>
                       <div className="grid grid-cols-2 gap-1.5">
                         {[
-                          { label: '800 × 800 (方幅)', w: 800, h: 800 },
-                          { label: '1000 × 800 (横展)', w: 1000, h: 800 },
-                          { label: '750 × 1000 (立轴)', w: 750, h: 1000 },
-                          { label: '1200 × 675 (宽幅)', w: 1200, h: 675 },
+                          { label: '800 × 800', w: 800, h: 800 },
+                          { label: '1000 × 800', w: 1000, h: 800 },
+                          { label: '750 × 1000', w: 750, h: 1000 },
+                          { label: '1920 × 1080', w: 1920, h: 1080 },
                         ].map((p) => (
                           <button
                             key={p.label}
@@ -386,7 +413,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       onClick={handleApplyCanvasSize}
                       className="w-full mt-2.5 py-1.5 bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white rounded-lg font-medium text-xs shadow-md transition-colors"
                     >
-                      应用新画板尺寸
+                      应用
                     </button>
                   </div>
                 )}
@@ -403,61 +430,54 @@ export const TopBar: React.FC<TopBarProps> = ({
               setShowFileMenu(false);
               setShowCanvasSubmenu(false);
             }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            data-tip="设置"
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               showSettingsMenu
                 ? 'bg-(--ui-hover) text-(--ui-strong)'
                 : 'text-(--ui-text-2) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
             }`}
           >
-            <Palette className="w-3.5 h-3.5 text-(--ui-accent-2)" />
-            <span>皮肤</span>
-            <ChevronDown className="w-3 h-3 text-(--ui-muted)" />
+            <Settings className="w-4 h-4" />
           </button>
 
           {showSettingsMenu && (
-            <div className="absolute left-0 top-full mt-1 w-[380px] bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-3 z-50 text-xs">
-              <div className="text-[11px] font-semibold text-(--ui-strong) mb-2">编辑器皮肤</div>
-              {(['dark', 'light'] as const).map((tone) => (
-                <div key={tone} className="mb-2 last:mb-0">
-                  <div className="text-[10px] text-(--ui-muted) mb-1">{tone === 'dark' ? '深色' : '浅色'}</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {SKINS.filter((sk) => sk.tone === tone).map((sk) => {
-                      const c = sk.colors;
-                      const isActive = currentSkin === sk.id;
-                      return (
-                        <button
-                          key={sk.id}
-                          onClick={() => onSelectSkin?.(sk.id)}
-                          data-tip={sk.desc}
-                          className={`rounded-lg p-1 border-2 text-left transition-colors ${
-                            isActive ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
-                          }`}
-                        >
-                          <div className="h-14 rounded-md overflow-hidden flex border" style={{ background: c.app, borderColor: c.border }}>
-                            <div className="w-3 flex flex-col items-center gap-0.5 pt-1" style={{ background: c.panel }}>
-                              <span className="w-1.5 h-1.5 rounded-sm" style={{ background: c.accent }} />
-                              <span className="w-1.5 h-1.5 rounded-sm" style={{ background: c.raised }} />
-                              <span className="w-1.5 h-1.5 rounded-sm" style={{ background: c.accent2 }} />
-                            </div>
-                            <div className="flex-1 flex items-center justify-center">
-                              <span className="w-6 h-7 rounded-sm" style={{ background: '#FAF8F2' }} />
-                            </div>
-                            <div className="w-7 p-1 space-y-0.5" style={{ background: c.panel }}>
-                              <span className="block h-1 rounded-sm" style={{ background: c.accent }} />
-                              <span className="block h-1 rounded-sm" style={{ background: c.muted }} />
-                              <span className="block h-1 rounded-sm" style={{ background: c.faint }} />
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between mt-1 px-0.5">
-                            <span className="text-[11px] text-(--ui-strong)">{sk.name}</span>
-                            {isActive && <Check className="w-3 h-3 text-(--ui-accent)" />}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div className="absolute left-0 top-full mt-1 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 z-50 flex flex-col gap-2">
+              <div className="flex gap-1.5" data-tip-group>
+                {SKINS.map((sk) => {
+                  const c = sk.colors;
+                  const isActive = currentSkin === sk.id;
+                  return (
+                    <button
+                      key={sk.id}
+                      onClick={() => onSelectSkin?.(sk.id)}
+                      data-tip={sk.name}
+                      className={`w-8 h-8 rounded-full p-0.5 border-2 transition-colors ${
+                        isActive ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
+                      }`}
+                    >
+                      <span
+                        className="block w-full h-full rounded-full"
+                        style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="h-px bg-(--ui-divider)" />
+              <div className="flex gap-1.5">
+                {PAPER_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => onChangePaperMode(m.id)}
+                    data-tip={m.tip}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                      paperMode === m.id ? 'border-(--ui-accent) bg-(--ui-hover)' : 'border-transparent hover:bg-(--ui-hover)'
+                    }`}
+                  >
+                    {m.icon}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -468,23 +488,21 @@ export const TopBar: React.FC<TopBarProps> = ({
         {documents.map((doc) => {
           const isActive = doc.id === activeDocId;
           const isEditing = editingDocId === doc.id;
+          const color = tabColor(doc.id);
 
           return (
             <div
               key={doc.id}
               onClick={() => onSelectDocument(doc.id)}
-              className={`h-8.5 px-3 flex items-center gap-1.5 rounded-t-lg cursor-pointer transition-all border-t border-x text-xs shrink-0 select-none group relative ${
+              style={{ borderTopColor: color, boxShadow: isActive ? `inset 0 2px 0 ${color}` : undefined }}
+              className={`h-8.5 px-3 flex items-center gap-1.5 rounded-t-lg cursor-pointer transition-all border-t-2 text-xs shrink-0 select-none group relative ${
                 isActive
-                  ? 'bg-(--ui-raised) border-(--ui-accent) text-(--ui-strong) font-medium shadow-md'
-                  : 'bg-(--ui-panel-2) border-transparent text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-text-2)'
+                  ? 'bg-(--ui-raised) text-(--ui-strong) font-medium'
+                  : 'bg-(--ui-panel-2) text-(--ui-muted) opacity-80 hover:opacity-100 hover:bg-(--ui-raised) hover:text-(--ui-text-2)'
               }`}
             >
               {/* Tab Diamond Motif */}
-              <span
-                className={`text-[9px] font-bold ${
-                  isActive ? 'text-(--ui-accent)' : 'text-(--ui-faint)'
-                }`}
-              >
+              <span className="text-[9px] font-bold" style={{ color }}>
                 ❖
               </span>
 
@@ -700,7 +718,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-(--ui-divider)">
               <div className="flex items-center gap-2">
                 <FilePlus className="w-5 h-5 text-(--ui-accent)" />
-                <h3 className="font-bold text-sm text-(--ui-strong)">新建剪纸画布</h3>
+                <h3 className="font-bold text-sm text-(--ui-strong)">新建画布</h3>
               </div>
               <button
                 onClick={() => setShowNewDocDialog(false)}
@@ -712,7 +730,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
             <div className="space-y-4 py-4 text-xs">
               <div>
-                <label className="text-(--ui-muted) block mb-1">文件名称:</label>
+                <label className="text-(--ui-muted) block mb-1">名称</label>
                 <input
                   type="text"
                   value={newDocName}
@@ -723,7 +741,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-(--ui-muted) block mb-1">宽度 (px):</label>
+                  <label className="text-(--ui-muted) block mb-1">宽</label>
                   <input
                     type="number"
                     min={200}
@@ -735,7 +753,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-(--ui-muted) block mb-1">高度 (px):</label>
+                  <label className="text-(--ui-muted) block mb-1">高</label>
                   <input
                     type="number"
                     min={200}
@@ -750,13 +768,12 @@ export const TopBar: React.FC<TopBarProps> = ({
 
               {/* Preset dimensions */}
               <div>
-                <span className="text-(--ui-muted) block mb-1.5">标准民俗尺幅预设:</span>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { name: '800 × 800 (传统方窗)', w: 800, h: 800 },
-                    { name: '1000 × 800 (工坊横屏)', w: 1000, h: 800 },
-                    { name: '750 × 1000 (宣纸挂轴)', w: 750, h: 1000 },
-                    { name: '1200 × 675 (现代宽幅)', w: 1200, h: 675 },
+                    { name: '800 × 800', w: 800, h: 800 },
+                    { name: '1000 × 800', w: 1000, h: 800 },
+                    { name: '750 × 1000', w: 750, h: 1000 },
+                    { name: '1920 × 1080', w: 1920, h: 1080 },
                   ].map((preset) => (
                     <button
                       key={preset.name}
@@ -784,7 +801,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 onClick={handleCreateDocument}
                 className="px-5 py-2 rounded-xl bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white font-semibold text-xs shadow-md shadow-blue-950/60 transition-colors"
               >
-                创建画布
+                创建
               </button>
             </div>
           </div>

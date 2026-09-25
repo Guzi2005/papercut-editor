@@ -38,8 +38,17 @@ import {
   X,
   MousePointer2,
   FolderPlus,
+  Droplet,
+  Blend,
+  Sparkles,
+  Grid3x3,
+  RotateCw,
+  Maximize,
+  Sun,
+  ArrowUpDown,
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
+import { WheelNumber } from './WheelNumber';
 
 interface LayersPanelProps {
   project: PapercutProject;
@@ -101,30 +110,6 @@ const LayerThumb = React.memo(function LayerThumb({ layer, w, h }: { layer: Laye
     </svg>
   );
 });
-
-const Slider: React.FC<{
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  display?: string;
-  onChange: (v: number) => void;
-}> = ({ label, value, min, max, step, display, onChange }) => (
-  <label className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
-    <span className="w-12 shrink-0">{label}</span>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(e) => onChange(parseFloat(e.target.value))}
-      className="flex-1 h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
-    />
-    <span className="w-9 text-right font-mono text-(--ui-strong)">{display ?? value}</span>
-  </label>
-);
 
 export const LayersPanel: React.FC<LayersPanelProps> = ({
   project,
@@ -650,10 +635,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const styleTab = (
     <div className="space-y-3">
       <div>
-        <div className="flex items-center justify-between text-[11px] text-(--ui-muted) mb-2">
-          <span className="font-semibold text-(--ui-strong)" data-tip="单击给当前纸片上色，双击修改备注">织游色卡</span>
-        </div>
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-8 gap-1.5" data-tip="单击给当前纸片上色 · 双击改备注">
           {FOLK_PALETTE.map((c) => {
             const isCurrent = activeLayer?.color.toLowerCase() === c.hex.toLowerCase();
             const displayName = colorNotes[c.hex.toLowerCase()] || c.name;
@@ -666,16 +648,12 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     setEditingColorHex(c.hex);
                     setEditingColorNote(displayName);
                   }}
-                  data-tip={`${displayName} ${c.hex} — ${c.desc}`}
-                  className={`w-full h-7 rounded-md flex items-center justify-center transition-all ${
-                    isCurrent ? 'ring-2 ring-white scale-105 z-10' : 'hover:scale-105'
+                  data-tip={`${displayName} ${c.hex}`}
+                  className={`w-full aspect-square rounded-full transition-all border ${light ? 'border-black/15' : 'border-white/15'} ${
+                    isCurrent ? 'ring-2 ring-(--ui-accent) scale-105 z-10' : 'hover:scale-110'
                   }`}
                   style={{ backgroundColor: c.hex }}
-                >
-                  <span className="text-[9px] font-medium truncate px-0.5" style={{ color: light ? '#161B29' : '#fff' }}>
-                    {displayName}
-                  </span>
-                </button>
+                />
                 {editingColorHex === c.hex && (
                   <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 bg-(--ui-panel) border border-(--ui-accent) rounded-lg p-1 shadow-2xl flex items-center gap-1 min-w-[130px]">
                     <input
@@ -699,16 +677,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         </div>
       </div>
 
-      <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-2.5 space-y-2">
-        <div className="text-[11px] font-semibold text-(--ui-strong)">画面质感</div>
-        <Slider
-          label="纸影"
-          value={project.shadowStrength ?? 0.5}
+      <div className="flex items-center gap-1.5">
+        <WheelNumber
+          tip="纸影强度"
+          icon={<Sun className="w-3 h-3" />}
+          value={Math.round((project.shadowStrength ?? 0.5) * 100)}
           min={0}
-          max={1}
-          step={0.05}
-          display={`${Math.round((project.shadowStrength ?? 0.5) * 100)}%`}
-          onChange={(v) => onUpdateProject({ shadowStrength: v })}
+          max={100}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(v) => onUpdateProject({ shadowStrength: v / 100 })}
         />
         <button
           onClick={() => {
@@ -719,60 +697,56 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               ),
             });
           }}
-          className="w-full text-[10px] py-1 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
-          data-tip="给还没有设置颗粒的纸片统一加上当前纸片的颗粒强度"
+          className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
+          data-tip="把当前纸片的颗粒应用到未设置的纸片"
         >
-          统一颗粒
+          <Sparkles className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-2.5 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-(--ui-strong) flex items-center gap-1.5">
-            <ImageIcon className="w-3.5 h-3.5 text-(--ui-muted)" />
-            临摹参考图
-          </span>
-          <button
-            onClick={onImportReference}
-            data-tip="半透明临摹层，不参与导出"
-            className="text-[10px] px-2 py-0.5 rounded-md bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
-          >
-            {ref ? '更换' : '导入图片'}
-          </button>
-        </div>
-        {ref ? (
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onImportReference}
+          data-tip={ref ? '更换临摹参考图' : '导入临摹参考图（不参与导出）'}
+          className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
+        >
+          <ImageIcon className="w-3.5 h-3.5" />
+        </button>
+        {ref && (
           <>
-            <Slider
-              label="透明度"
-              value={ref.opacity}
-              min={0.05}
-              max={1}
-              step={0.05}
-              display={`${Math.round(ref.opacity * 100)}%`}
-              onChange={(v) => onUpdateProject({ reference: { ...ref, opacity: v } })}
+            <WheelNumber
+              tip="参考图透明度"
+              icon={<Droplet className="w-3 h-3" />}
+              value={Math.round(ref.opacity * 100)}
+              min={5}
+              max={100}
+              step={5}
+              format={(v) => `${v}%`}
+              onChange={(v) => onUpdateProject({ reference: { ...ref, opacity: v / 100 } })}
             />
-            <div className="flex items-center gap-1.5 text-[10px]">
-              <button
-                onClick={() => onUpdateProject({ reference: { ...ref, visible: !ref.visible } })}
-                className="flex-1 py-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)"
-              >
-                {ref.visible ? '隐藏' : '显示'}
-              </button>
-              <button
-                onClick={() => onUpdateProject({ reference: { ...ref, onTop: !ref.onTop } })}
-                className="flex-1 py-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)"
-              >
-                {ref.onTop ? '置于纸片下方' : '置于纸片上方'}
-              </button>
-              <button
-                onClick={() => onUpdateProject({ reference: undefined })}
-                className="py-1 px-2 rounded-md bg-(--ui-raised) border border-(--ui-border) text-red-400 hover:text-red-300"
-              >
-                移除
-              </button>
-            </div>
+            <button
+              onClick={() => onUpdateProject({ reference: { ...ref, visible: !ref.visible } })}
+              data-tip={ref.visible ? '隐藏参考图' : '显示参考图'}
+              className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
+            >
+              {ref.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => onUpdateProject({ reference: { ...ref, onTop: !ref.onTop } })}
+              data-tip={ref.onTop ? '参考图置于纸片下方' : '参考图置于纸片上方'}
+              className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onUpdateProject({ reference: undefined })}
+              data-tip="移除参考图"
+              className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-red-400 hover:text-red-300"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </>
-        ) : null}
+        )}
       </div>
     </div>
   );
@@ -828,63 +802,66 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      <Slider
-        label="不透明"
-        value={activeLayer.opacity}
-        min={0}
-        max={1}
-        step={0.05}
-        display={`${Math.round(activeLayer.opacity * 100)}%`}
-        onChange={(v) => onUpdateLayer(activeLayer.id, { opacity: v })}
-      />
-      <div className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
-        <span className="w-12 shrink-0">混合</span>
-        <select
-          value={activeLayer.blendMode || 'normal'}
-          onChange={(e) => onUpdateLayer(activeLayer.id, { blendMode: e.target.value as Layer['blendMode'] })}
-          className="flex-1 bg-(--ui-input) border border-(--ui-border) rounded-md px-1.5 py-0.5 text-(--ui-strong) outline-none"
-          data-tip="正片叠底/滤色/叠加导出到 Godot 时会与同物件下方部件合成烘焙"
-        >
-          <option value="normal">正常</option>
-          <option value="multiply">正片叠底</option>
-          <option value="screen">滤色</option>
-          <option value="overlay">叠加</option>
-        </select>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <WheelNumber
+          tip="纸片不透明度"
+          icon={<Droplet className="w-3 h-3" />}
+          value={Math.round(activeLayer.opacity * 100)}
+          min={0}
+          max={100}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(v) => onUpdateLayer(activeLayer.id, { opacity: v / 100 })}
+        />
+        <WheelNumber
+          tip="颗粒质感"
+          icon={<Sparkles className="w-3 h-3" />}
+          value={Math.round((activeLayer.grain ?? 0) * 100)}
+          min={0}
+          max={100}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(v) => onUpdateLayer(activeLayer.id, { grain: v / 100 })}
+        />
+        <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="混合模式（导出 Godot 时与同物件下方部件合成烘焙）">
+          <Blend className="w-3 h-3" />
+          <select
+            value={activeLayer.blendMode || 'normal'}
+            onChange={(e) => onUpdateLayer(activeLayer.id, { blendMode: e.target.value as Layer['blendMode'] })}
+            className="bg-transparent text-[11px] text-(--ui-strong) outline-none"
+          >
+            <option value="normal">正常</option>
+            <option value="multiply">正片叠底</option>
+            <option value="screen">滤色</option>
+            <option value="overlay">叠加</option>
+          </select>
+        </label>
       </div>
-      <Slider
-        label="颗粒"
-        value={activeLayer.grain ?? 0}
-        min={0}
-        max={1}
-        step={0.05}
-        display={`${Math.round((activeLayer.grain ?? 0) * 100)}%`}
-        onChange={(v) => onUpdateLayer(activeLayer.id, { grain: v })}
-      />
-      <div className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
-        <span className="w-12 shrink-0">纹样</span>
-        <select
-          value={pattern?.type || 'none'}
-          onChange={(e) => (e.target.value === 'none' ? setPattern(null) : setPattern({ type: e.target.value as PatternType }))}
-          className="flex-1 bg-(--ui-input) border border-(--ui-border) rounded-md px-1.5 py-0.5 text-(--ui-strong) outline-none"
-        >
-          {PATTERN_OPTIONS.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="纹样">
+          <Grid3x3 className="w-3 h-3" />
+          <select
+            value={pattern?.type || 'none'}
+            onChange={(e) => (e.target.value === 'none' ? setPattern(null) : setPattern({ type: e.target.value as PatternType }))}
+            className="bg-transparent text-[11px] text-(--ui-strong) outline-none"
+          >
+            {PATTERN_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         {pattern && (
-          <label className="relative w-5 h-5 rounded border border-white/30 cursor-pointer overflow-hidden" style={{ backgroundColor: pattern.color }} data-tip="纹样颜色">
-            <input type="color" value={pattern.color} onChange={(e) => setPattern({ color: e.target.value })} className="absolute inset-0 opacity-0 cursor-pointer" />
-          </label>
+          <>
+            <label className="relative w-7 h-7 rounded-full border border-white/30 cursor-pointer overflow-hidden" style={{ backgroundColor: pattern.color }} data-tip="纹样颜色">
+              <input type="color" value={pattern.color} onChange={(e) => setPattern({ color: e.target.value })} className="absolute inset-0 opacity-0 cursor-pointer" />
+            </label>
+            <WheelNumber tip="纹样尺寸" icon={<Maximize className="w-3 h-3" />} value={pattern.scale} min={8} max={120} onChange={(v) => setPattern({ scale: v })} />
+            <WheelNumber tip="纹样角度" icon={<RotateCw className="w-3 h-3" />} value={pattern.angle} min={-90} max={90} step={5} format={(v) => `${v}°`} onChange={(v) => setPattern({ angle: v })} />
+          </>
         )}
       </div>
-      {pattern && (
-        <>
-          <Slider label="纹样尺寸" value={pattern.scale} min={8} max={120} step={1} onChange={(v) => setPattern({ scale: v })} />
-          <Slider label="纹样角度" value={pattern.angle} min={-90} max={90} step={5} display={`${pattern.angle}°`} onChange={(v) => setPattern({ angle: v })} />
-        </>
-      )}
     </div>
   );
 
@@ -895,18 +872,18 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       <div className="h-11 px-2 border-b border-(--ui-divider) flex items-center gap-1">
         {([
           { id: 'depth', label: '深度', icon: LayersIcon },
-          { id: 'items', label: `物件${items.length ? ` ${items.length}` : ''}`, icon: Box },
+          { id: 'items', label: `物件（${items.length}）`, icon: Box },
           { id: 'style', label: '风格', icon: Palette },
         ] as const).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-              tab === t.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-white'
+            data-tip={t.label}
+            className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+              tab === t.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
             }`}
           >
-            <t.icon className="w-3.5 h-3.5" />
-            {t.label}
+            <t.icon className="w-4 h-4" />
           </button>
         ))}
         <div className="flex-1" />
@@ -921,11 +898,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             </button>
             <button
               onClick={() => onAddLayer()}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white text-[11px]"
-              data-tip="在当前纸片上方新建纸片"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
+              data-tip="新建纸片"
             >
-              <Plus className="w-3 h-3" />
-              纸片
+              <Plus className="w-4 h-4" />
             </button>
           </>
         )}

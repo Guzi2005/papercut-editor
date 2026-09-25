@@ -13,6 +13,7 @@ import {
   Maximize2,
   MousePointer2,
   Scissors,
+  CircleDashed,
   Layers,
   Eraser,
   Keyboard,
@@ -76,6 +77,7 @@ interface ToolbarProps {
   onTogglePressure: () => void;
   brushColor: string;
   onChangeBrushColor: (hex: string) => void;
+  recentBrushColors: string[];
 }
 
 interface ToolDefinition {
@@ -98,11 +100,11 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     id: 'willow_leaf',
-    name: '柳叶笔',
-    shortName: '柳叶',
+    name: '剪纸',
+    shortName: '剪纸',
     hotkey: 'L',
-    description: '按运笔弧度实时成叶',
-    icon: Feather,
+    description: '按运笔弧度实时剪出叶形',
+    icon: Scissors,
   },
   {
     id: 'geom_shape',
@@ -139,7 +141,7 @@ const TOOLS: ToolDefinition[] = [
 ];
 
 const CARVE_MODES: { id: BrushSettings['mode']; label: string; hotkey: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'cutout', label: '刻纸', hotkey: 'C', icon: Scissors },
+  { id: 'cutout', label: '刻纸', hotkey: 'C', icon: CircleDashed },
   { id: 'positive', label: '贴花', hotkey: 'P', icon: Layers },
   { id: 'erase', label: '剪除', hotkey: 'E', icon: Eraser },
 ];
@@ -161,6 +163,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onTogglePressure,
   brushColor,
   onChangeBrushColor,
+  recentBrushColors,
 }) => {
   const carving = CARVING_TOOLS.includes(currentTool);
   const [showColors, setShowColors] = useState(false);
@@ -176,7 +179,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   }, [showColors]);
 
   return (
-    <aside className="relative z-30 w-16 flex flex-col items-center py-2 bg-(--ui-panel) text-(--ui-text) border-r border-(--ui-border) shrink-0 z-20 select-none justify-between">
+    <aside className="relative z-30 w-14 flex flex-col items-center py-2 bg-(--ui-panel) text-(--ui-text) border-r border-(--ui-border) shrink-0 z-20 select-none justify-between">
       <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {TOOLS.map((tool) => {
           const isActive =
@@ -192,25 +195,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               }}
               data-tip={`${tool.name}（${tool.hotkey}）· ${tool.description}`}
               data-tip-side="right"
-              className={`relative group w-12 h-10 flex flex-col items-center justify-center rounded-xl transition-all ${
+              className={`relative group w-11 h-10 flex items-center justify-center rounded-xl transition-all ${
                 isActive
                   ? 'bg-(--ui-accent) text-white shadow-lg shadow-blue-950/70 border border-(--ui-text-2)/60 font-semibold'
                   : 'bg-(--ui-raised) text-(--ui-text-2) border border-(--ui-border) hover:bg-(--ui-hover) hover:text-(--ui-strong) hover:border-(--ui-border-strong)'
               }`}
             >
-              <Icon className={`w-4.5 h-4.5 mb-0.5 ${isActive ? 'text-(--ui-strong)' : 'text-(--ui-text-2)'}`} />
-              <span className={`text-[10px] leading-none tracking-tight font-medium ${isActive ? 'text-(--ui-strong)' : 'text-(--ui-text-2)'}`}>
-                {tool.shortName}
-              </span>
-              <span className={`absolute top-0.5 right-1 text-[8px] font-mono ${isActive ? 'text-white/70' : 'text-(--ui-faint)'}`}>
-                {tool.hotkey}
-              </span>
+              <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-(--ui-text-2)'}`} />
             </button>
           );
         })}
 
-        {/* 刻纸 / 贴花 / 剪除：决定柳叶、几何、笔刀的落刀效果 */}
-        <div className="w-full mt-1 pt-1.5 border-t border-(--ui-divider) flex flex-col items-center gap-1" data-tip="落刀模式：柳叶、几何、笔刀的效果">
+        {/* 刻纸 / 贴花 / 剪除：决定剪纸、几何、笔刀的落刀效果 */}
+        <div className="w-full mt-1 pt-1.5 border-t border-(--ui-divider) flex flex-col items-center gap-1" data-tip="落刀模式">
           {CARVE_MODES.map((mode) => {
             const isActive = carveMode === mode.id;
             const Icon = mode.icon;
@@ -220,7 +217,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => onChangeCarveMode(mode.id)}
                 data-tip={`${mode.label}（${mode.hotkey}）`}
                 data-tip-side="right"
-                className={`w-12 h-7 flex items-center justify-center gap-1 rounded-lg text-[10px] transition-all ${
+                className={`w-11 h-8 flex items-center justify-center rounded-lg text-[10px] transition-all ${
                   isActive
                     ? carving
                       ? 'bg-(--ui-accent-2) text-[#1B1626] font-semibold'
@@ -228,8 +225,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-white'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{mode.label}</span>
+                <Icon className="w-4 h-4" />
               </button>
             );
           })}
@@ -247,6 +243,21 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           />
           {showColors && (
             <div className="absolute left-full bottom-0 ml-3 z-50 w-48 p-2.5 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl">
+              {recentBrushColors.length > 0 && (
+                <div className="flex gap-1.5 pb-2 mb-2 border-b border-(--ui-divider)" data-tip="最近使用">
+                  {recentBrushColors.slice(0, 6).map((hex) => (
+                    <button
+                      key={hex}
+                      onClick={() => {
+                        onChangeBrushColor(hex);
+                        setShowColors(false);
+                      }}
+                      className="w-6 h-6 rounded-full border border-white/20 hover:scale-110 transition-transform"
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-6 gap-1.5">
                 {FOLK_PALETTE.map((c) => (
                   <button
@@ -272,7 +283,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
                 </span>
-                自定义
                 <span className="ml-auto font-mono text-(--ui-text)">{brushColor.toUpperCase()}</span>
               </label>
             </div>
