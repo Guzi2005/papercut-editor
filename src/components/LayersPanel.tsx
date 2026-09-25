@@ -51,7 +51,10 @@ import {
   ArrowDownToLine,
   Brush,
   Scan,
+  MousePointer2,
+  Link2,
 } from 'lucide-react';
+import { TwinPreset } from '../utils/twinPresets';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
 import { ColorStudio } from './ColorStudio';
@@ -71,7 +74,10 @@ interface LayersPanelProps {
   onHighlightLayers: (layerIds: string[]) => void;
   onUpdateLayer: (layerId: string, updates: Partial<Layer>) => void;
   onAddLayer: (groupId?: string, kind?: 'paper' | 'doodle') => void;
+  twinPresets?: TwinPreset[];
+  onAddTwin?: (presetId: string) => void;
   onDeleteLayer: (layerId: string) => void;
+  onDeleteLayers?: (layerIds: string[]) => void;
   onDuplicateLayer: (layerId: string) => void;
   /** Merge into the layer below; returns the surviving layer and the two names to choose from. */
   onMergeDown?: (layerId: string) => { layerId: string; names: [string, string] } | null;
@@ -256,7 +262,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onHighlightLayers,
   onUpdateLayer,
   onAddLayer,
+  twinPresets = [],
+  onAddTwin,
   onDeleteLayer,
+  onDeleteLayers,
   onDuplicateLayer,
   onMergeDown,
   onInvertLayerCutouts,
@@ -1357,36 +1366,34 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 {a.label}
               </button>
             ))}
-            <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-(--ui-muted) border-t border-(--ui-border) mt-1">加入物件</div>
-            {items.length > 0 && (
-              <>
-                {items.map((it) => (
-                  <button
-                    key={it.id}
-                    onClick={() => {
-                      onAddPartToItem(it.id, ctxLayer.id);
-                      setContextMenu(null);
-                    }}
-                    className="w-full px-3 py-1 text-left hover:bg-(--ui-hover) flex items-center gap-2"
-                  >
-                    <Box className="w-3 h-3 text-(--ui-accent-2)" />
-                    <span className="truncate">{it.name}</span>
-                    {it.partIds.includes(ctxLayer.id) && <Check className="w-3 h-3 ml-auto text-(--ui-accent)" />}
-                  </button>
-                ))}
-              </>
-            )}
-            <button
-              onClick={() => {
-                onCreateItemFromLayer(ctxLayer.id);
-                setContextMenu(null);
-              }}
-              data-tip={`新建物件「${ctxLayer.name}」，只含这张纸片`}
-              className="w-full px-3 py-1 text-left hover:bg-(--ui-hover) flex items-center gap-2 text-(--ui-text-2)"
-            >
-              <Plus className="w-3 h-3 text-(--ui-accent-2)" />
-              <span>新增物件</span>
-            </button>
+            <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-(--ui-muted) border-t border-(--ui-border) mt-1 flex items-center gap-1">
+              <span className="flex-1">加入物件</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onCreateItemFromLayer(ctxLayer.id);
+                  setContextMenu(null);
+                }}
+                data-tip={`新建物件「${ctxLayer.name}」，只含这张纸片`}
+                className="w-5 h-5 flex items-center justify-center rounded-md text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-accent-2)"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {items.map((it) => (
+              <button
+                key={it.id}
+                onClick={() => {
+                  onAddPartToItem(it.id, ctxLayer.id);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1 text-left hover:bg-(--ui-hover) flex items-center gap-2"
+              >
+                <Box className="w-3 h-3 text-(--ui-accent-2)" />
+                <span className="truncate">{it.name}</span>
+                {it.partIds.includes(ctxLayer.id) && <Check className="w-3 h-3 ml-auto text-(--ui-accent)" />}
+              </button>
+            ))}
             <button
               onClick={() => {
                 playDiscardSwoosh();
