@@ -73,6 +73,7 @@ export function layerColors(layer: Layer): string[] {
   };
   if (layer.kind !== 'doodle' && layer.baseShape?.d) add(layer.color);
   if (layer.pattern) add(layer.pattern.color);
+  if (layer.surface && !layer.surface.inheritColor) add(layer.surface.color);
   [...layer.positiveElements, ...layer.cutouts].forEach((c) => !c.isHole && add(c.fillColor || layer.color));
   (layer.drawings || []).forEach((d) => add(d.color));
   if (out.length === 0) add(layer.color);

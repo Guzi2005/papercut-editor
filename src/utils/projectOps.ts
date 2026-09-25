@@ -189,6 +189,12 @@ export function recolorLayer(layer: Layer, from: string, to: string): Layer {
     ...layer,
     color: baseIs ? to : layer.color,
     pattern: layer.pattern && is(layer.pattern.color) ? { ...layer.pattern, color: to } : layer.pattern,
+    surface:
+      layer.surface && !layer.surface.inheritColor && is(layer.surface.color)
+        ? { ...layer.surface, color: to }
+        : layer.surface && layer.surface.inheritColor && baseIs
+          ? { ...layer.surface, color: to }
+          : layer.surface,
     cutouts: layer.cutouts.map(piece),
     positiveElements: layer.positiveElements.map(piece),
     drawings: layer.drawings?.map((d) => (is(d.color) ? { ...d, color: to } : d)),
