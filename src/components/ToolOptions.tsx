@@ -34,6 +34,7 @@ import {
   CornerDownRight,
   Spline,
   Link2,
+  PaintBucket,
   Unlink2,
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
@@ -67,8 +68,8 @@ interface ToolOptionsProps {
   brushSettings: BrushSettings;
   onChangeBrushSettings: (newSettings: Partial<BrushSettings>) => void;
   onSelectTool?: (tool: ToolType) => void;
-  selectionScope: 'part' | 'item';
-  onChangeSelectionScope: (scope: 'part' | 'item') => void;
+  selectionScope: 'part' | 'item' | 'color';
+  onChangeSelectionScope: (scope: 'part' | 'item' | 'color') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
   canvasWidth: number;
@@ -200,6 +201,9 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             </IconButton>
             <IconButton active={selectionScope === 'part'} tip="单部件选取 (Tab)" onClick={() => onChangeSelectionScope('part')}>
               <MousePointerClick className="w-3.5 h-3.5" />
+            </IconButton>
+            <IconButton active={selectionScope === 'color'} tip="色块选取 (Tab) · Shift 加选，双击选同色" onClick={() => onChangeSelectionScope('color')}>
+              <PaintBucket className="w-3.5 h-3.5" />
             </IconButton>
           </Segmented>
           <IconButton tip="把选中纸片打组为物件" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}>

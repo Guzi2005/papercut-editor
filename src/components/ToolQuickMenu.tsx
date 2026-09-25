@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { Box, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
+import { Box, PaintBucket, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { DRAW_BRUSHES, GEOM_SHAPES, Glyph, KNIFE_TIPS } from './ToolOptions';
 import { TOOLS } from './Toolbar';
@@ -28,8 +28,8 @@ interface ToolQuickMenuProps {
   brushSettings: BrushSettings;
   onChangeBrushSettings: (patch: Partial<BrushSettings>) => void;
   onSelectTool: (tool: ToolType) => void;
-  selectionScope: 'part' | 'item';
-  onChangeSelectionScope: (scope: 'part' | 'item') => void;
+  selectionScope: 'part' | 'item' | 'color';
+  onChangeSelectionScope: (scope: 'part' | 'item' | 'color') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
   onClose: () => void;
@@ -84,6 +84,7 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
       entries: [
         { key: 'item', label: '整物件选取', icon: icon(Box), active: selectionScope === 'item', run: () => onChangeSelectionScope('item') },
         { key: 'part', label: '单部件选取', icon: icon(MousePointerClick), active: selectionScope === 'part', run: () => onChangeSelectionScope('part') },
+        { key: 'color', label: '色块选取', icon: icon(PaintBucket), active: selectionScope === 'color', run: () => onChangeSelectionScope('color') },
       ],
     });
     sections.push({

@@ -27,6 +27,9 @@ export const escapeAttr = (s: string) =>
 
 const HUGE = 20000;
 
+/** Block id for a layer's base sheet (with its holes) in colour-block selection. */
+export const BASE_BLOCK = '__base__';
+
 export const SHADOW_BLENDS: { id: ShadowBlend; label: string }[] = [
   { id: 'multiply', label: '正片叠底' },
   { id: 'color-burn', label: '颜色加深' },
@@ -192,7 +195,7 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
 
   const body: string[] = [];
   if (base) {
-    body.push(`<g mask="url(#${maskId})">`);
+    body.push(`<g mask="url(#${maskId})" data-element-id="${BASE_BLOCK}">`);
     body.push(fillPaths(base, escapeAttr(layer.color)));
     if (layer.pattern) {
       splitSubpaths(base).forEach((d) => body.push(`<path d="${d}" fill="url(#${patId})" opacity="${layer.pattern!.opacity}"/>`));
@@ -218,9 +221,9 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
 
   const strokes = drawings
     .map((drw) => {
-      if (drw.fill) return `<g opacity="${drw.opacity}">${fillPaths(drw.d, escapeAttr(drw.color))}</g>`;
+      if (drw.fill) return `<g opacity="${drw.opacity}" data-element-id="${drw.id}">${fillPaths(drw.d, escapeAttr(drw.color))}</g>`;
       const blur = drw.blur ? ` style="filter: blur(${drw.blur}px)"` : '';
-      return `<path d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`;
+      return `<path data-element-id="${drw.id}" d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`;
     })
     .join('');
   if (strokes) body.push(doodle ? strokes : `<g mask="url(#${paperMaskId})">${strokes}</g>`);

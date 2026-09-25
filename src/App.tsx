@@ -26,6 +26,9 @@ import {
   findGroupOfLayer,
   findItemOfLayer,
   flattenLayerIds,
+  transformBlocks,
+  removeBlocks,
+  BlockSelection,
 } from './utils/projectOps';
 import {
   loadWorkspace,
@@ -505,7 +508,7 @@ export default function App() {
         case 'help.keymap':
           return setIsShortcutsOpen(true);
         case 'select.scope':
-          if (currentTool === 'select') setSelectionScope((sc) => (sc === 'item' ? 'part' : 'item'));
+          if (currentTool === 'select') setSelectionScope((sc) => (sc === 'item' ? 'part' : sc === 'part' ? 'color' : 'item'));
           return;
         case 'select.cancel':
           if (currentTool === 'anchor_edit') setCurrentTool('pen_knife');
@@ -651,6 +654,28 @@ export default function App() {
           : it
       );
       pushHistory({ ...project, layers, items });
+    },
+    [project, pushHistory]
+  );
+
+  const handleTransformBlocks = useCallback(
+    (sel: BlockSelection, m: Transform) => {
+      const layers = { ...project.layers };
+      Object.entries(sel).forEach(([lid, ids]) => {
+        if (layers[lid] && ids.length) layers[lid] = transformBlocks(layers[lid], ids, m);
+      });
+      pushHistory({ ...project, layers });
+    },
+    [project, pushHistory]
+  );
+
+  const handleDeleteBlocks = useCallback(
+    (sel: BlockSelection) => {
+      const layers = { ...project.layers };
+      Object.entries(sel).forEach(([lid, ids]) => {
+        if (layers[lid]) layers[lid] = removeBlocks(layers[lid], ids);
+      });
+      pushHistory({ ...project, layers });
     },
     [project, pushHistory]
   );
@@ -1123,6 +1148,8 @@ export default function App() {
             onSelectLayers={handleSelectLayers}
             onPickLayer={handlePanelSelectLayer}
             onTransformLayers={handleTransformLayers}
+            onTransformBlocks={handleTransformBlocks}
+            onDeleteBlocks={handleDeleteBlocks}
             onUpdateItem={handleUpdateItem}
             onDeleteLayers={handleDeleteLayers}
             keymap={keymap}

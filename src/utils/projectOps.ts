@@ -5,6 +5,7 @@
 
 import { Layer, PapercutItem, PapercutProject } from '../types/papercut';
 import { Transform, applyTransform, linearPart, matrixScale, transformPathD } from './pathTransform';
+import { BASE_BLOCK } from './layerSvg';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -124,5 +125,55 @@ export function normalizeProject(p: PapercutProject): PapercutProject {
     rootOrder,
     items,
     shadowStrength: p.shadowStrength ?? 0.5,
+  };
+}
+
+/** Selected colour blocks per layer: element ids, or BASE_BLOCK for the base sheet. */
+export type BlockSelection = Record<string, string[]>;
+
+export function blockColor(layer: Layer, id: string): string | null {
+  if (id === BASE_BLOCK) return layer.color;
+  const el = [...layer.positiveElements, ...layer.cutouts].find((c) => c.id === id);
+  if (el) return el.isHole ? null : el.fillColor || layer.color;
+  return layer.drawings?.find((d) => d.id === id)?.color ?? null;
+}
+
+/** Every block of a layer painted in the given colour. */
+export function blocksOfColor(layer: Layer, color: string): string[] {
+  const c = color.toLowerCase();
+  const ids: string[] = [];
+  if (layer.kind !== 'doodle' && layer.baseShape?.d && layer.color.toLowerCase() === c) ids.push(BASE_BLOCK);
+  [...layer.positiveElements, ...layer.cutouts].forEach((e) => !e.isHole && (e.fillColor || layer.color).toLowerCase() === c && ids.push(e.id));
+  (layer.drawings || []).forEach((d) => d.color.toLowerCase() === c && ids.push(d.id));
+  return ids;
+}
+
+/**
+ * Transforms only the chosen blocks of a layer. The base sheet carries its holes with it, the way
+ * moving a cut sheet moves its cut-outs; appliqués and strokes move on their own.
+ */
+export function transformBlocks(layer: Layer, ids: string[], m: Transform): Layer {
+  const set = new Set(ids);
+  const moved = transformLayer(layer, m);
+  const base = set.has(BASE_BLOCK);
+  const pick = <T extends { id: string; isHole?: boolean }>(orig: T[], next: T[]) =>
+    orig.map((c, i) => (set.has(c.id) || (base && c.isHole) ? next[i] : c));
+  return {
+    ...layer,
+    baseShape: base ? moved.baseShape : layer.baseShape,
+    cutouts: pick(layer.cutouts, moved.cutouts),
+    positiveElements: pick(layer.positiveElements, moved.positiveElements),
+    drawings: layer.drawings && moved.drawings ? pick(layer.drawings, moved.drawings) : layer.drawings,
+  };
+}
+
+/** Removes appliqués and strokes; the base sheet cannot be removed this way. */
+export function removeBlocks(layer: Layer, ids: string[]): Layer {
+  const set = new Set(ids);
+  return {
+    ...layer,
+    cutouts: layer.cutouts.filter((c) => !set.has(c.id)),
+    positiveElements: layer.positiveElements.filter((c) => !set.has(c.id)),
+    drawings: layer.drawings?.filter((d) => !set.has(d.id)),
   };
 }

@@ -32,8 +32,8 @@ import {
   strokeEnd,
   StrokeSound,
 } from '../utils/soundEffects';
-import { renderLayerMarkup, projectShadowOptions } from '../utils/layerSvg';
-import { classifyCarve, pathContains } from '../utils/paperHit';
+import { renderLayerMarkup, projectShadowOptions, BASE_BLOCK } from '../utils/layerSvg';
+import { classifyCarve, pathContains, paperAt } from '../utils/paperHit';
 import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
 import { generateWillowShape, pullString, stabilizerRadius } from '../utils/willowShape';
 import {
@@ -48,7 +48,17 @@ import {
   cornersTransform,
   applyToPoint,
 } from '../utils/pathTransform';
-import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds, transformLayer } from '../utils/projectOps';
+import {
+  findGroupOfLayer,
+  findItemOfLayer,
+  isLayerRendered,
+  flattenLayerIds,
+  transformLayer,
+  transformBlocks,
+  blockColor,
+  blocksOfColor,
+  BlockSelection,
+} from '../utils/projectOps';
 import { Check, X } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
@@ -58,7 +68,7 @@ import { splitSubpaths } from '../utils/layerSvg';
 import { ShortcutHints } from './ShortcutHints';
 import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
 
-export type SelectionScope = 'part' | 'item';
+export type SelectionScope = 'part' | 'item' | 'color';
 
 interface CanvasProps {
   project: PapercutProject;
@@ -80,6 +90,8 @@ interface CanvasProps {
   onSelectLayers: (layerIds: string[], activeLayerId?: string) => void;
   onPickLayer: (layerId: string) => void;
   onTransformLayers: (layerIds: string[], m: Transform) => void;
+  onTransformBlocks: (sel: BlockSelection, m: Transform) => void;
+  onDeleteBlocks: (sel: BlockSelection) => void;
   onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
   onDeleteLayers: (layerIds: string[]) => void;
   onUndo?: () => void;
@@ -181,6 +193,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   onSelectLayers,
   onPickLayer,
   onTransformLayers,
+  onTransformBlocks,
+  onDeleteBlocks,
   onUpdateItem,
   onDeleteLayers,
   onUndo,
@@ -262,6 +276,28 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [dragPoint, setDragPoint] = useState<Point | null>(null);
   const [isSelectDragging, setIsSelectDragging] = useState(false);
   const [selectionBBox, setSelectionBBox] = useState<BBox | null>(null);
+  // Colour-block selection: pieces inside layers rather than whole layers.
+  const colorScope = currentTool === 'select' && selectionScope === 'color';
+  const [blockSel, setBlockSel] = useState<BlockSelection>({});
+  const blockCount = Object.values(blockSel).reduce((n, a) => n + a.length, 0);
+  const blockMode = colorScope && blockCount > 0;
+  const lastBlockClick = useRef<{ t: number; key: string }>({ t: 0, key: '' });
+  useEffect(() => {
+    if (!colorScope) setBlockSel({});
+  }, [colorScope]);
+  useEffect(() => {
+    setBlockSel((prev) => {
+      let changed = false;
+      const next: BlockSelection = {};
+      Object.entries(prev).forEach(([lid, ids]) => {
+        const layer = project.layers[lid];
+        const kept = layer && selectedLayerIds.includes(lid) ? ids.filter((id) => blockColor(layer, id) !== null) : [];
+        if (kept.length !== ids.length) changed = true;
+        if (kept.length) next[lid] = kept;
+      });
+      return changed ? next : prev;
+    });
+  }, [project, selectedLayerIds]);
   const lockAspect = brushSettings.lockAspect ?? true;
   const [activeBBox, setActiveBBox] = useState<BBox | null>(null);
 
@@ -318,7 +354,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     const onKey = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (selectedLayerIds.length === 0) return;
+      if (selectedLayerIds.length === 0 && !blockMode) return;
       const step = e.shiftKey ? 10 : 1;
       const moves: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0],
@@ -328,16 +364,21 @@ export const Canvas: React.FC<CanvasProps> = ({
       };
       if (moves[e.key]) {
         e.preventDefault();
-        onTransformLayers(selectedLayerIds, translate(...moves[e.key]));
+        if (blockMode) onTransformBlocks(blockSel, translate(...moves[e.key]));
+        else if (!colorScope) onTransformLayers(selectedLayerIds, translate(...moves[e.key]));
       } else if (bindingHas(keymapRef.current, 'edit.delete', comboFromKeyEvent(e))) {
         e.preventDefault();
-        onDeleteLayers(selectedLayerIds);
+        if (blockMode) {
+          onDeleteBlocks(blockSel);
+          setBlockSel({});
+        } else if (!colorScope) onDeleteLayers(selectedLayerIds);
+        else return;
         playDiscardSwoosh();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentTool, selectedLayerIds, onTransformLayers, onDeleteLayers]);
+  }, [currentTool, selectedLayerIds, onTransformLayers, onDeleteLayers, blockMode, colorScope, blockSel, onTransformBlocks, onDeleteBlocks]);
 
   // When switching to/from anchor_edit, auto-select latest cutout if none selected
   useEffect(() => {
@@ -390,10 +431,28 @@ export const Canvas: React.FC<CanvasProps> = ({
     return unionBBox(boxes);
   }, []);
 
+  const measureBlocks = useCallback((sel: BlockSelection): BBox | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const boxes: BBox[] = [];
+    Object.entries(sel).forEach(([lid, ids]) =>
+      ids.forEach((id) => {
+        const el = svg.querySelector(`[data-layer-id="${lid}"] [data-element-id="${id}"]`) as SVGGraphicsElement | null;
+        try {
+          const b = el?.getBBox();
+          if (b && (b.width > 0 || b.height > 0)) boxes.push({ x: b.x, y: b.y, width: b.width, height: b.height });
+        } catch {
+          /* not rendered */
+        }
+      })
+    );
+    return unionBBox(boxes);
+  }, []);
+
   useLayoutEffect(() => {
-    setSelectionBBox(measureLayers(selectedLayerIds));
+    setSelectionBBox(colorScope ? (blockCount ? measureBlocks(blockSel) : null) : measureLayers(selectedLayerIds));
     setActiveBBox(activeLayerId ? measureLayers([activeLayerId]) : null);
-  }, [project, selectedLayerIds, activeLayerId, measureLayers]);
+  }, [project, selectedLayerIds, activeLayerId, measureLayers, measureBlocks, colorScope, blockSel, blockCount]);
 
   // Transform client screen coordinates to Canvas coordinate system
   const clientToCanvas = useCallback(
@@ -723,6 +782,43 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
+    if (colorScope) {
+      const lid = layerIdFromTarget(e.target);
+      const layer = lid ? project.layers[lid] : null;
+      let bid = (e.target as Element).closest?.('[data-element-id]')?.getAttribute('data-element-id') ?? null;
+      // Masks don't affect hit testing, so a click inside a hole would otherwise pick the sheet.
+      if (layer && bid === BASE_BLOCK && !paperAt(layer, pt.x, pt.y)) bid = null;
+      if (lid && layer && bid) {
+        const key = `${lid}:${bid}`;
+        const now = performance.now();
+        const double = lastBlockClick.current.key === key && now - lastBlockClick.current.t < 350;
+        lastBlockClick.current = { t: now, key };
+        const has = !!blockSel[lid]?.includes(bid);
+        let next: BlockSelection = blockSel;
+        if (double) {
+          const c = blockColor(layer, bid);
+          next = { [lid]: c ? blocksOfColor(layer, c) : [bid] };
+        } else if (e.shiftKey) {
+          const ids = has ? blockSel[lid].filter((i) => i !== bid) : [...(blockSel[lid] || []), bid];
+          next = { ...blockSel, [lid]: ids };
+          if (!ids.length) delete next[lid];
+        } else if (!has) {
+          next = { [lid]: [bid] };
+        }
+        setBlockSel(next);
+        onSelectLayers(Object.keys(next), lid);
+        if (!e.shiftKey || has) beginSelectDrag({ kind: 'move' }, pt);
+        return;
+      }
+      if (box && pt.x >= box.x && pt.x <= box.x + box.width && pt.y >= box.y && pt.y <= box.y + box.height) {
+        beginSelectDrag({ kind: 'move' }, pt);
+        return;
+      }
+      setBlockSel({});
+      onSelectLayers([]);
+      return;
+    }
+
     const hitId = layerIdFromTarget(e.target);
     if (hitId) {
       const scoped = expandToScope(hitId);
@@ -848,11 +944,17 @@ export const Canvas: React.FC<CanvasProps> = ({
         });
       } else {
         const m = computeTransform(st, pt, e.shiftKey, e.ctrlKey || e.metaKey);
-        const movable = selectedLayerIds.filter((id) => {
+        const canMove = (id: string) => {
           const l = project.layers[id];
           return l && !l.locked && !findGroupOfLayer(project, id)?.locked;
-        });
-        if (movable.length > 0) onTransformLayers(movable, m);
+        };
+        if (colorScope) {
+          const sel = Object.fromEntries(Object.entries(blockSel).filter(([lid]) => canMove(lid)));
+          if (Object.keys(sel).length > 0) onTransformBlocks(sel, m);
+        } else {
+          const movable = selectedLayerIds.filter(canMove);
+          if (movable.length > 0) onTransformLayers(movable, m);
+        }
       }
       setPreview(IDENTITY);
       setDragPoint(null);
@@ -864,7 +966,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem, onSelectLayers, lockAspect]);
+  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onTransformBlocks, onUpdateItem, onSelectLayers, lockAspect, colorScope, blockSel]);
 
   // Mouse / Pointer Down handler
   const handleMouseDown = (e: React.PointerEvent) => {
@@ -1537,9 +1639,15 @@ export const Canvas: React.FC<CanvasProps> = ({
               {renderLayerOrder.map((layer) => (
                 <LayerMarkup
                   key={layer.id}
-                  layer={isWarp(preview) && selectedSet.has(layer.id) ? transformLayer(layer, preview) : layer}
+                  layer={
+                    colorScope && blockSel[layer.id] && preview !== IDENTITY
+                      ? transformBlocks(layer, blockSel[layer.id], preview)
+                      : !colorScope && isWarp(preview) && selectedSet.has(layer.id)
+                      ? transformLayer(layer, preview)
+                      : layer
+                  }
                   shadowOpts={shadowOpts}
-                  transform={selectedSet.has(layer.id) ? previewTransform : undefined}
+                  transform={!colorScope && selectedSet.has(layer.id) ? previewTransform : undefined}
                 />
               ))}
             </g>
