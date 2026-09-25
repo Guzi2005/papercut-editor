@@ -1033,10 +1033,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           }}
         >
           <div
+            ref={(el) => {
+              if (el) el.style.top = `${Math.max(8, Math.min(contextMenu.y, window.innerHeight - el.offsetHeight - 8))}px`;
+            }}
             className="absolute bg-(--ui-raised)/98 border border-(--ui-border-strong) text-(--ui-text) rounded-xl shadow-2xl py-1 w-52 text-xs backdrop-blur-md"
             style={{
               left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 220)),
-              top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 360)),
+              top: contextMenu.y,
             }}
             onClick={(e) => e.stopPropagation()}
           >
