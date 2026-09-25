@@ -105,6 +105,54 @@ function measureLayers(project: PapercutProject, layerIds: string[]): Record<str
   return out;
 }
 
+const BLEND_LABELS: Record<string, string> = { multiply: '正片叠底', screen: '滤色', overlay: '叠加' };
+
+/**
+ * A non-normal blend layer composited over the item parts beneath it, then clipped to the layer's
+ * own silhouette. The resulting PNG looks right when stacked with plain alpha blending in Godot.
+ * The layer's paper shadow is drawn separately underneath since the clip would otherwise remove it.
+ */
+function blendBakedMarkup(
+  project: PapercutProject,
+  layerId: string,
+  belowIds: string[],
+  grain: boolean,
+  shadow: number
+): string {
+  const layer = project.layers[layerId];
+  const solid = { ...layer, opacity: 1, blendMode: 'normal' as const };
+  const clipId = `bk_${layerId}_clip`;
+  const shadowId = `bk_${layerId}_shadowonly`;
+  const parts: string[] = [];
+  parts.push('<defs>');
+  parts.push(
+    `<mask id="${clipId}" mask-type="alpha" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="-20000" y="-20000" width="40000" height="40000">` +
+      renderLayerMarkup(solid, { idPrefix: 'bkm_', grain: false, shadow: 0 }) +
+      `</mask>`
+  );
+  if (shadow > 0) {
+    parts.push(
+      `<filter id="${shadowId}" x="-15%" y="-15%" width="130%" height="135%">` +
+        `<feGaussianBlur in="SourceAlpha" stdDeviation="${(1.4 + shadow * 1.8).toFixed(2)}" result="blur"/>` +
+        `<feOffset in="blur" dx="1.2" dy="2.4" result="off"/>` +
+        `<feFlood flood-color="#1B1626" flood-opacity="${(shadow * 0.42).toFixed(3)}"/>` +
+        `<feComposite in2="off" operator="in"/>` +
+        `</filter>`
+    );
+  }
+  parts.push('</defs>');
+  if (shadow > 0) {
+    parts.push(`<g filter="url(#${shadowId})">${renderLayerMarkup(solid, { idPrefix: 'bks_', grain: false, shadow: 0 })}</g>`);
+  }
+  parts.push(`<g mask="url(#${clipId})"><g style="isolation:isolate">`);
+  belowIds.forEach((bid, i) => {
+    parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, shadow }));
+  });
+  parts.push(renderLayerMarkup(layer, { idPrefix: 'gx_', grain, shadow: 0 }));
+  parts.push('</g></g>');
+  return parts.join('');
+}
+
 async function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encode failed'))), 'image/png')
@@ -177,14 +225,23 @@ export async function buildGodotExport(
         warnings.push(`「${layer.name}」没有可见形状，已跳过`);
         continue;
       }
-      if (layer.blendMode && layer.blendMode !== 'normal') {
-        warnings.push(`「${layer.name}」使用了 ${layer.blendMode} 混合模式，PNG 中按普通模式烘焙`);
+      const blended = !!layer.blendMode && layer.blendMode !== 'normal';
+      const below = item.partIds.slice(0, idx).filter((bid) => bounds[bid]);
+      if (blended) {
+        warnings.push(
+          below.length > 0
+            ? `「${layer.name}」的${BLEND_LABELS[layer.blendMode] || layer.blendMode}已与同物件下方 ${below.length} 个部件合成烘焙；在 Godot 里单独移动这些下方部件时，叠色不会跟着变`
+            : `「${layer.name}」使用${BLEND_LABELS[layer.blendMode] || layer.blendMode}，但同物件里没有位于它下方的部件，按普通模式烘焙`
+        );
       }
       const x = Math.floor(b.x - pad);
       const y = Math.floor(b.y - pad);
       const w = Math.ceil(b.width + pad * 2);
       const h = Math.ceil(b.height + pad * 2);
-      const markup = renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, shadow });
+      const markup =
+        blended && below.length > 0
+          ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
+          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, shadow });
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w * s}" height="${h * s}">${markup}</svg>`;
       const canvas = await rasterizeSvg(svg, w * s, h * s);
       const png = await canvasToPng(canvas);
@@ -220,6 +277,8 @@ export async function buildGodotExport(
         offset: { x: px, y: py },
         size: { w, h },
         textureScale: s,
+        blendMode: layer.blendMode || 'normal',
+        blendBakedOver: blended ? below : [],
       });
     }
 

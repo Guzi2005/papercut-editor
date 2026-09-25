@@ -839,6 +839,20 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         display={`${Math.round(activeLayer.opacity * 100)}%`}
         onChange={(v) => onUpdateLayer(activeLayer.id, { opacity: v })}
       />
+      <div className="flex items-center gap-2 text-[10px] text-[#8E9FCA]">
+        <span className="w-12 shrink-0">混合</span>
+        <select
+          value={activeLayer.blendMode || 'normal'}
+          onChange={(e) => onUpdateLayer(activeLayer.id, { blendMode: e.target.value as Layer['blendMode'] })}
+          className="flex-1 bg-[#0F131D] border border-[#2B364D] rounded-md px-1.5 py-0.5 text-[#FBFBFC] outline-none"
+          title="正片叠底/滤色/叠加导出到 Godot 时会与同物件下方部件合成烘焙"
+        >
+          <option value="normal">正常</option>
+          <option value="multiply">正片叠底</option>
+          <option value="screen">滤色</option>
+          <option value="overlay">叠加</option>
+        </select>
+      </div>
       <Slider
         label="颗粒"
         value={activeLayer.grain ?? 0}
