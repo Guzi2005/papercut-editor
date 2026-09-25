@@ -12,7 +12,7 @@ export interface LayerRenderOptions {
   shadow?: number;
   /** Whether to apply the layer's gouache grain filter. */
   grain?: boolean;
-  /** Emit data-layer-id for canvas hit testing. */
+  /** Omit the element id (the canvas wraps each layer in its own hit-test group). */
   interactive?: boolean;
 }
 
@@ -126,7 +126,7 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   });
 
   const attrs = [
-    opts.interactive ? `data-layer-id="${layer.id}"` : `id="${layer.id}"`,
+    opts.interactive ? '' : `id="${layer.id}"`,
     `data-name="${escapeAttr(layer.name)}"`,
     `opacity="${layer.opacity}"`,
     layer.blendMode && layer.blendMode !== 'normal' ? `style="mix-blend-mode:${layer.blendMode}"` : '',
