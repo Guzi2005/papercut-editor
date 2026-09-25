@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Gamepad2, Box, AlertTriangle, Download } from 'lucide-react';
 import { PapercutProject } from '../types/papercut';
 import {
@@ -12,6 +12,7 @@ import {
   GodotExportOptions,
   GodotExportResult,
   asciiSlug,
+  loadPinyin,
 } from '../utils/godotExport';
 import { computeDepthTable, findItemOfLayer } from '../utils/projectOps';
 import { downloadFile } from '../utils/svgExporter';
@@ -35,6 +36,11 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
   const [progress, setProgress] = useState<[number, number]>([0, 0]);
   const [result, setResult] = useState<GodotExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [, setPinyinReady] = useState(false);
+
+  useEffect(() => {
+    loadPinyin().then(() => setPinyinReady(true));
+  }, []);
 
   const items = project.items || [];
   const looseCount = Object.keys(project.layers).filter((id) => !findItemOfLayer(project, id)).length;

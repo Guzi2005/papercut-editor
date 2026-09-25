@@ -39,8 +39,21 @@ export const DEFAULT_GODOT_OPTIONS: GodotExportOptions = {
 
 const LOOSE_ITEM_ID = 'item_scene_misc';
 
+let toPinyin: ((text: string) => string[]) | null = null;
+
+/** Loads the pinyin dictionary on demand so it stays out of the editor's startup bundle. */
+export async function loadPinyin(): Promise<void> {
+  if (toPinyin) return;
+  const { pinyin } = await import('pinyin-pro');
+  toPinyin = (text) => pinyin(text, { toneType: 'none', type: 'array', v: true });
+}
+
+/** ASCII file-system name; Chinese runs become toneless pinyin words (织游角色 → zhiyoujuese). */
 export function asciiSlug(s: string, fallback: string): string {
-  const slug = s
+  const romanized = toPinyin
+    ? s.replace(/[\u3400-\u9fff\uf900-\ufaff]+/g, (run) => ` ${toPinyin!(run).join('')} `)
+    : s;
+  const slug = romanized
     .normalize('NFKD')
     .replace(/[^\w\s-]/g, '')
     .trim()
@@ -104,6 +117,7 @@ export async function buildGodotExport(
   options: GodotExportOptions,
   onProgress?: (done: number, total: number) => void
 ): Promise<GodotExportResult> {
+  await loadPinyin();
   const warnings: string[] = [];
   const slug = asciiSlug(project.name, asciiSlug(project.id, 'papercut'));
   const resRoot = options.resRoot.replace(/\/+$/, '');
