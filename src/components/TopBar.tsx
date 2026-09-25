@@ -140,6 +140,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [settingsFlyout, setSettingsFlyout] = useState<'skin' | 'mode' | null>(null);
+  const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | null>(null);
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
 
   // New Doc Dialog fields
@@ -232,6 +233,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={() => {
               setShowFileMenu(!showFileMenu);
               setShowCanvasSubmenu(false);
+              setFileFlyout(null);
               setShowSettingsMenu(false);
             }}
             data-tip="文件"
@@ -244,193 +246,124 @@ export const TopBar: React.FC<TopBarProps> = ({
             <FolderOpen className="w-4 h-4" />
           </button>
 
-          {/* File Dropdown */}
           {showFileMenu && (
-            <div className="absolute left-0 top-full mt-1 w-56 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
-              <button
-                onClick={() => {
-                  setShowFileMenu(false);
-                  setShowCanvasSubmenu(false);
-                  setShowNewDocDialog(true);
-                }}
-                className="w-full px-3 py-2 text-left hover:bg-(--ui-hover) text-(--ui-strong) flex items-center gap-2 transition-colors"
-              >
-                <FilePlus className="w-3.5 h-3.5 text-(--ui-accent)" />
-                <div className="flex-1 flex items-center justify-between">
-                  <span className="font-medium">新建画布…</span>
-                  <span className="text-[10px] text-(--ui-muted)">Alt+N</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowFileMenu(false);
-                  onOpenProjectFile();
-                }}
-                className="w-full px-3 py-2 text-left hover:bg-(--ui-hover) text-(--ui-strong) flex items-center gap-2 transition-colors"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-(--ui-muted)" />
-                <div className="flex-1 flex items-center justify-between">
-                  <span>打开项目…</span>
-                  <span className="text-[10px] text-(--ui-muted)">Ctrl+O</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowFileMenu(false);
-                  onSaveProjectFile();
-                }}
-                className="w-full px-3 py-2 text-left hover:bg-(--ui-hover) text-(--ui-strong) flex items-center gap-2 transition-colors"
-              >
-                <Save className="w-3.5 h-3.5 text-(--ui-muted)" />
-                <div className="flex-1 flex items-center justify-between">
-                  <span>保存项目</span>
-                  <span className="text-[10px] text-(--ui-muted)">Ctrl+S</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowFileMenu(false);
-                  onOpenGodotExport();
-                }}
-                className="w-full px-3 py-2 text-left hover:bg-(--ui-hover) text-(--ui-strong) flex items-center gap-2 transition-colors"
-              >
-                <Gamepad2 className="w-3.5 h-3.5 text-[#438B6E]" />
-                <span>导出到 Godot…</span>
-              </button>
-
-              <div className="border-t border-(--ui-divider) my-1" />
-              <div className="px-3 py-1 text-[10px] font-semibold text-(--ui-muted)">
-                预设
-              </div>
-
-              {PRESET_PROJECTS.map((preset) => (
+            <div className="absolute left-0 top-full mt-1 w-44 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
+              {(
+                [
+                  { label: '新建', key: 'Alt+N', icon: <FilePlus className="w-3.5 h-3.5 text-(--ui-accent)" />, run: () => setShowNewDocDialog(true) },
+                  { label: '打开', key: 'Ctrl+O', icon: <FolderOpen className="w-3.5 h-3.5 text-(--ui-muted)" />, run: onOpenProjectFile },
+                  { label: '保存', key: 'Ctrl+S', icon: <Save className="w-3.5 h-3.5 text-(--ui-muted)" />, run: onSaveProjectFile },
+                  { label: '导出到 Godot', key: '…', icon: <Gamepad2 className="w-3.5 h-3.5 text-[#438B6E]" />, run: onOpenGodotExport },
+                ] as const
+              ).map((item) => (
                 <button
-                  key={preset.id}
+                  key={item.label}
+                  onPointerEnter={() => setShowCanvasSubmenu(false)}
                   onClick={() => {
-                    onOpenPreset(preset.id);
                     setShowFileMenu(false);
-                    setShowCanvasSubmenu(false);
+                    setFileFlyout(null);
+                    item.run();
                   }}
-                  className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) text-(--ui-text-2) hover:text-(--ui-strong) flex items-center gap-2 transition-colors text-[11px]"
+                  className="w-full px-3 py-2 flex items-center gap-2 text-left text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
                 >
-                  <Sparkles className="w-3 h-3 text-(--ui-accent-2)" />
-                  <span className="truncate">{preset.name}</span>
+                  {item.icon}
+                  <span className="flex-1">{item.label}</span>
+                  <span className="text-[10px] text-(--ui-faint) font-mono">{item.key}</span>
                 </button>
               ))}
-
-              <div className="border-t border-(--ui-divider) my-1" />
-
-              {/* “画布大小与设置”点击后展开二级菜单，而不是跳转到“设置”tab！ */}
-              <div className="relative">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowCanvasSubmenu(!showCanvasSubmenu);
-                  }}
-                  className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors ${
-                    showCanvasSubmenu
-                      ? 'bg-(--ui-hover) text-(--ui-strong)'
-                      : 'hover:bg-(--ui-hover) text-(--ui-text-2) hover:text-(--ui-strong)'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Sliders className="w-3.5 h-3.5 text-(--ui-muted)" />
-                    <span>画布尺寸</span>
-                  </div>
-                  <ChevronRight
-                    className={`w-3.5 h-3.5 text-(--ui-muted) transition-transform ${
-                      showCanvasSubmenu ? 'rotate-90 sm:rotate-0' : ''
+              <div className="h-px bg-(--ui-divider) my-1" />
+              {(
+                [
+                  { id: 'preset', label: '预设', icon: <Sparkles className="w-3.5 h-3.5 text-(--ui-accent-2)" /> },
+                  { id: 'size', label: '画布尺寸', icon: <Sliders className="w-3.5 h-3.5 text-(--ui-muted)" /> },
+                ] as const
+              ).map((entry) => (
+                <div key={entry.id} className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setFileFlyout(entry.id)}>
+                  <button
+                    onClick={() => setFileFlyout((v) => (v === entry.id ? null : entry.id))}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                      fileFlyout === entry.id ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-text-2) hover:bg-(--ui-hover)'
                     }`}
-                  />
-                </button>
-
-                {/* 二级菜单 (Flyout Submenu for Canvas Dimensions) */}
-                {showCanvasSubmenu && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="sm:absolute sm:left-full sm:top-0 sm:ml-1 mt-1 sm:mt-0 w-68 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-3 z-50 text-xs backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
                   >
-                    <div className="flex items-center justify-between pb-2 border-b border-(--ui-divider) font-semibold text-(--ui-strong)">
-                      <div className="flex items-center gap-1.5">
-                        <Sliders className="w-3.5 h-3.5 text-(--ui-accent)" />
-                        <span>画板尺寸</span>
-                      </div>
-                      <span className="text-[10px] text-(--ui-muted) font-mono">
-                        {currentWidth} × {currentHeight}
-                      </span>
+                    {entry.icon}
+                    <span className="flex-1">{entry.label}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted)" />
+                  </button>
+                  {fileFlyout === entry.id && entry.id === 'preset' && (
+                    <div className="absolute left-full top-0 ml-1 w-52 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1">
+                      {PRESET_PROJECTS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          onClick={() => {
+                            onOpenPreset(preset.id);
+                            setShowFileMenu(false);
+                            setFileFlyout(null);
+                          }}
+                          data-tip={preset.desc}
+                          className="w-full px-3 py-2 text-left text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong) truncate"
+                        >
+                          {preset.name}
+                        </button>
+                      ))}
                     </div>
-
-                    {/* Width & Height inputs */}
-                    <div className="grid grid-cols-2 gap-2 py-2">
-                      <div>
-                        <label className="text-[10px] text-(--ui-muted) block mb-1">
-                          宽
-                        </label>
-                        <input
-                          type="number"
-                          min={200}
-                          max={4000}
-                          step={50}
-                          value={customWidth}
-                          onChange={(e) => setCustomWidth(Number(e.target.value))}
-                          className="w-full bg-(--ui-input) border border-(--ui-border) rounded-lg px-2 py-1 text-(--ui-strong) text-xs outline-none focus:border-(--ui-accent)"
-                        />
+                  )}
+                  {fileFlyout === entry.id && entry.id === 'size' && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute left-full top-0 ml-1 w-56 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2.5 space-y-2"
+                    >
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['宽', '高'] as const).map((label, i) => (
+                          <label key={label} className="flex items-center gap-1.5 h-7 px-2 rounded-lg bg-(--ui-input) border border-(--ui-border)">
+                            <span className="text-[10px] text-(--ui-muted)">{label}</span>
+                            <input
+                              type="number"
+                              min={200}
+                              max={4000}
+                              step={50}
+                              value={i === 0 ? customWidth : customHeight}
+                              onChange={(e) => (i === 0 ? setCustomWidth : setCustomHeight)(Number(e.target.value))}
+                              className="w-full bg-transparent text-(--ui-strong) text-xs font-mono outline-none"
+                            />
+                          </label>
+                        ))}
                       </div>
-                      <div>
-                        <label className="text-[10px] text-(--ui-muted) block mb-1">
-                          高
-                        </label>
-                        <input
-                          type="number"
-                          min={200}
-                          max={4000}
-                          step={50}
-                          value={customHeight}
-                          onChange={(e) => setCustomHeight(Number(e.target.value))}
-                          className="w-full bg-(--ui-input) border border-(--ui-border) rounded-lg px-2 py-1 text-(--ui-strong) text-xs outline-none focus:border-(--ui-accent)"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Quick Presets */}
-                    <div className="space-y-1 pt-1 border-t border-(--ui-divider)">
                       <div className="grid grid-cols-2 gap-1.5">
                         {[
-                          { label: '800 × 800', w: 800, h: 800 },
-                          { label: '1000 × 800', w: 1000, h: 800 },
-                          { label: '750 × 1000', w: 750, h: 1000 },
-                          { label: '1920 × 1080', w: 1920, h: 1080 },
-                        ].map((p) => (
+                          [800, 800],
+                          [1000, 800],
+                          [750, 1000],
+                          [1920, 1080],
+                        ].map(([w, h]) => (
                           <button
-                            key={p.label}
+                            key={`${w}x${h}`}
                             onClick={() => {
-                              setCustomWidth(p.w);
-                              setCustomHeight(p.h);
-                              onUpdateCanvasSize(p.w, p.h);
-                              setShowCanvasSubmenu(false);
-                              setShowFileMenu(false);
+                              setCustomWidth(w);
+                              setCustomHeight(h);
                             }}
-                            className="px-2 py-1 rounded bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-text-2) hover:text-(--ui-strong) text-[10px] text-left transition-colors border border-(--ui-border)"
+                            className={`h-7 rounded-lg text-[10px] font-mono border transition-colors ${
+                              customWidth === w && customHeight === h
+                                ? 'border-(--ui-accent) text-(--ui-strong)'
+                                : 'border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)'
+                            }`}
                           >
-                            {p.label}
+                            {w} × {h}
                           </button>
                         ))}
                       </div>
+                      <button
+                        onClick={() => {
+                          handleApplyCanvasSize();
+                          setFileFlyout(null);
+                        }}
+                        className="w-full h-7 bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white rounded-lg text-xs"
+                      >
+                        应用
+                      </button>
                     </div>
-
-                    {/* Apply button */}
-                    <button
-                      onClick={handleApplyCanvasSize}
-                      className="w-full mt-2.5 py-1.5 bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white rounded-lg font-medium text-xs shadow-md transition-colors"
-                    >
-                      应用
-                    </button>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
