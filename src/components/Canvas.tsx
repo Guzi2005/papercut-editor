@@ -159,6 +159,15 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [currentPoint, setCurrentPoint] = useState<Point | null>(null);
   const [strokePoints, setStrokePoints] = useState<Point[]>([]);
 
+  // Pointer samples accumulate in refs and are flushed to state once per animation frame,
+  // so high-rate pen input never queues more renders than the display can show.
+  const strokeRef = useRef<Point[]>([]);
+  const curRef = useRef<Point | null>(null);
+  const panTargetRef = useRef<Point | null>(null);
+  const rafRef = useRef(0);
+  const rectRef = useRef<DOMRect | null>(null);
+  const brushRef = useRef<SVGGElement>(null);
+
   // Polyline shape drawing state (单击新增锚点，双击终止)
   const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
@@ -302,7 +311,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const clientToCanvas = useCallback(
     (clientX: number, clientY: number): Point => {
       if (!svgRef.current) return { x: 0, y: 0 };
-      const rect = svgRef.current.getBoundingClientRect();
+      const rect = rectRef.current || svgRef.current.getBoundingClientRect();
       const scaleX = project.width / rect.width;
       const scaleY = project.height / rect.height;
 
@@ -313,6 +322,57 @@ export const Canvas: React.FC<CanvasProps> = ({
     },
     [project.width, project.height]
   );
+
+  useEffect(() => {
+    rectRef.current = null;
+  }, [pan, zoom]);
+
+  // The cached rect lives for one gesture; drop it once every pointerup handler has run.
+  useEffect(() => {
+    const clear = () => setTimeout(() => (rectRef.current = null), 0);
+    window.addEventListener('pointerup', clear, true);
+    window.addEventListener('resize', clear);
+    return () => {
+      window.removeEventListener('pointerup', clear, true);
+      window.removeEventListener('resize', clear);
+    };
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      if (panTargetRef.current) {
+        setPan(panTargetRef.current);
+        panTargetRef.current = null;
+      }
+      if (curRef.current) {
+        setStrokePoints(strokeRef.current.slice());
+        setCurrentPoint(curRef.current);
+      }
+    });
+  }, []);
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  const brushRadius =
+    currentTool === 'pen_knife' || currentTool === 'freehand'
+      ? (brushSettings.stampSize || 26) / 2
+      : currentTool === 'hand_draw'
+      ? (brushSettings.drawSize || 6) / 2
+      : 0;
+
+  const moveBrush = (clientX: number, clientY: number, visible: boolean) => {
+    const g = brushRef.current;
+    if (!g) return;
+    if (!visible || brushRadius === 0) {
+      g.setAttribute('visibility', 'hidden');
+      return;
+    }
+    const pt = clientToCanvas(clientX, clientY);
+    g.setAttribute('transform', `translate(${pt.x} ${pt.y})`);
+    g.setAttribute('visibility', 'visible');
+  };
 
   // Wheel zoom around cursor
   const handleWheel = (e: React.WheelEvent) => {
@@ -537,6 +597,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
 
     if (e.button !== 0) return;
+    rectRef.current = svgRef.current?.getBoundingClientRect() || null;
     const pt = clientToCanvas(e.clientX, e.clientY);
     pt.pressure = getEventPressure(e);
 
@@ -631,6 +692,8 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
 
     // 3. Normal drawing (Willow Leaf, Geom Shapes, Pen Knife, Hand Draw)
+    strokeRef.current = [pt];
+    curRef.current = pt;
     setIsDrawing(true);
     setStartPoint(pt);
     setCurrentPoint(pt);
@@ -643,13 +706,12 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     const handleWindowMouseMove = (e: PointerEvent) => {
       if (isPanning) {
-        setPan({
-          x: e.clientX - panStart.x,
-          y: e.clientY - panStart.y,
-        });
+        panTargetRef.current = { x: e.clientX - panStart.x, y: e.clientY - panStart.y };
+        scheduleFlush();
         return;
       }
 
+      moveBrush(e.clientX, e.clientY, true);
       const pt = clientToCanvas(e.clientX, e.clientY);
       pt.pressure = getEventPressure(e);
 
@@ -669,23 +731,35 @@ export const Canvas: React.FC<CanvasProps> = ({
       }
 
       if (!isDrawing) return;
-      setCurrentPoint(pt);
-
-      if (
+      const collectsStroke =
         currentTool === 'willow_leaf' ||
         currentTool === 'pen_knife' ||
         currentTool === 'freehand' ||
-        currentTool === 'hand_draw'
-      ) {
-        setStrokePoints((prev) => [...prev, pt]);
+        currentTool === 'hand_draw';
+      const samples = e.getCoalescedEvents?.() || [];
+      if (collectsStroke) {
+        (samples.length > 0 ? samples : [e]).forEach((ev) => {
+          const sp = clientToCanvas(ev.clientX, ev.clientY);
+          sp.pressure = getEventPressure(ev);
+          strokeRef.current.push(sp);
+        });
       }
+      curRef.current = pt;
+      scheduleFlush();
     };
 
     const handleWindowMouseUp = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
       if (isPanning) {
+        if (panTargetRef.current) setPan(panTargetRef.current);
+        panTargetRef.current = null;
         setIsPanning(false);
         return;
       }
+      const strokePoints = strokeRef.current;
+      const currentPoint = curRef.current;
+      curRef.current = null;
 
       if (currentTool === 'anchor_edit' || isDraggingAnchor || activeAnchorIndex !== null) {
         document.body.style.cursor = '';
@@ -1016,6 +1090,10 @@ export const Canvas: React.FC<CanvasProps> = ({
     <div
       ref={containerRef}
       onPointerDown={handleMouseDown}
+      onPointerMove={(e) => {
+        if (!isDrawing) moveBrush(e.clientX, e.clientY, !isSpacePressed && !isPanning);
+      }}
+      onPointerLeave={() => !isDrawing && moveBrush(0, 0, false)}
       onWheel={handleWheel}
       style={{ touchAction: 'none' }}
       className={`flex-1 relative overflow-hidden select-none bg-[#111520] ${cursorClass}`}
@@ -1034,8 +1112,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
         style={{
-          transform: `translate(${pan.x}px, ${pan.y}px)`,
-          transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+          transform: `translate3d(${pan.x}px, ${pan.y}px, 0)`,
         }}
       >
         <div
@@ -1075,6 +1152,14 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {ref && ref.onTop && referenceNode}
 
+          </svg>
+
+          {/* Interaction overlay: redrawn every pointer move without repainting the filtered paper layers */}
+          <svg
+            viewBox={`0 0 ${project.width} ${project.height}`}
+            className="absolute inset-0 w-full h-full overflow-visible"
+            style={{ pointerEvents: 'none', willChange: 'transform' }}
+          >
             {/* Direct clickable hit area for cutouts when in anchor_edit mode */}
             {activeLayer && currentTool === 'anchor_edit' && isLayerRendered(project, activeLayer.id) && (
               <g>
@@ -1204,6 +1289,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     />
                     <circle
                       data-handle="rotate"
+                      pointerEvents="all"
                       cx={liveBox.x + liveBox.width / 2}
                       cy={liveBox.y - 26 * hs}
                       r={6 * hs}
@@ -1216,6 +1302,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       <rect
                         key={corner}
                         data-handle={`scale-${corner}`}
+                        pointerEvents="all"
                         x={(corner.includes('w') ? liveBox.x : liveBox.x + liveBox.width) - 5 * hs}
                         y={(corner.includes('n') ? liveBox.y : liveBox.y + liveBox.height) - 5 * hs}
                         width={10 * hs}
@@ -1242,7 +1329,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       ? dragPoint
                       : applyToPoint(previewMatrix, s);
                   return (
-                    <g key={s.id} data-handle={`socket:${s.id}`} className="cursor-move">
+                    <g key={s.id} data-handle={`socket:${s.id}`} pointerEvents="all" className="cursor-move">
                       <path
                         d={`M ${pos.x} ${pos.y - 7 * hs} L ${pos.x + 7 * hs} ${pos.y} L ${pos.x} ${pos.y + 7 * hs} L ${pos.x - 7 * hs} ${pos.y} Z`}
                         fill="#EB8E88"
@@ -1262,7 +1349,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </g>
                   );
                 })}
-                <g data-handle="pivot" className="cursor-move">
+                <g data-handle="pivot" pointerEvents="all" className="cursor-move">
                   <circle cx={itemPivot.x} cy={itemPivot.y} r={9 * hs} fill="#FBFBFC" fillOpacity={0.85} stroke="#D23838" strokeWidth={2 * hs} />
                   <path
                     d={`M ${itemPivot.x - 13 * hs} ${itemPivot.y} H ${itemPivot.x + 13 * hs} M ${itemPivot.x} ${itemPivot.y - 13 * hs} V ${itemPivot.y + 13 * hs}`}
@@ -1281,6 +1368,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                   return (
                     <g
                       key={`anchor_${idx}`}
+                      pointerEvents="all"
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -1306,6 +1394,11 @@ export const Canvas: React.FC<CanvasProps> = ({
                 })}
               </g>
             )}
+            {/* Brush size ring following the pointer */}
+            <g ref={brushRef} visibility="hidden" pointerEvents="none">
+              <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#FBFBFC" strokeWidth={2.5 / zoom} opacity={0.9} />
+              <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#1B2352" strokeWidth={1 / zoom} />
+            </g>
           </svg>
         </div>
       </div>
