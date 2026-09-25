@@ -15,7 +15,7 @@ import {
   LayerDrawStroke,
   ReferenceImage,
 } from './types/papercut';
-import { PRESET_PROJECTS, FOLK_PALETTE } from './utils/presetTemplates';
+import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas } from './utils/presetTemplates';
 import { createBaseShapePath } from './utils/bezierMath';
 import { generateSvgMarkup, downloadFile, exportToPng } from './utils/svgExporter';
 import { Matrix, applyToPoint } from './utils/pathTransform';
@@ -71,10 +71,10 @@ function makeDocument(id: string, name: string, project: PapercutProject, zoom =
 function initialDocuments(): DocumentItem[] {
   const find = (id: string) => PRESET_PROJECTS.find((p) => p.id === id)!;
   const chars = find('weave_characters');
-  const workshop = find('folk_workshop');
+  const polish = find('polish_angel');
   return [
     makeDocument('doc_characters', chars.name, chars.factory(), 0.85),
-    makeDocument('doc_workshop', workshop.name, workshop.factory(), 0.85),
+    makeDocument('doc_polish', polish.name, polish.factory(), 0.85),
   ];
 }
 
@@ -274,7 +274,7 @@ export default function App() {
 
   const handleNewDocument = (name?: string, width = 800, height = 800) => {
     const docName = name || `新建剪纸 ${documents.length + 1}`;
-    const blankProj = PRESET_PROJECTS.find((p) => p.id === 'blank')!.factory();
+    const blankProj = createBlankCanvas();
     blankProj.name = docName;
     blankProj.width = width;
     blankProj.height = height;

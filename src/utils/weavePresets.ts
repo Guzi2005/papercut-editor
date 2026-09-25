@@ -300,3 +300,280 @@ export function createWeaveCharactersPreset(): PapercutProject {
     shadowStrength: 0.45,
   };
 }
+
+// ---------- 波兰剪纸 · 夜骑白马的天使 ----------
+
+type P = { x: number; y: number };
+const pt = (x: number, y: number): P => ({ x, y });
+const fmt = (n: number) => String(Math.round(n * 10) / 10);
+const poly = (pts: P[]) => `M ${pts.map((p) => `${fmt(p.x)} ${fmt(p.y)}`).join(' L ')} Z`;
+
+/** A straight paper strip of width w from a to b (reins, straps, stripes). */
+function strip(a: P, b: P, w: number, w2 = w): string {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  return poly([
+    pt(a.x + (nx * w) / 2, a.y + (ny * w) / 2),
+    pt(b.x + (nx * w2) / 2, b.y + (ny * w2) / 2),
+    pt(b.x - (nx * w2) / 2, b.y - (ny * w2) / 2),
+    pt(a.x - (nx * w) / 2, a.y - (ny * w) / 2),
+  ]);
+}
+
+/** Strip along a→b whose far edge is cut into saw teeth, like a scissor-fringed mane. */
+function sawStrip(a: P, b: P, width: number, teeth: number): string {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  const pts: P[] = [a, b];
+  for (let i = teeth * 2; i >= 0; i--) {
+    const t = i / (teeth * 2);
+    const w = i % 2 === 0 ? width * 0.45 : width;
+    pts.push(pt(a.x + (b.x - a.x) * t + nx * w, a.y + (b.y - a.y) * t + ny * w));
+  }
+  return poly(pts);
+}
+
+/** Closed feather: smooth top curve, scalloped lower edge. */
+function wing(root: P, tip: P, rootLow: P, ctrl1: P, ctrl2: P, lobes: number, depth: number): string {
+  let d = `M ${fmt(root.x)} ${fmt(root.y)} C ${fmt(ctrl1.x)} ${fmt(ctrl1.y)} ${fmt(ctrl2.x)} ${fmt(ctrl2.y)} ${fmt(tip.x)} ${fmt(tip.y)}`;
+  const len = Math.hypot(rootLow.x - tip.x, rootLow.y - tip.y) || 1;
+  const nx = -(rootLow.y - tip.y) / len;
+  const ny = (rootLow.x - tip.x) / len;
+  for (let i = 1; i <= lobes; i++) {
+    const t0 = (i - 1) / lobes;
+    const t1 = i / lobes;
+    const tm = (t0 + t1) / 2;
+    const cx = tip.x + (rootLow.x - tip.x) * tm + nx * depth;
+    const cy = tip.y + (rootLow.y - tip.y) * tm + ny * depth;
+    d += ` Q ${fmt(cx)} ${fmt(cy)} ${fmt(tip.x + (rootLow.x - tip.x) * t1)} ${fmt(tip.y + (rootLow.y - tip.y) * t1)}`;
+  }
+  return `${d} Z`;
+}
+
+function sawCircle(cx: number, cy: number, ro: number, ri: number, n: number): string {
+  const pts: P[] = [];
+  for (let i = 0; i < n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2;
+    const r = i % 2 === 0 ? ro : ri;
+    pts.push(pt(cx + Math.cos(a) * r, cy + Math.sin(a) * r));
+  }
+  return poly(pts);
+}
+
+/** Horizontal wave band: sine top edge, sine bottom edge. */
+function waveBand(x0: number, x1: number, y: number, thick: number, amp: number, period: number, phase: number): string {
+  const top: P[] = [];
+  const bottom: P[] = [];
+  for (let x = x0; x <= x1 + 0.1; x += 10) {
+    top.push(pt(x, y + Math.sin((x / period) * Math.PI * 2 + phase) * amp));
+    bottom.push(pt(x, y + thick + Math.sin((x / period) * Math.PI * 2 + phase + 1.3) * amp * 0.7));
+  }
+  return poly([...top, ...bottom.reverse()]);
+}
+
+function confetti(count: number, w: number, h: number, seed: number) {
+  let s = seed;
+  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const golds = ['#D6B45C', '#C9A348', '#B98A4E'];
+  const silvers = ['#DADCE0', '#C5C9CF'];
+  const out: CutoutPath[] = [];
+  for (let i = 0; i < count; i++) {
+    const x = 30 + rnd() * (w - 60);
+    const y = 30 + rnd() * (h - 130);
+    const r = 5 + rnd() * 3.5;
+    const color = rnd() < 0.6 ? golds[Math.floor(rnd() * golds.length)] : silvers[Math.floor(rnd() * silvers.length)];
+    out.push(piece(`星点 ${i + 1}`, ellipse(Math.round(x), Math.round(y), r, r * (0.85 + rnd() * 0.25)), color));
+  }
+  return out;
+}
+
+export function createPolishAngelPreset(): PapercutProject {
+  seq = 1000;
+  const W = 1000;
+  const H = 720;
+  const layers: Record<string, Layer> = {};
+  const add = (l: Layer) => (layers[l.id] = l);
+  const P = {
+    night: '#141B2E',
+    horse: '#F3F1EC',
+    kraft: '#B9A58C',
+    red: '#D93A34',
+    orange: '#E4572E',
+    gold: '#C9A348',
+    silver: '#CDD1D6',
+    newsBlue: '#5A93D6',
+    maroon: '#5B2340',
+    skin: '#F3C9B5',
+  };
+
+  add(paper('pl_board', '夜空底板', P.night, rect(0, 0, W, H), { grain: 0.35 }));
+
+  add(
+    paper(
+      'pl_tail',
+      '马尾',
+      P.kraft,
+      'M 312 306 C 262 318 226 360 212 430 C 206 462 200 492 196 516 L 214 506 L 216 522 L 232 508 L 238 522 L 250 500 L 258 512 C 262 440 280 372 322 338 Z',
+      { grain: 0.7 }
+    )
+  );
+
+  add(
+    paper(
+      'pl_horse',
+      '白马',
+      P.horse,
+      'M 305 312 C 380 296 520 300 600 280 L 690 196 L 704 150 L 718 190 L 732 150 L 742 196 C 770 230 792 270 800 300 Q 802 318 784 322 L 748 322 C 730 322 718 300 704 282 L 650 360 C 640 400 640 440 632 470 L 640 668 L 620 668 L 606 490 L 592 490 L 584 668 L 564 668 L 570 478 C 520 492 440 492 400 482 L 404 668 L 384 668 L 372 494 L 356 490 L 318 660 L 298 660 L 322 452 C 300 420 294 360 305 312 Z',
+      {
+        grain: 0.3,
+        appliques: [piece('马眼', circle(752, 220, 4.5), P.night), piece('鼻孔', ellipse(788, 306, 3, 2.2), '#8C7F76')],
+      }
+    )
+  );
+  add(paper('pl_mane', '马鬃', P.kraft, sawStrip(pt(600, 284), pt(700, 192), 30, 7), { grain: 0.7 }));
+
+  add(
+    paper(
+      'pl_wing_silver',
+      '银箔翅膀',
+      P.silver,
+      wing(pt(412, 200), pt(240, 102), pt(416, 222), pt(390, 130), pt(320, 96), 5, 14),
+      { grain: 1 }
+    )
+  );
+  add(
+    paper(
+      'pl_wing_gold',
+      '金箔翅膀',
+      P.gold,
+      wing(pt(424, 214), pt(194, 176), pt(426, 266), pt(380, 168), pt(290, 150), 8, 16),
+      { grain: 1 }
+    )
+  );
+  add(
+    paper('pl_halo', '锯齿光环', '#D6B45C', sawCircle(452, 130, 76, 68, 36), {
+      grain: 0.8,
+      holes: [piece('光环内圈', circle(452, 130, 58), P.night, true)],
+    })
+  );
+
+  const stripeColors = ['#2E6BD6', '#F2B63A', '#3E9E5A', '#3AB5B5', '#2E58D6', '#E77FA8', '#3E9E5A', '#F2B63A', '#3AB5B5'];
+  const stripes = stripeColors.map((c, i) => {
+    const t = 0.08 + (i / (stripeColors.length - 1)) * 0.84;
+    const top = pt(430 + (532 - 430) * t, 300);
+    const bottom = pt(302 + (570 - 302) * t, 552 - 10 * t);
+    return piece(`彩条 ${i + 1}`, strip(top, bottom, 5, 15), c);
+  });
+  add(
+    paper('pl_skirt', '彩条长裙', P.orange, 'M 426 292 L 536 292 L 580 548 Q 430 578 290 562 Z', {
+      grain: 0.5,
+      appliques: stripes,
+    })
+  );
+  add(
+    paper('pl_torso', '报纸上衣', P.newsBlue, 'M 426 186 C 440 176 490 176 506 188 L 520 296 L 422 296 Z M 496 198 L 570 214 L 572 236 L 494 232 Z M 492 220 L 566 238 L 566 254 L 490 248 Z', {
+      grain: 0.4,
+      pattern: { type: 'stripes', color: '#FFFFFF', scale: 7, angle: 80, opacity: 0.35 },
+      appliques: [
+        piece('束腰', 'M 424 262 H 518 L 522 298 H 420 Z', P.maroon),
+        piece('前手', circle(578, 226, 9), P.skin),
+        piece('后手', circle(572, 246, 8), P.skin),
+      ],
+    })
+  );
+  add(
+    paper('pl_face', '侧脸', P.skin, ellipse(466, 138, 26, 31), {
+      grain: 0.3,
+      appliques: [piece('眼', circle(478, 131, 2.6), P.night), piece('腮红', circle(478, 152, 7), '#E0575A')],
+    })
+  );
+  add(
+    paper(
+      'pl_scarf',
+      '花头巾',
+      P.red,
+      'M 432 170 C 416 120 440 90 472 96 C 488 98 496 106 498 118 C 480 112 460 120 454 140 C 450 158 452 176 462 192 L 438 200 Z',
+      { grain: 0.4, pattern: { type: 'dots', color: '#3B6EF0', scale: 13, angle: 20, opacity: 0.95 } }
+    )
+  );
+
+  add(
+    paper('pl_bridle', '红马具', P.red, [
+      strip(pt(578, 226), pt(786, 300), 6),
+      strip(pt(572, 246), pt(780, 314), 6),
+      strip(pt(756, 284), pt(802, 294), 7),
+      strip(pt(730, 204), pt(762, 300), 5),
+      strip(pt(712, 200), pt(744, 194), 5),
+      strip(pt(560, 300), pt(652, 354), 8),
+    ].join(' '), {
+      grain: 0.3,
+      appliques: [0, 1, 2, 3, 4].map((i) =>
+        piece(`流苏 ${i + 1}`, strip(pt(612 + i * 10, 330 + i * 5), pt(608 + i * 10, 372 + i * 5), 4), P.red)
+      ),
+    })
+  );
+
+  add(
+    paper('pl_waves', '水波', '#1F46A8', waveBand(0, W, 612, 34, 7, 180, 0), {
+      grain: 0.4,
+      appliques: [
+        piece('中层水波', waveBand(0, W, 640, 26, 6, 150, 1.2), '#3C78C8'),
+        piece('浅层水波', waveBand(0, W, 664, 24, 5, 210, 2.4), '#9CB7C9'),
+        piece('底层水波', waveBand(0, W, 686, 34, 5, 170, 0.6), '#1F46A8'),
+      ],
+    })
+  );
+  add(paper('pl_confetti', '金银星点', '#D6B45C', circle(88, 96, 6), { grain: 0.8, appliques: confetti(72, W, H, 7) }));
+
+  const group = (id: string, name: string, layerIds: string[]): LayerGroup => ({
+    id,
+    name,
+    collapsed: false,
+    visible: true,
+    locked: false,
+    layerIds,
+  });
+  const groups = [
+    group('pl_grp_sky', '夜空', ['pl_board']),
+    group('pl_grp_horse_back', '马·后', ['pl_tail']),
+    group('pl_grp_horse', '马身', ['pl_horse', 'pl_mane']),
+    group('pl_grp_wings', '翅膀与光环', ['pl_wing_silver', 'pl_wing_gold', 'pl_halo']),
+    group('pl_grp_rider', '骑手', ['pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf']),
+    group('pl_grp_tack', '马具', ['pl_bridle']),
+    group('pl_grp_fore', '前景', ['pl_waves', 'pl_confetti']),
+  ];
+
+  return {
+    id: 'proj_polish_angel',
+    name: '波兰剪纸 · 夜骑白马的天使',
+    width: W,
+    height: H,
+    groups,
+    layers,
+    rootOrder: groups.map((g) => ({ type: 'group' as const, id: g.id })),
+    items: [
+      {
+        id: 'pl_item_horse',
+        name: '白马',
+        partIds: ['pl_tail', 'pl_horse', 'pl_mane', 'pl_bridle'],
+        pivot: { x: 470, y: 668 },
+        sockets: [
+          { id: 'pl_s_saddle', name: 'saddle', x: 470, y: 300 },
+          { id: 'pl_s_mouth', name: 'bit', x: 786, y: 306 },
+        ],
+      },
+      {
+        id: 'pl_item_angel',
+        name: '天使',
+        partIds: ['pl_wing_silver', 'pl_wing_gold', 'pl_halo', 'pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf'],
+        pivot: { x: 470, y: 300 },
+        sockets: [{ id: 'pl_s_hands', name: 'hands', x: 576, y: 236 }],
+      },
+    ],
+    backgroundColor: P.night,
+    backgroundStyle: 'ebony',
+    shadowStrength: 0.4,
+  };
+}
