@@ -102,12 +102,11 @@ export default function App() {
     combToothAngle: 65,
     stampSize: 26,
     mode: 'cutout',
-    knifePressure: false,
+    pressure: true,
+    brushColor: '#15161C',
     knifeTipShape: 'round',
     drawBrushType: 'pencil',
-    drawPressure: true,
     drawOpacity: 0.85,
-    drawColor: '#161B29',
     drawSize: 6,
     pencilHardness: 3,
     airbrushSoftness: 12,
@@ -927,6 +926,10 @@ export default function App() {
           onRedo={handleRedo}
           onFitZoom={handleFitZoom}
           onShowShortcuts={() => setIsShortcutsOpen(true)}
+          pressure={brushSettings.pressure}
+          onTogglePressure={() => setBrushSettings((prev) => ({ ...prev, pressure: !prev.pressure }))}
+          brushColor={brushSettings.brushColor}
+          onChangeBrushColor={(hex) => setBrushSettings((prev) => ({ ...prev, brushColor: hex }))}
         />
 
         <div className="flex-1 flex flex-col relative overflow-hidden">

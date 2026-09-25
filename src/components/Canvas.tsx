@@ -687,7 +687,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           geomType: 'polyline',
           d,
           isHole,
-          fillColor: isHole ? undefined : activeLayer.color,
+          fillColor: isHole ? undefined : brushSettings.brushColor,
           createdAt: Date.now(),
           points: finalPts,
         };
@@ -811,7 +811,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             if (brushType === 'pencil' && hardness === 1) finalOpacity *= 0.85;
 
             let strokeWidth = brushSettings.drawSize || 6;
-            if (brushSettings.drawPressure) {
+            if (brushSettings.pressure) {
               const avgPressure =
                 strokePoints.reduce((acc, p) => acc + (p.pressure || 0.5), 0) /
                 strokePoints.length;
@@ -822,7 +822,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               brushType,
               d: drawD,
-              color: brushSettings.drawColor || '#161B29',
+              color: brushSettings.brushColor,
               opacity: finalOpacity,
               strokeWidth,
               strokeLinecap: hardness === 5 ? 'square' : 'round',
@@ -880,7 +880,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             strokePoints,
             brushSettings.stampSize || 26,
             brushSettings.knifeTipShape || 'round',
-            brushSettings.knifePressure ?? false
+            brushSettings.pressure
           );
           cutoutPoints = strokePoints;
         }
@@ -961,7 +961,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               : 'pen_knife',
           d: baseD,
           isHole,
-          fillColor: isHole ? undefined : activeLayer.color,
+          fillColor: isHole ? undefined : brushSettings.brushColor,
           createdAt: Date.now(),
           points: cutoutPoints,
           geomType:
@@ -1039,7 +1039,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           pts,
           brushSettings.stampSize || 26,
           brushSettings.knifeTipShape || 'round',
-          brushSettings.knifePressure ?? false
+          brushSettings.pressure
         );
       }
     } else if (currentTool === 'hand_draw') {
@@ -1231,7 +1231,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 <path
                   ref={previewRef}
                   fill="none"
-                  stroke={brushSettings.drawColor || '#161B29'}
+                  stroke={brushSettings.brushColor}
                   strokeWidth={brushSettings.drawSize || 6}
                   strokeOpacity={brushSettings.drawOpacity ?? 0.85}
                   strokeLinecap="round"
@@ -1257,7 +1257,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     ? '#EB8E88'
                     : brushSettings.mode === 'cutout'
                     ? '#FAF8F2'
-                    : activeLayer?.color || '#2652D0'
+                    : brushSettings.brushColor
                 }
                 fillOpacity={brushSettings.mode === 'erase' ? 0.3 : 0.88}
                 stroke={brushSettings.mode === 'cutout' ? '#2652D0' : '#EB8E88'}

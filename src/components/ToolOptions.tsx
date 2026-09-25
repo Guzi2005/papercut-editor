@@ -76,7 +76,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   selectedCount,
   onCreateItemFromSelection,
 }) => {
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [showStarSettings, setShowStarSettings] = useState(false);
 
   return (
@@ -370,21 +369,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         {/* 3. 笔刀 (Pen Knife: 压感开关、笔尖形状选择、刀印宽度) */}
         {(currentTool === 'pen_knife' || currentTool === 'freehand') && (
           <div className="flex items-center gap-2 flex-wrap">
-            {/* 压感开关 */}
-            <button
-              onClick={() =>
-                onChangeBrushSettings({ knifePressure: !brushSettings.knifePressure })
-              }
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] transition-all ${
-                brushSettings.knifePressure
-                  ? 'bg-(--ui-accent) text-white border-(--ui-text-2)/50 shadow-sm font-medium'
-                  : 'bg-(--ui-raised) text-(--ui-muted) border-(--ui-border) hover:bg-(--ui-hover)'
-              }`}
-              data-tip="切换数位板/触控笔压感（压感将实时影响下刀切口粗细）"
-            >
-              <Zap className="w-3 h-3" />
-              <span>压感</span>
-            </button>
 
             {/* 笔尖形状选择 */}
             <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5">
@@ -475,21 +459,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               })}
             </div>
 
-            {/* 压感开关 */}
-            <button
-              onClick={() =>
-                onChangeBrushSettings({ drawPressure: !brushSettings.drawPressure })
-              }
-              className={`flex items-center gap-1 px-2 py-1 rounded-xl border text-[11px] transition-all ${
-                brushSettings.drawPressure
-                  ? 'bg-(--ui-accent) text-white border-(--ui-text-2)/50 shadow-sm font-medium'
-                  : 'bg-(--ui-raised) text-(--ui-muted) border-(--ui-border) hover:bg-(--ui-hover)'
-              }`}
-              data-tip="触控笔压感调节笔触大小与下笔浓淡"
-            >
-              <Zap className="w-3 h-3" />
-              <span>压感</span>
-            </button>
 
             {/* 铅笔专属：SAI 软硬五档 */}
             {(brushSettings.drawBrushType || 'pencil') === 'pencil' && (
@@ -555,41 +524,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               <span className="text-[10px] font-mono text-(--ui-text-2) w-5 text-right">
                 {brushSettings.drawSize ?? 6}
               </span>
-            </div>
-
-            {/* 绘制颜色 (手绘专属色选器) */}
-            <div className="relative">
-              <button
-                onClick={() => setShowColorPicker(!showColorPicker)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) border border-(--ui-border) text-[11px]"
-                data-tip="画笔颜色"
-              >
-                <span
-                  className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-sm"
-                  style={{ backgroundColor: brushSettings.drawColor || '#161B29' }}
-                />
-              </button>
-
-              {/* Color picker popover */}
-              {showColorPicker && (
-                <div
-                  className="absolute left-0 top-full mt-1 bg-(--ui-panel) border border-(--ui-border-strong) p-2.5 rounded-xl shadow-2xl z-50 grid grid-cols-5 gap-1.5 w-44 backdrop-blur-md"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {FOLK_PALETTE.slice(0, 15).map((col) => (
-                    <button
-                      key={col.hex}
-                      onClick={() => {
-                        onChangeBrushSettings({ drawColor: col.hex });
-                        setShowColorPicker(false);
-                      }}
-                      className="w-6 h-6 rounded-md border border-white/20 hover:scale-110 transition-transform cursor-pointer"
-                      style={{ backgroundColor: col.hex }}
-                      data-tip={col.name}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
 
           </div>

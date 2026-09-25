@@ -196,15 +196,15 @@ export interface BrushSettings {
   starRoundness?: number; // 圆角程度 (0 ~ 25)
   starIrregularity?: number; // 不规则程度 (0 ~ 100)
 
+  pressure: boolean; // 全局压感：笔刀切口宽度与手绘笔触粗细
+  brushColor: string; // 全局画笔颜色：手绘笔触与贴花纸片
+
   // 笔刀 (Pen knife)
-  knifePressure: boolean; // 压感开关
   knifeTipShape: KnifeTipShape; // 笔尖形状选择: 'round' | 'flat' | 'chisel' | 'slash'
 
   // 手绘 (Hand draw)
   drawBrushType: DrawBrushType; // 'pencil' | 'pen' | 'airbrush'
-  drawPressure: boolean; // 压感开关
   drawOpacity: number; // 不透明度 (0.1 ~ 1.0)
-  drawColor: string; // 颜色
   drawSize: number; // 笔尖粗细大小
   pencilHardness: PencilHardness; // 参考 SAI 铅笔软硬五档: 1 极软, 2 软, 3 中, 4 硬, 5 极硬
   airbrushSoftness: number; // 喷枪晕染度 (5 ~ 30)

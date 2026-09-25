@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Feather,
   Shapes,
@@ -16,8 +16,10 @@ import {
   Layers,
   Eraser,
   Keyboard,
+  Zap,
 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
+import { FOLK_PALETTE } from '../utils/presetTemplates';
 
 /**
  * Cute, artisanal linear undo icon with rounded loop
@@ -70,6 +72,10 @@ interface ToolbarProps {
   onRedo?: () => void;
   onFitZoom?: () => void;
   onShowShortcuts?: () => void;
+  pressure: boolean;
+  onTogglePressure: () => void;
+  brushColor: string;
+  onChangeBrushColor: (hex: string) => void;
 }
 
 interface ToolDefinition {
@@ -151,11 +157,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onRedo,
   onFitZoom,
   onShowShortcuts,
+  pressure,
+  onTogglePressure,
+  brushColor,
+  onChangeBrushColor,
 }) => {
   const carving = CARVING_TOOLS.includes(currentTool);
+  const [showColors, setShowColors] = useState(false);
+  const colorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showColors) return;
+    const close = (e: PointerEvent) => {
+      if (!colorRef.current?.contains(e.target as Node)) setShowColors(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [showColors]);
 
   return (
-    <aside className="w-16 flex flex-col items-center py-2 bg-(--ui-panel) text-(--ui-text) border-r border-(--ui-border) shrink-0 z-20 select-none justify-between">
+    <aside className="relative z-30 w-16 flex flex-col items-center py-2 bg-(--ui-panel) text-(--ui-text) border-r border-(--ui-border) shrink-0 z-20 select-none justify-between">
       <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {TOOLS.map((tool) => {
           const isActive =
@@ -171,7 +192,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               }}
               data-tip={`${tool.name}（${tool.hotkey}）· ${tool.description}`}
               data-tip-side="right"
-              className={`relative group w-12 h-11 flex flex-col items-center justify-center rounded-xl transition-all ${
+              className={`relative group w-12 h-10 flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
                   ? 'bg-(--ui-accent) text-white shadow-lg shadow-blue-950/70 border border-(--ui-text-2)/60 font-semibold'
                   : 'bg-(--ui-raised) text-(--ui-text-2) border border-(--ui-border) hover:bg-(--ui-hover) hover:text-(--ui-strong) hover:border-(--ui-border-strong)'
@@ -216,6 +237,57 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       <div className="flex flex-col items-center gap-0.5 w-full px-2 pt-2">
+        <div className="relative mb-1" ref={colorRef}>
+          <button
+            onClick={() => setShowColors((v) => !v)}
+            data-tip="画笔颜色：手绘笔触与贴花纸片"
+            data-tip-side="right"
+            className="w-8 h-8 rounded-full border-2 border-(--ui-strong)/80 shadow-md hover:scale-105 transition-transform"
+            style={{ backgroundColor: brushColor }}
+          />
+          {showColors && (
+            <div className="absolute left-full bottom-0 ml-3 z-50 w-48 p-2.5 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl">
+              <div className="grid grid-cols-6 gap-1.5">
+                {FOLK_PALETTE.map((c) => (
+                  <button
+                    key={c.hex}
+                    onClick={() => {
+                      onChangeBrushColor(c.hex);
+                      setShowColors(false);
+                    }}
+                    data-tip={c.name}
+                    className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 ${
+                      c.hex.toLowerCase() === brushColor.toLowerCase() ? 'border-(--ui-strong) ring-2 ring-(--ui-accent)' : 'border-white/20'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-[10px] text-(--ui-muted) cursor-pointer">
+                <span className="relative w-6 h-6 rounded-full overflow-hidden border border-(--ui-border-strong)" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
+                  <input
+                    type="color"
+                    value={brushColor}
+                    onChange={(e) => onChangeBrushColor(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </span>
+                自定义
+                <span className="ml-auto font-mono text-(--ui-text)">{brushColor.toUpperCase()}</span>
+              </label>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onTogglePressure}
+          data-tip={`压感：${pressure ? '开' : '关'}（笔刀宽度与手绘粗细）`}
+          data-tip-side="right"
+          className={`w-8 h-8 mb-1 flex items-center justify-center rounded-full transition-colors ${
+            pressure ? 'bg-(--ui-accent) text-white' : 'text-(--ui-faint) hover:text-(--ui-strong) hover:bg-(--ui-hover)'
+          }`}
+        >
+          <Zap className="w-4 h-4" />
+        </button>
         {onUndo && (
           <button
             onClick={onUndo}
