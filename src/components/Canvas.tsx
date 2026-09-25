@@ -42,6 +42,8 @@ import {
 import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds } from '../utils/projectOps';
 import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
+import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
+import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 
 export type SelectionScope = 'part' | 'item';
 
@@ -71,6 +73,7 @@ interface CanvasProps {
   onRedo?: () => void;
   /** Incremented by the host to recentre the canvas after a fit-to-screen. */
   fitSignal?: number;
+  keymap: Keymap;
 }
 
 interface BBox {
@@ -152,6 +155,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onUndo,
   onRedo,
   fitSignal = 0,
+  keymap,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -198,7 +202,6 @@ export const Canvas: React.FC<CanvasProps> = ({
   const penSeenRef = useRef(false);
   const pointerTypeRef = useRef('mouse');
   const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
   const panRef = useRef<Point>({ x: 0, y: 0 });
 
   // Polyline shape drawing state (单击新增锚点，双击终止)
@@ -227,7 +230,10 @@ export const Canvas: React.FC<CanvasProps> = ({
   const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
   const shadow = project.shadowStrength ?? 0.5;
 
-  // Spacebar listener for canvas hand tool
+  // Hold-to-pan key (Space by default, configurable)
+  const keymapRef = useRef(keymap);
+  keymapRef.current = keymap;
+  const heldPanCode = useRef<string | null>(null);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -236,14 +242,16 @@ export const Canvas: React.FC<CanvasProps> = ({
       ) {
         return;
       }
-      if (e.code === 'Space' && !e.repeat) {
+      if (!e.repeat && bindingHas(keymapRef.current, 'view.panHold', comboFromKeyEvent(e))) {
         e.preventDefault();
+        heldPanCode.current = e.code;
         setIsSpacePressed(true);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (heldPanCode.current && e.code === heldPanCode.current) {
+        heldPanCode.current = null;
         setIsSpacePressed(false);
         setIsPanning(false);
       }
@@ -274,7 +282,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (moves[e.key]) {
         e.preventDefault();
         onTransformLayers(selectedLayerIds, translate(...moves[e.key]));
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      } else if (bindingHas(keymapRef.current, 'edit.delete', comboFromKeyEvent(e))) {
         e.preventDefault();
         onDeleteLayers(selectedLayerIds);
         playDiscardSwoosh();
@@ -361,8 +369,31 @@ export const Canvas: React.FC<CanvasProps> = ({
     panRef.current = pan;
   }, [pan, zoom]);
 
+  // Zoom changed from outside (buttons, keys, fit): scale the pan so the view zooms about its centre.
+  const expectedZoomRef = useRef(zoom);
+  const lastZoomRef = useRef(zoom);
   useEffect(() => {
-    if (fitSignal) setPan({ x: 0, y: 0 });
+    const prev = lastZoomRef.current;
+    lastZoomRef.current = zoom;
+    zoomRef.current = zoom;
+    if (expectedZoomRef.current === zoom || prev === zoom) {
+      expectedZoomRef.current = zoom;
+      return;
+    }
+    expectedZoomRef.current = zoom;
+    const k = zoom / prev;
+    setPan((p) => {
+      const np = { x: p.x * k, y: p.y * k };
+      panRef.current = np;
+      return np;
+    });
+  }, [zoom]);
+
+  useEffect(() => {
+    if (fitSignal) {
+      panRef.current = { x: 0, y: 0 };
+      setPan({ x: 0, y: 0 });
+    }
   }, [fitSignal]);
 
   const abortGestureConflicts = () => {
@@ -409,12 +440,16 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (!rect) return;
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      const nextZoom = Math.min(Math.max(g.startZoom * (dist / g.startDist), 0.15), 4);
+      const nextZoom = clampZoom(g.startZoom * (dist / g.startDist));
       const qx = (g.startMid.x - cx - g.startPan.x) / g.startZoom;
       const qy = (g.startMid.y - cy - g.startPan.y) / g.startZoom;
       if (Math.hypot(mid.x - g.startMid.x, mid.y - g.startMid.y) > 8 || Math.abs(dist - g.startDist) > 10) g.moved = true;
       g.fingers = Math.max(g.fingers, touchesRef.current.size);
-      setPan({ x: mid.x - cx - qx * nextZoom, y: mid.y - cy - qy * nextZoom });
+      const np = { x: mid.x - cx - qx * nextZoom, y: mid.y - cy - qy * nextZoom };
+      panRef.current = np;
+      zoomRef.current = nextZoom;
+      expectedZoomRef.current = nextZoom;
+      setPan(np);
       onZoomChange(nextZoom);
     };
     const onEnd = (e: PointerEvent) => {
@@ -512,28 +547,37 @@ export const Canvas: React.FC<CanvasProps> = ({
     g.setAttribute('visibility', 'visible');
   };
 
-  // Wheel zoom around cursor
+  // Wheel: zoom is exponential in the scroll amount, so trackpad pinches and notched wheels both
+  // feel even; refs keep bursts of events within one frame from compounding on stale state.
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey || isSpacePressed) {
-      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-      const newZoom = Math.min(Math.max(zoom * zoomFactor, 0.25), 3.5);
-
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left - rect.width / 2;
-        const mouseY = e.clientY - rect.top - rect.height / 2;
-
-        const newPanX = mouseX - (mouseX - pan.x) * (newZoom / zoom);
-        const newPanY = mouseY - (mouseY - pan.y) * (newZoom / zoom);
-
-        setPan({ x: newPanX, y: newPanY });
+    const combo = comboFromWheel(e);
+    const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    if (bindingHas(keymap, 'view.zoomWheel', combo)) {
+      const cur = zoomRef.current;
+      const next = clampZoom(cur * Math.exp(-e.deltaY * px * WHEEL_ZOOM_RATE));
+      if (next === cur) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const mx = e.clientX - rect.left - rect.width / 2;
+        const my = e.clientY - rect.top - rect.height / 2;
+        const p = panRef.current;
+        const np = { x: mx - (mx - p.x) * (next / cur), y: my - (my - p.y) * (next / cur) };
+        panRef.current = np;
+        setPan(np);
       }
-      onZoomChange(newZoom);
-    } else {
-      setPan((prev) => ({
-        x: prev.x - e.deltaX * 0.8,
-        y: prev.y - e.deltaY * 0.8,
-      }));
+      zoomRef.current = next;
+      expectedZoomRef.current = next;
+      onZoomChange(next);
+      return;
+    }
+    const horizontal = e.shiftKey && e.deltaX === 0;
+    const plain = combo.replace('Shift+', '');
+    if (bindingHas(keymap, 'view.panWheel', combo) || (horizontal && bindingHas(keymap, 'view.panWheel', plain))) {
+      const dx = (horizontal ? e.deltaY : e.deltaX) * px;
+      const dy = horizontal ? 0 : e.deltaY * px;
+      const np = { x: panRef.current.x - dx, y: panRef.current.y - dy };
+      panRef.current = np;
+      setPan(np);
     }
   };
 
@@ -741,7 +785,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         return;
       }
     }
-    if (e.button === 1 || isSpacePressed) {
+    if (bindingHas(keymap, 'view.panDrag', comboFromPointer(e, isSpacePressed, 'drag'))) {
       setIsPanning(true);
       setPanStart({
         x: e.clientX - pan.x,
@@ -756,7 +800,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     pt.pressure = getEventPressure(e);
 
     // Alt + 点击：拾取画布上的图层，任何工具下可用
-    if (e.altKey) {
+    if (bindingHas(keymap, 'layer.pick', comboFromPointer(e, false, 'click'))) {
       const hitId = layerIdFromTarget(e.target);
       if (hitId) {
         onPickLayer(hitId);
@@ -1261,6 +1305,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       }}
       onPointerLeave={() => !isDrawing && moveBrush(0, 0, false)}
       onWheel={handleWheel}
+      onContextMenu={(e) => keymap['view.panDrag'].includes('RightDrag') && e.preventDefault()}
       style={{ touchAction: 'none' }}
       className={`flex-1 relative overflow-hidden select-none bg-(--ui-app) ${cursorClass}`}
     >
@@ -1287,7 +1332,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             height: `${project.height * zoom}px`,
             position: 'relative',
           }}
-          className="pointer-events-auto"
+          className="pointer-events-auto shrink-0"
         >
           <svg
             ref={svgRef}

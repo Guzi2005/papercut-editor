@@ -27,10 +27,13 @@ import {
   CloudCheck,
   Settings,
   PanelRight,
+  Keyboard,
+  Layers as LayersGlyph,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { PaperMode } from '../types/papercut';
+import { ZOOM_STEP } from '../utils/zoom';
 
 const ModeGlyph: React.FC<{ kind: PaperMode }> = ({ kind }) => (
   <svg viewBox="0 0 24 24" className="w-6 h-6">
@@ -81,6 +84,7 @@ interface TopBarProps {
   paperMode: PaperMode;
   onChangePaperMode: (mode: PaperMode) => void;
   compact: boolean;
+  onOpenKeymap: () => void;
   panelOpen: boolean;
   onTogglePanel: () => void;
   currentWidth: number;
@@ -113,6 +117,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   paperMode,
   onChangePaperMode,
   compact,
+  onOpenKeymap,
   panelOpen,
   onTogglePanel,
   currentWidth,
@@ -134,6 +139,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [settingsFlyout, setSettingsFlyout] = useState<'skin' | 'mode' | null>(null);
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
 
   // New Doc Dialog fields
@@ -434,6 +440,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             onClick={() => {
               setShowSettingsMenu(!showSettingsMenu);
+              setSettingsFlyout(null);
               setShowFileMenu(false);
               setShowCanvasSubmenu(false);
             }}
@@ -448,43 +455,79 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
 
           {showSettingsMenu && (
-            <div className="absolute left-0 top-full mt-1 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 z-50 flex flex-col gap-2">
-              <div className="flex gap-1.5" data-tip-group>
-                {SKINS.map((sk) => {
-                  const c = sk.colors;
-                  const isActive = currentSkin === sk.id;
-                  return (
-                    <button
-                      key={sk.id}
-                      onClick={() => onSelectSkin?.(sk.id)}
-                      data-tip={sk.name}
-                      className={`w-8 h-8 rounded-full p-0.5 border-2 transition-colors ${
-                        isActive ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
-                      }`}
-                    >
-                      <span
-                        className="block w-full h-full rounded-full"
-                        style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="h-px bg-(--ui-divider)" />
-              <div className="flex gap-1.5">
-                {PAPER_MODES.map((m) => (
+            <div className="absolute left-0 top-full mt-1 w-44 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
+              {(
+                [
+                  { id: 'skin', label: '皮肤', icon: <Palette className="w-3.5 h-3.5 text-(--ui-accent-2)" /> },
+                  { id: 'mode', label: '剪贴模式', icon: <LayersGlyph className="w-3.5 h-3.5 text-(--ui-accent)" /> },
+                ] as const
+              ).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="relative"
+                  onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout(entry.id)}
+                >
                   <button
-                    key={m.id}
-                    onClick={() => onChangePaperMode(m.id)}
-                    data-tip={m.tip}
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
-                      paperMode === m.id ? 'border-(--ui-accent) bg-(--ui-hover)' : 'border-transparent hover:bg-(--ui-hover)'
+                    onClick={() => setSettingsFlyout((v) => (v === entry.id ? null : entry.id))}
+                    className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                      settingsFlyout === entry.id ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-text-2) hover:bg-(--ui-hover)'
                     }`}
                   >
-                    {m.icon}
+                    {entry.icon}
+                    <span className="flex-1">{entry.label}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted)" />
                   </button>
-                ))}
-              </div>
+                  {settingsFlyout === entry.id && (
+                    <div className="absolute left-full top-0 ml-1 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 flex gap-1.5">
+                      {entry.id === 'skin'
+                        ? SKINS.map((sk) => {
+                            const c = sk.colors;
+                            const isActive = currentSkin === sk.id;
+                            return (
+                              <button
+                                key={sk.id}
+                                onClick={() => onSelectSkin?.(sk.id)}
+                                data-tip={sk.name}
+                                className={`w-8 h-8 rounded-full p-0.5 border-2 transition-colors ${
+                                  isActive ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
+                                }`}
+                              >
+                                <span
+                                  className="block w-full h-full rounded-full"
+                                  style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }}
+                                />
+                              </button>
+                            );
+                          })
+                        : PAPER_MODES.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => onChangePaperMode(m.id)}
+                              data-tip={m.tip}
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                                paperMode === m.id ? 'border-(--ui-accent) bg-(--ui-hover)' : 'border-transparent hover:bg-(--ui-hover)'
+                              }`}
+                            >
+                              {m.icon}
+                            </button>
+                          ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div className="h-px bg-(--ui-divider) my-1" />
+              <button
+                onPointerEnter={() => setSettingsFlyout(null)}
+                onClick={() => {
+                  setShowSettingsMenu(false);
+                  onOpenKeymap();
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2 text-left text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
+              >
+                <Keyboard className="w-3.5 h-3.5 text-(--ui-muted)" />
+                <span className="flex-1">快捷键</span>
+                <span className="text-[10px] text-(--ui-faint)">…</span>
+              </button>
             </div>
           )}
         </div>
@@ -583,7 +626,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Zoom Controls */}
         <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) text-(--ui-text-2)">
           <button
-            onClick={() => onZoomChange(Math.max(zoom - 0.15, 0.25))}
+            onClick={() => onZoomChange(zoom / ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
             data-tip="缩小画布"
           >
@@ -597,7 +640,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             {Math.round(zoom * 100)}%
           </button>
           <button
-            onClick={() => onZoomChange(Math.min(zoom + 0.15, 3.5))}
+            onClick={() => onZoomChange(zoom * ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
             data-tip="放大画布"
           >

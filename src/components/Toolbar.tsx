@@ -21,6 +21,17 @@ import {
 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { FOLK_PALETTE } from '../utils/presetTemplates';
+import { ActionId, Keymap, labelForCombo } from '../utils/keymap';
+
+const TOOL_ACTIONS: Partial<Record<ToolType, ActionId>> = {
+  select: 'tool.select',
+  willow_leaf: 'tool.cut',
+  geom_shape: 'tool.geom',
+  pen_knife: 'tool.knife',
+  hand_draw: 'tool.draw',
+  anchor_edit: 'tool.anchor',
+};
+const MODE_ACTIONS: Record<string, ActionId> = { cutout: 'mode.cutout', positive: 'mode.positive', erase: 'mode.erase' };
 
 /**
  * Cute, artisanal linear undo icon with rounded loop
@@ -78,6 +89,7 @@ interface ToolbarProps {
   brushColor: string;
   onChangeBrushColor: (hex: string) => void;
   recentBrushColors: string[];
+  keymap: Keymap;
 }
 
 interface ToolDefinition {
@@ -164,7 +176,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   brushColor,
   onChangeBrushColor,
   recentBrushColors,
+  keymap,
 }) => {
+  const keyHint = (action?: ActionId) => {
+    const b = action ? keymap[action][0] : undefined;
+    return b ? `（${labelForCombo(b)}）` : '';
+  };
   const carving = CARVING_TOOLS.includes(currentTool);
   const [showColors, setShowColors] = useState(false);
   const colorRef = useRef<HTMLDivElement>(null);
@@ -193,7 +210,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 if (isActive && tool.id === 'anchor_edit') onSelectTool('select');
                 else onSelectTool(tool.id);
               }}
-              data-tip={`${tool.name}（${tool.hotkey}）· ${tool.description}`}
+              data-tip={`${tool.name}${keyHint(TOOL_ACTIONS[tool.id])} · ${tool.description}`}
               data-tip-side="right"
               className={`relative group w-11 h-10 flex items-center justify-center rounded-xl transition-all ${
                 isActive
@@ -215,7 +232,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 key={mode.id}
                 onClick={() => onChangeCarveMode(mode.id)}
-                data-tip={`${mode.label}（${mode.hotkey}）`}
+                data-tip={`${mode.label}${keyHint(MODE_ACTIONS[mode.id])}`}
                 data-tip-side="right"
                 className={`w-11 h-8 flex items-center justify-center rounded-lg text-[10px] transition-all ${
                   isActive

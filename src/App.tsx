@@ -46,7 +46,9 @@ import { Canvas, SelectionScope } from './components/Canvas';
 import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
 import { GodotExportModal } from './components/GodotExportModal';
-import { ShortcutsModal } from './components/ShortcutsModal';
+import { KeymapModal } from './components/KeymapModal';
+import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeymap } from './utils/keymap';
+import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
 
 interface DocumentItem {
   id: string;
@@ -129,9 +131,11 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isGodotModalOpen, setIsGodotModalOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
   const compact = useMediaQuery(COMPACT_QUERY);
   const [panelOpen, setPanelOpen] = useState(false);
   const [fitSignal, setFitSignal] = useState(0);
+  const lastFitZoomRef = useRef<number | null>(null);
 
   const [colorNotes, setColorNotes] = useState<Record<string, string>>(() =>
     Object.fromEntries(FOLK_PALETTE.map((c) => [c.hex.toLowerCase(), c.name]))
@@ -249,7 +253,8 @@ export default function App() {
   }, [activeDocId]);
 
   const handleZoomChange = (newZoom: number) => {
-    setDocuments((prev) => prev.map((d) => (d.id === activeDocId ? { ...d, zoom: newZoom } : d)));
+    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+    setDocuments((prev) => prev.map((d) => (d.id === activeDocId ? { ...d, zoom: z } : d)));
   };
 
   const handleSelectLayer = useCallback(
@@ -339,99 +344,83 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- Keyboard Shortcuts ----------
+  // ---------- Keyboard Shortcuts (user-configurable, see utils/keymap) ----------
   useEffect(() => {
-    const TOOL_KEYS: Record<string, ToolType> = {
-      v: 'select',
-      l: 'willow_leaf',
-      g: 'geom_shape',
-      k: 'pen_knife',
-      b: 'hand_draw',
-      a: 'anchor_edit',
-      '1': 'willow_leaf',
-      '2': 'geom_shape',
-      '3': 'pen_knife',
-      '4': 'hand_draw',
-      '5': 'anchor_edit',
+    const TOOLS: Partial<Record<ActionId, ToolType>> = {
+      'tool.select': 'select',
+      'tool.cut': 'willow_leaf',
+      'tool.geom': 'geom_shape',
+      'tool.knife': 'pen_knife',
+      'tool.draw': 'hand_draw',
+      'tool.anchor': 'anchor_edit',
     };
-    const MODE_KEYS: Record<string, BrushSettings['mode']> = { c: 'cutout', p: 'positive', e: 'erase' };
+    const MODES: Partial<Record<ActionId, BrushSettings['mode']>> = {
+      'mode.cutout': 'cutout',
+      'mode.positive': 'positive',
+      'mode.erase': 'erase',
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
+      if (isShortcutsOpen) return;
+      const combo = comboFromKeyEvent(e);
+      const action = combo ? actionForKey(keymap, combo) : null;
+      if (!action) return;
+      // Canvas owns these (hold-to-pan, delete selection).
+      if (action === 'view.panHold' || action === 'edit.delete') return;
+      e.preventDefault();
 
-      if (mod && key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) handleRedo();
-        else handleUndo();
+      if (TOOLS[action]) {
+        setCurrentTool(TOOLS[action]!);
         return;
       }
-      if (mod && key === 'y') {
-        e.preventDefault();
-        handleRedo();
-        return;
-      }
-      if (mod && key === 's') {
-        e.preventDefault();
-        handleSaveProjectFile();
-        return;
-      }
-      if (mod && key === 'o') {
-        e.preventDefault();
-        handleOpenProjectFile();
-        return;
-      }
-      if (e.altKey && key === 'n') {
-        e.preventDefault();
-        handleNewDocument();
-        return;
-      }
-      if (mod || e.altKey) return;
-
-      if (e.key === '[' || e.key === ']') {
-        const dir = e.key === ']' ? 1 : -1;
-        setBrushSettings((prev) => {
-          const bump = (v: number) => Math.max(1, Math.min(120, Math.round(v * (dir > 0 ? 1.15 : 1 / 1.15)) + (dir > 0 ? 1 : -1)));
-          if (currentTool === 'pen_knife' || currentTool === 'freehand') return { ...prev, stampSize: bump(prev.stampSize || 26) };
-          if (currentTool === 'hand_draw') return { ...prev, drawSize: bump(prev.drawSize || 6) };
-          return prev;
-        });
-        return;
-      }
-      if (e.key === '?') {
-        setIsShortcutsOpen((v) => !v);
-        return;
-      }
-      if (TOOL_KEYS[key]) {
-        setCurrentTool(TOOL_KEYS[key]);
-        return;
-      }
-      if (MODE_KEYS[key]) {
-        setBrushSettings((prev) => ({ ...prev, mode: MODE_KEYS[key] }));
+      if (MODES[action]) {
+        setBrushSettings((prev) => ({ ...prev, mode: MODES[action]! }));
         if (currentTool === 'select' || currentTool === 'hand_draw' || currentTool === 'anchor_edit') {
           setCurrentTool('willow_leaf');
         }
         return;
       }
-      if (key === 'tab' && currentTool === 'select') {
-        e.preventDefault();
-        setSelectionScope((s) => (s === 'item' ? 'part' : 'item'));
-        return;
-      }
-      if (e.key === 'Escape') {
-        if (currentTool === 'anchor_edit') setCurrentTool('pen_knife');
-        else setSelectedLayerIds([]);
-        setIsShortcutsOpen(false);
-        return;
-      }
-      if (e.key === '=' || e.key === '+') {
-        handleZoomChange(Math.min(zoom + 0.15, 3.5));
-      } else if (e.key === '-' || e.key === '_') {
-        handleZoomChange(Math.max(zoom - 0.15, 0.25));
-      } else if (e.key === '0') {
-        handleZoomChange(1);
+      switch (action) {
+        case 'edit.undo':
+          return handleUndo();
+        case 'edit.redo':
+          return handleRedo();
+        case 'file.save':
+          return handleSaveProjectFile();
+        case 'file.open':
+          return void handleOpenProjectFile();
+        case 'file.new':
+          return handleNewDocument();
+        case 'help.keymap':
+          return setIsShortcutsOpen(true);
+        case 'select.scope':
+          if (currentTool === 'select') setSelectionScope((sc) => (sc === 'item' ? 'part' : 'item'));
+          return;
+        case 'select.cancel':
+          if (currentTool === 'anchor_edit') setCurrentTool('pen_knife');
+          else setSelectedLayerIds([]);
+          return;
+        case 'brush.smaller':
+        case 'brush.bigger': {
+          const up = action === 'brush.bigger';
+          setBrushSettings((prev) => {
+            const bump = (v: number) => Math.max(1, Math.min(120, Math.round(v * (up ? 1.15 : 1 / 1.15)) + (up ? 1 : -1)));
+            if (currentTool === 'pen_knife' || currentTool === 'freehand') return { ...prev, stampSize: bump(prev.stampSize || 26) };
+            if (currentTool === 'hand_draw') return { ...prev, drawSize: bump(prev.drawSize || 6) };
+            return prev;
+          });
+          return;
+        }
+        case 'view.zoomIn':
+          return handleZoomChange(zoom * ZOOM_STEP);
+        case 'view.zoomOut':
+          return handleZoomChange(zoom / ZOOM_STEP);
+        case 'view.zoom100':
+          return handleZoomChange(1);
+        case 'view.fit':
+          return handleFitZoom();
       }
     };
 
@@ -445,12 +434,16 @@ export default function App() {
     const availHeight = (stage?.height ?? window.innerHeight - 170) - 32;
     if (availWidth > 0 && availHeight > 0) {
       const fitRatio = Math.min(availWidth / project.width, availHeight / project.height);
-      handleZoomChange(Math.max(Math.min(fitRatio, 2.0), 0.15));
+      const z = Math.min(fitRatio, 2.0);
+      lastFitZoomRef.current = z;
+      handleZoomChange(z);
       setFitSignal((n) => n + 1);
     }
   };
   const fitRef = useRef(handleFitZoom);
   fitRef.current = handleFitZoom;
+  const zoomNowRef = useRef(zoom);
+  zoomNowRef.current = zoom;
 
   // Fit when a document opens larger than the stage (e.g. first launch in tablet portrait).
   useEffect(() => {
@@ -471,10 +464,13 @@ export default function App() {
     let timer: number | undefined;
     const onResize = () => {
       const now = window.innerWidth > window.innerHeight;
-      if (now === landscape) return;
+      const rotated = now !== landscape;
       landscape = now;
+      // Keep a fitted view fitted; leave a zoom the user chose alone unless the device rotated.
+      const wasFitted = lastFitZoomRef.current !== null && Math.abs(zoomNowRef.current - lastFitZoomRef.current) < 1e-4;
+      if (!rotated && !wasFitted) return;
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => fitRef.current(), 250);
+      timer = window.setTimeout(() => fitRef.current(), 200);
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -928,6 +924,7 @@ export default function App() {
         onFitZoom={handleFitZoom}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenGodotExport={() => setIsGodotModalOpen(true)}
+        onOpenKeymap={() => setIsShortcutsOpen(true)}
         paperMode={project.paperMode ?? 'soft'}
         compact={compact}
         panelOpen={panelOpen}
@@ -974,6 +971,7 @@ export default function App() {
             setRecentBrushColors((prev) => [hex, ...prev.filter((c) => c.toLowerCase() !== hex.toLowerCase())].slice(0, 6));
           }}
           recentBrushColors={recentBrushColors}
+          keymap={keymap}
         />
 
         <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
@@ -999,6 +997,7 @@ export default function App() {
             onTransformLayers={handleTransformLayers}
             onUpdateItem={handleUpdateItem}
             onDeleteLayers={handleDeleteLayers}
+            keymap={keymap}
             onUndo={handleUndo}
             onRedo={handleRedo}
             fitSignal={fitSignal}
@@ -1055,7 +1054,16 @@ export default function App() {
       {isGodotModalOpen && (
         <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />
       )}
-      {isShortcutsOpen && <ShortcutsModal onClose={() => setIsShortcutsOpen(false)} />}
+      {isShortcutsOpen && (
+        <KeymapModal
+          keymap={keymap}
+          onChange={(m) => {
+            setKeymap(m);
+            saveKeymap(m);
+          }}
+          onClose={() => setIsShortcutsOpen(false)}
+        />
+      )}
     </div>
   );
 }
