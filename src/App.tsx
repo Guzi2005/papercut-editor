@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   PapercutProject,
   PapercutItem,
@@ -36,7 +36,9 @@ import {
   readFileAsDataUrl,
   PROJECT_FILE_EXT,
 } from './utils/storage';
-import { TopBar, DocumentTabItem, WorkbenchSkin } from './components/TopBar';
+import { TopBar, DocumentTabItem } from './components/TopBar';
+import { TooltipLayer } from './components/TooltipLayer';
+import { WorkbenchSkin, skinVariables, loadSkin, saveSkin } from './utils/skins';
 import { Toolbar } from './components/Toolbar';
 import { ToolOptions } from './components/ToolOptions';
 import { Canvas, SelectionScope } from './components/Canvas';
@@ -111,7 +113,20 @@ export default function App() {
     airbrushSoftness: 12,
   });
 
-  const [skin, setSkin] = useState<WorkbenchSkin>('indigo');
+  const [skin, setSkinState] = useState<WorkbenchSkin>(loadSkin);
+  const setSkin = (id: WorkbenchSkin) => {
+    setSkinState(id);
+    saveSkin(id);
+  };
+
+  // Variables live on <html> so portals (tooltips, native popups) are themed too.
+  useLayoutEffect(() => {
+    const root = document.documentElement.style;
+    Object.entries(skinVariables(skin)).forEach(([k, v]) => {
+      if (k.startsWith('--')) root.setProperty(k, String(v));
+      else if (k === 'colorScheme') root.colorScheme = String(v);
+    });
+  }, [skin]);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isGodotModalOpen, setIsGodotModalOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -852,20 +867,11 @@ export default function App() {
     height: d.project.height,
   }));
 
-  const SKIN_BACKGROUNDS: Record<WorkbenchSkin, string> = {
-    indigo: 'bg-[#111520]',
-    cinnabar: 'bg-[#181215]',
-    celadon: 'bg-[#0E1713]',
-    wisteria: 'bg-[#18111B]',
-    ebony: 'bg-[#191512]',
-  };
-
   return (
     <div
-      className={`flex flex-col h-screen w-screen ${
-        SKIN_BACKGROUNDS[skin] || 'bg-[#111520]'
-      } text-[#CAD0DB] overflow-hidden font-sans transition-colors duration-200`}
+      className="flex flex-col h-screen w-screen bg-(--ui-app) text-(--ui-text) overflow-hidden font-sans"
     >
+      <TooltipLayer />
       <TopBar
         documents={documentTabItems}
         activeDocId={activeDocId}

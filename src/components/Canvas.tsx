@@ -1111,14 +1111,14 @@ export const Canvas: React.FC<CanvasProps> = ({
       onPointerLeave={() => !isDrawing && moveBrush(0, 0, false)}
       onWheel={handleWheel}
       style={{ touchAction: 'none' }}
-      className={`flex-1 relative overflow-hidden select-none bg-[#111520] ${cursorClass}`}
+      className={`flex-1 relative overflow-hidden select-none bg-(--ui-app) ${cursorClass}`}
     >
       {/* Outer Studio Workbench Grid Texture */}
       <div
         className="absolute inset-0 pointer-events-none opacity-15"
         style={{
           backgroundImage:
-            'linear-gradient(to right, #405073 1px, transparent 1px), linear-gradient(to bottom, #405073 1px, transparent 1px)',
+            'linear-gradient(to right, var(--ui-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--ui-grid) 1px, transparent 1px)',
           backgroundSize: '40px 40px',
         }}
       />
@@ -1423,71 +1423,68 @@ export const Canvas: React.FC<CanvasProps> = ({
       {/* HUD: 当前图层 / 物件 / 模式，永远知道笔落在哪 */}
       <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1.5 max-w-[60%]">
         {currentTool === 'select' ? (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border border-[#2B364D] text-[11px] text-[#CAD0DB] shadow-lg backdrop-blur-md">
-            <span className="text-[#8E9FCA]">选择</span>
-            <span className="text-[#FBFBFC] font-medium">
-              {selectedLayerIds.length === 0
-                ? '点击画布上的纸片'
-                : selectedItem
-                ? `物件「${selectedItem.name}」· ${selectedItem.partIds.length} 个部件`
-                : `${selectedLayerIds.length} 个部件`}
-            </span>
-            <span className="text-[#5E6E94]">
-              {selectionScope === 'item' ? '整物件选取' : '单部件选取'}
-            </span>
-          </div>
+          selectedLayerIds.length > 0 && (
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border border-(--ui-border) text-[11px] text-(--ui-text) shadow-lg backdrop-blur-md">
+              {selectedItem && <Box className="w-3 h-3 text-(--ui-accent-2)" />}
+              <span className="text-(--ui-strong) font-medium">
+                {selectedItem
+                  ? `${selectedItem.name} · ${selectedItem.partIds.length} 个部件`
+                  : `${selectedLayerIds.length} 个部件`}
+              </span>
+            </div>
+          )
         ) : activeLayer ? (
           <div
-            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border text-[11px] text-[#CAD0DB] shadow-lg backdrop-blur-md ${
-              activeLocked || activeHidden ? 'border-[#D23838]/70' : 'border-[#2B364D]'
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border text-[11px] text-(--ui-text) shadow-lg backdrop-blur-md ${
+              activeLocked || activeHidden ? 'border-[#D23838]/70' : 'border-(--ui-border)'
             }`}
           >
             <span className="w-3 h-3 rounded-sm border border-white/40 shrink-0" style={{ backgroundColor: activeLayer.color }} />
-            <span className="text-[#FBFBFC] font-medium truncate">{activeLayer.name}</span>
-            {activeGroup && <span className="text-[#7E8FB8] truncate">· {activeGroup.name}</span>}
+            <span className="text-(--ui-strong) font-medium truncate">{activeLayer.name}</span>
+            {activeGroup && <span className="text-(--ui-muted) truncate">· {activeGroup.name}</span>}
             {activeItem && (
-              <span className="flex items-center gap-1 text-[#EB8E88] truncate">
+              <span className="flex items-center gap-1 text-(--ui-accent-2) truncate">
                 <Box className="w-3 h-3" />
                 {activeItem.name}
               </span>
             )}
             {currentTool !== 'hand_draw' && currentTool !== 'anchor_edit' && (
-              <span className="px-1.5 py-0.5 rounded-md bg-[#2652D0]/25 text-[#BAC5EB]">
+              <span className="px-1.5 py-0.5 rounded-md bg-(--ui-accent)/25 text-(--ui-text-2)">
                 {MODE_LABELS[brushSettings.mode] || '刻纸'}
               </span>
             )}
             {activeLocked && (
-              <span className="flex items-center gap-1 text-[#EB8E88]">
+              <span className="flex items-center gap-1 text-(--ui-accent-2)">
                 <Lock className="w-3 h-3" />已锁定
               </span>
             )}
             {activeHidden && (
-              <span className="flex items-center gap-1 text-[#EB8E88]">
+              <span className="flex items-center gap-1 text-(--ui-accent-2)">
                 <EyeOff className="w-3 h-3" />已隐藏
               </span>
             )}
           </div>
         ) : (
-          <div className="px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border border-[#D23838]/70 text-[11px] text-[#EB8E88]">
-            没有选中图层：在右侧选择，或按住 Alt 点击画布上的纸片
+          <div className="px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border border-[#D23838]/70 text-[11px] text-(--ui-accent-2)">
+            未选中纸片 · Alt+点击拾取
           </div>
         )}
       </div>
 
       {/* Floating Check and Cross for Anchor Edit */}
       {currentTool === 'anchor_edit' && onExitAnchorEdit && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-[#161B29]/95 backdrop-blur-md px-2 py-1.5 rounded-2xl border border-[#2652D0] shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-(--ui-panel)/95 backdrop-blur-md px-2 py-1.5 rounded-2xl border border-(--ui-accent) shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
           <button
             onClick={onExitAnchorEdit}
-            className="w-8 h-8 rounded-xl bg-[#2652D0] hover:bg-[#1E43B8] text-white flex items-center justify-center shadow-md transition-all hover:scale-105 cursor-pointer"
-            title="完成并退出锚点微调"
+            className="w-8 h-8 rounded-xl bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white flex items-center justify-center shadow-md transition-all hover:scale-105 cursor-pointer"
+            data-tip="完成并退出锚点微调"
           >
             <Check className="w-4 h-4 stroke-[2.5]" />
           </button>
           <button
             onClick={onExitAnchorEdit}
-            className="w-8 h-8 rounded-xl bg-[#1E2538] hover:bg-[#28324A] text-[#8E9FCA] hover:text-white flex items-center justify-center transition-all hover:scale-105 cursor-pointer"
-            title="退出锚点微调"
+            className="w-8 h-8 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong) flex items-center justify-center transition-all hover:scale-105 cursor-pointer"
+            data-tip="退出锚点微调"
           >
             <X className="w-4 h-4 stroke-[2.5]" />
           </button>

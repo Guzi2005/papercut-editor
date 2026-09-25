@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-border-strong, #3a4766) transparent;
+}

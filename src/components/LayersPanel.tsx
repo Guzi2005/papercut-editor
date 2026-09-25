@@ -111,7 +111,7 @@ const Slider: React.FC<{
   display?: string;
   onChange: (v: number) => void;
 }> = ({ label, value, min, max, step, display, onChange }) => (
-  <label className="flex items-center gap-2 text-[10px] text-[#8E9FCA]">
+  <label className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
     <span className="w-12 shrink-0">{label}</span>
     <input
       type="range"
@@ -120,9 +120,9 @@ const Slider: React.FC<{
       step={step}
       value={value}
       onChange={(e) => onChange(parseFloat(e.target.value))}
-      className="flex-1 h-1.5 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+      className="flex-1 h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
     />
-    <span className="w-9 text-right font-mono text-[#FBFBFC]">{display ?? value}</span>
+    <span className="w-9 text-right font-mono text-(--ui-strong)">{display ?? value}</span>
   </label>
 );
 
@@ -224,7 +224,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         if (e.key === 'Escape') setEditing(null);
       }}
       onClick={(e) => e.stopPropagation()}
-      className="px-1.5 py-0.5 bg-[#0F131D] text-white text-[11px] rounded-md outline-none w-full border border-[#2652D0]"
+      className="px-1.5 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[11px] rounded-md outline-none w-full border border-(--ui-accent)"
     />
   );
 
@@ -277,22 +277,22 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         }}
         className={`relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors border ${
           dragging?.id === layer.id
-            ? 'opacity-40 border-dashed border-[#2652D0]'
+            ? 'opacity-40 border-dashed border-(--ui-accent)'
             : isActive
-            ? 'bg-[#20293D] border-[#2652D0] text-[#FBFBFC]'
+            ? 'bg-(--ui-hover) border-(--ui-accent) text-(--ui-strong)'
             : isSelected
-            ? 'bg-[#1C2335] border-[#2652D0]/40 text-[#FBFBFC]'
-            : 'hover:bg-[#1C2335] text-[#BAC5EB] border-transparent'
+            ? 'bg-(--ui-raised) border-(--ui-accent)/40 text-(--ui-strong)'
+            : 'hover:bg-(--ui-raised) text-(--ui-text-2) border-transparent'
         }`}
       >
         {hint && hint !== 'into' && (
           <div
-            className={`absolute left-1 right-1 h-0.5 bg-[#3A6DF0] rounded-full shadow-[0_0_8px_#3A6DF0] z-30 pointer-events-none ${
+            className={`absolute left-1 right-1 h-0.5 bg-(--ui-accent-glow) rounded-full shadow-[0_0_8px_#3A6DF0] z-30 pointer-events-none ${
               hint === 'above' ? '-top-px' : '-bottom-px'
             }`}
           />
         )}
-        {draggable && <GripVertical className="w-3 h-3 text-[#4E5F85] shrink-0 cursor-grab" />}
+        {draggable && <GripVertical className="w-3 h-3 text-(--ui-faint) shrink-0 cursor-grab" />}
         <div className="w-8 h-8 rounded-md bg-[#FAF8F2]/95 p-0.5 shrink-0 overflow-hidden">
           <LayerThumb layer={layer} w={project.width} h={project.height} />
         </div>
@@ -306,16 +306,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 e.stopPropagation();
                 startRename('layer', layer.id, layer.name);
               }}
-              title="双击重命名"
+              data-tip="双击重命名"
             >
               {layer.name}
             </div>
           )}
-          <div className="flex items-center gap-1.5 text-[9px] text-[#6E7F9E] mt-0.5">
+          <div className="flex items-center gap-1.5 text-[9px] text-(--ui-faint) mt-0.5">
             <span className="w-2 h-2 rounded-sm border border-white/30" style={{ backgroundColor: layer.color }} />
             <span className="font-mono">z {zOf[layer.id] ?? '-'}</span>
             {scope === 'depth' && item && (
-              <span className="flex items-center gap-0.5 text-[#EB8E88] truncate">
+              <span className="flex items-center gap-0.5 text-(--ui-accent-2) truncate">
                 <Box className="w-2.5 h-2.5" />
                 {item.name}
               </span>
@@ -331,8 +331,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             e.stopPropagation();
             onUpdateLayer(layer.id, { visible: !layer.visible });
           }}
-          className={`p-1 rounded hover:bg-[#28324A] ${layer.visible ? 'text-[#8E9FCA]' : 'text-[#D23838]'}`}
-          title={layer.visible ? '隐藏' : '显示'}
+          className={`p-1 rounded hover:bg-(--ui-hover) ${layer.visible ? 'text-(--ui-muted)' : 'text-[#D23838]'}`}
+          data-tip={layer.visible ? '隐藏' : '显示'}
         >
           {layer.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
         </button>
@@ -341,8 +341,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             e.stopPropagation();
             onUpdateLayer(layer.id, { locked: !layer.locked });
           }}
-          className={`p-1 rounded hover:bg-[#28324A] ${layer.locked ? 'text-[#EB8E88]' : 'text-[#4E5F85]'}`}
-          title={layer.locked ? '解锁' : '锁定'}
+          className={`p-1 rounded hover:bg-(--ui-hover) ${layer.locked ? 'text-(--ui-accent-2)' : 'text-(--ui-faint)'}`}
+          data-tip={layer.locked ? '解锁' : '锁定'}
         >
           {layer.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
         </button>
@@ -357,8 +357,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     return (
       <div
         key={group.id}
-        className={`rounded-xl bg-[#1A2031] border overflow-hidden ${
-          hint === 'into' ? 'border-[#3A6DF0]' : 'border-[#2B364D]'
+        className={`rounded-xl bg-(--ui-raised) border overflow-hidden ${
+          hint === 'into' ? 'border-(--ui-accent-glow)' : 'border-(--ui-border)'
         } ${dragging?.id === group.id ? 'opacity-40' : ''}`}
       >
         <div
@@ -386,17 +386,17 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           }}
           onDragEnd={clearDrag}
           onClick={() => setCollapsedGroupIds((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
-          className="relative flex items-center gap-1.5 px-2 py-1.5 bg-[#212A3E] text-[#BAC5EB] hover:bg-[#28334A] cursor-pointer select-none"
+          className="relative flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover) text-(--ui-text-2) hover:bg-(--ui-hover) cursor-pointer select-none"
         >
           {hint && hint !== 'into' && (
-            <div className={`absolute left-1 right-1 h-0.5 bg-[#3A6DF0] z-30 ${hint === 'above' ? '-top-px' : '-bottom-px'}`} />
+            <div className={`absolute left-1 right-1 h-0.5 bg-(--ui-accent-glow) z-30 ${hint === 'above' ? '-top-px' : '-bottom-px'}`} />
           )}
           {isCollapsed ? (
-            <ChevronRight className="w-3.5 h-3.5 text-[#8E9FCA] shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted) shrink-0" />
           ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-[#8E9FCA] shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-(--ui-muted) shrink-0" />
           )}
-          <Folder className="w-3.5 h-3.5 text-[#EB8E88] shrink-0" />
+          <Folder className="w-3.5 h-3.5 text-(--ui-accent-2) shrink-0" />
           <div className="flex-1 min-w-0">
             {isEditing('group', group.id) ? (
               renameInput
@@ -407,13 +407,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   e.stopPropagation();
                   startRename('group', group.id, group.name);
                 }}
-                title="双击重命名深度层"
+                data-tip="双击重命名深度层"
               >
                 {group.name}
               </span>
             )}
           </div>
-          <span className="text-[9px] text-[#7E8FB8] font-mono px-1 rounded bg-[#161B29]/60 shrink-0" title="导出到 Godot 的 z_index 起点">
+          <span className="text-[9px] text-(--ui-muted) font-mono px-1 rounded bg-(--ui-panel)/60 shrink-0" data-tip="导出到 Godot 的 z_index 起点">
             z{slot?.zBase ?? 0}
           </span>
           <button
@@ -421,8 +421,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               e.stopPropagation();
               onAddLayer(group.id);
             }}
-            className="p-0.5 rounded hover:bg-[#161B29] text-[#8E9FCA] hover:text-white"
-            title="在此深度层新建纸片"
+            className="p-0.5 rounded hover:bg-(--ui-panel) text-(--ui-muted) hover:text-(--ui-strong)"
+            data-tip="在此深度层新建纸片"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -431,8 +431,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               e.stopPropagation();
               onUpdateGroup(group.id, { visible: !group.visible });
             }}
-            className={`p-0.5 rounded hover:bg-[#161B29] ${group.visible ? 'text-[#8E9FCA]' : 'text-[#D23838]'}`}
-            title={group.visible ? '隐藏深度层' : '显示深度层'}
+            className={`p-0.5 rounded hover:bg-(--ui-panel) ${group.visible ? 'text-(--ui-muted)' : 'text-[#D23838]'}`}
+            data-tip={group.visible ? '隐藏深度层' : '显示深度层'}
           >
             {group.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           </button>
@@ -441,8 +441,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               e.stopPropagation();
               onUpdateGroup(group.id, { locked: !group.locked });
             }}
-            className={`p-0.5 rounded hover:bg-[#161B29] ${group.locked ? 'text-[#EB8E88]' : 'text-[#4E5F85]'}`}
-            title={group.locked ? '解锁深度层' : '锁定深度层'}
+            className={`p-0.5 rounded hover:bg-(--ui-panel) ${group.locked ? 'text-(--ui-accent-2)' : 'text-(--ui-faint)'}`}
+            data-tip={group.locked ? '解锁深度层' : '锁定深度层'}
           >
             {group.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
           </button>
@@ -451,8 +451,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               e.stopPropagation();
               onDeleteGroup(group.id);
             }}
-            className="p-0.5 rounded hover:bg-red-950/60 text-[#4E5F85] hover:text-red-300"
-            title="解散深度层 (纸片保留)"
+            className="p-0.5 rounded hover:bg-red-950/60 text-(--ui-faint) hover:text-red-300"
+            data-tip="解散深度层 (纸片保留)"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -460,7 +460,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         {!isCollapsed && (
           <div className="p-1 space-y-0.5">
             {group.layerIds.length === 0 && (
-              <div className="text-[10px] text-[#5E6E94] px-2 py-1.5">空深度层：把纸片拖到标题上放入</div>
+              <div className="text-[10px] text-(--ui-faint) px-2 py-1.5">拖入纸片</div>
             )}
             {group.layerIds
               .slice()
@@ -493,15 +493,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   const itemsTab = (
     <div className="space-y-2">
-      <div className="rounded-xl border border-dashed border-[#2B364D] p-2.5 text-[10px] text-[#7E8FB8] leading-relaxed">
-        物件 = 游戏里的一个对象（角色、柜台、布匹架…）。它的部件可以分散在不同深度层，导出时每个物件生成一个 Godot 场景，部件按深度得到各自的 z_index。
+      <div>
         <button
           onClick={onCreateItem}
           disabled={selectedLayerIds.length === 0 && !activeLayerId}
-          className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[#2652D0] hover:bg-[#1E43B8] disabled:opacity-40 text-white font-medium text-[11px]"
+          data-tip="物件是游戏里的一个对象，部件可分布在不同深度层；导出时每个物件生成一个 Godot 场景"
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) disabled:opacity-40 text-white font-medium text-[11px]"
         >
           <Plus className="w-3 h-3" />
-          {selectedLayerIds.length > 1 ? `用选中的 ${selectedLayerIds.length} 个部件新建物件` : '用当前纸片新建物件'}
+          {selectedLayerIds.length > 1 ? `新建物件（${selectedLayerIds.length} 个部件）` : '新建物件'}
         </button>
       </div>
 
@@ -515,41 +515,41 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         return (
           <div
             key={item.id}
-            className={`rounded-xl border overflow-hidden ${isSelectedItem ? 'border-[#EB8E88]' : 'border-[#2B364D]'} bg-[#1A2031]`}
+            className={`rounded-xl border overflow-hidden ${isSelectedItem ? 'border-(--ui-accent-2)' : 'border-(--ui-border)'} bg-(--ui-raised)`}
           >
-            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-[#212A3E]">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover)">
               <button
                 onClick={() => setExpandedItemIds((prev) => ({ ...prev, [item.id]: !expanded }))}
-                className="text-[#8E9FCA]"
+                className="text-(--ui-muted)"
               >
                 {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
-              <Box className="w-3.5 h-3.5 text-[#EB8E88] shrink-0" />
+              <Box className="w-3.5 h-3.5 text-(--ui-accent-2) shrink-0" />
               <div className="flex-1 min-w-0">
                 {isEditing('item', item.id) ? (
                   renameInput
                 ) : (
                   <span
-                    className="text-[11px] font-semibold text-[#FBFBFC] truncate block"
+                    className="text-[11px] font-semibold text-(--ui-strong) truncate block"
                     onDoubleClick={() => startRename('item', item.id, item.name)}
-                    title="双击重命名 (即 Godot 场景根节点名)"
+                    data-tip="双击重命名 (即 Godot 场景根节点名)"
                   >
                     {item.name}
                   </span>
                 )}
               </div>
-              <span className="text-[9px] text-[#7E8FB8]">{item.partIds.length} 部件</span>
+              <span className="text-[9px] text-(--ui-muted)">{item.partIds.length} 部件</span>
               <button
                 onClick={() => onSelectItem(item.id)}
-                className="p-0.5 rounded hover:bg-[#161B29] text-[#8E9FCA] hover:text-white"
-                title="在画布上选中整个物件"
+                className="p-0.5 rounded hover:bg-(--ui-panel) text-(--ui-muted) hover:text-(--ui-strong)"
+                data-tip="在画布上选中整个物件"
               >
                 <MousePointer2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => onDeleteItem(item.id)}
-                className="p-0.5 rounded hover:bg-red-950/60 text-[#4E5F85] hover:text-red-300"
-                title="解散物件 (纸片保留)"
+                className="p-0.5 rounded hover:bg-red-950/60 text-(--ui-faint) hover:text-red-300"
+                data-tip="解散物件 (纸片保留)"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -565,8 +565,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                         e.stopPropagation();
                         onRemovePartFromItem(item.id, pid);
                       }}
-                      className="p-1 rounded hover:bg-[#28324A] text-[#4E5F85] hover:text-[#EB8E88]"
-                      title="移出物件"
+                      className="p-1 rounded hover:bg-(--ui-hover) text-(--ui-faint) hover:text-(--ui-accent-2)"
+                      data-tip="移出物件"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -575,38 +575,38 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 {activeLayerId && !item.partIds.includes(activeLayerId) && layers[activeLayerId] && (
                   <button
                     onClick={() => onAddPartToItem(item.id, activeLayerId)}
-                    className="w-full text-left px-2 py-1 rounded-lg text-[10px] text-[#8E9FCA] hover:bg-[#232D42] hover:text-white"
+                    className="w-full text-left px-2 py-1 rounded-lg text-[10px] text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
                   >
-                    + 加入当前纸片「{layers[activeLayerId].name}」
+                    + 加入「{layers[activeLayerId].name}」
                   </button>
                 )}
 
-                <div className="mt-1 pt-1.5 border-t border-[#263147] space-y-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-[#8E9FCA]">
+                <div className="mt-1 pt-1.5 border-t border-(--ui-divider) space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-(--ui-muted)">
                     <Anchor className="w-3 h-3 text-[#D23838]" />
-                    <span className="flex-1">锚点 (Godot 原点)</span>
+                    <span className="flex-1" data-tip="场景原点，Godot 中物件的位置基准">锚点</span>
                     {(['x', 'y'] as const).map((axis) => (
                       <input
                         key={axis}
                         type="number"
                         value={Math.round(item.pivot[axis])}
                         onChange={(e) => onUpdateItem(item.id, { pivot: { ...item.pivot, [axis]: Number(e.target.value) } })}
-                        className="w-14 bg-[#0F131D] border border-[#2B364D] rounded px-1 py-0.5 text-[10px] text-white font-mono"
-                        title={axis}
+                        className="w-14 bg-(--ui-input) border border-(--ui-border) rounded px-1 py-0.5 text-[10px] text-(--ui-strong) font-mono"
+                        data-tip={axis}
                       />
                     ))}
                   </div>
                   {item.sockets.map((s) => (
-                    <div key={s.id} className="flex items-center gap-1.5 text-[10px] text-[#8E9FCA]">
-                      <span className="w-2 h-2 rotate-45 bg-[#EB8E88] shrink-0 ml-0.5" />
+                    <div key={s.id} className="flex items-center gap-1.5 text-[10px] text-(--ui-muted)">
+                      <span className="w-2 h-2 rotate-45 bg-(--ui-accent-2) shrink-0 ml-0.5" />
                       <div className="flex-1 min-w-0">
                         {isEditing('socket', s.id) ? (
                           renameInput
                         ) : (
                           <span
-                            className="font-mono text-[#FBFBFC] truncate block"
+                            className="font-mono text-(--ui-strong) truncate block"
                             onDoubleClick={() => startRename('socket', s.id, s.name, item.id)}
-                            title="双击重命名 (Godot Marker2D 名)"
+                            data-tip="双击重命名 (Godot Marker2D 名)"
                           >
                             {s.name}
                           </span>
@@ -617,7 +617,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                       </span>
                       <button
                         onClick={() => onUpdateItem(item.id, { sockets: item.sockets.filter((x) => x.id !== s.id) })}
-                        className="p-0.5 text-[#4E5F85] hover:text-[#EB8E88]"
+                        className="p-0.5 text-(--ui-faint) hover:text-(--ui-accent-2)"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -625,10 +625,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   ))}
                   <button
                     onClick={() => onAddSocket(item.id)}
-                    className="w-full text-left px-2 py-1 rounded-lg text-[10px] text-[#8E9FCA] hover:bg-[#232D42] hover:text-white"
-                    title="挂点：手部、帽子、特效位置等，导出为 Marker2D；选中物件后可在画布上拖动"
+                    className="w-full text-left px-2 py-1 rounded-lg text-[10px] text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
+                    data-tip="挂点：手部、帽子、特效位置等，导出为 Marker2D；选中物件后可在画布上拖动"
                   >
-                    + 挂点 (Marker2D)
+                    + 挂点
                   </button>
                 </div>
               </div>
@@ -638,8 +638,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       })}
 
       {unassigned.length > 0 && (
-        <div className="text-[10px] text-[#5E6E94] px-1">
-          还有 {unassigned.length} 张纸片未归入物件，导出时会合并为一个「场景杂项」物件。
+        <div className="text-[10px] text-(--ui-faint) px-1" data-tip="未归组的纸片导出时合并为「场景杂项」">
+          {unassigned.length} 张纸片未归组
         </div>
       )}
     </div>
@@ -650,9 +650,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const styleTab = (
     <div className="space-y-3">
       <div>
-        <div className="flex items-center justify-between text-[11px] text-[#8E9FCA] mb-2">
-          <span className="font-semibold text-[#FBFBFC]">织游色卡</span>
-          <span className="text-[10px] text-[#7E8FB8]">单击上色当前纸片 · 双击改备注</span>
+        <div className="flex items-center justify-between text-[11px] text-(--ui-muted) mb-2">
+          <span className="font-semibold text-(--ui-strong)" data-tip="单击给当前纸片上色，双击修改备注">织游色卡</span>
         </div>
         <div className="grid grid-cols-4 gap-1.5">
           {FOLK_PALETTE.map((c) => {
@@ -667,7 +666,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     setEditingColorHex(c.hex);
                     setEditingColorNote(displayName);
                   }}
-                  title={`${displayName} ${c.hex} — ${c.desc}`}
+                  data-tip={`${displayName} ${c.hex} — ${c.desc}`}
                   className={`w-full h-7 rounded-md flex items-center justify-center transition-all ${
                     isCurrent ? 'ring-2 ring-white scale-105 z-10' : 'hover:scale-105'
                   }`}
@@ -678,7 +677,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   </span>
                 </button>
                 {editingColorHex === c.hex && (
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 bg-[#161B29] border border-[#2652D0] rounded-lg p-1 shadow-2xl flex items-center gap-1 min-w-[130px]">
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 bg-(--ui-panel) border border-(--ui-accent) rounded-lg p-1 shadow-2xl flex items-center gap-1 min-w-[130px]">
                     <input
                       type="text"
                       value={editingColorNote}
@@ -689,9 +688,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                         setEditingColorHex(null);
                       }}
                       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                      className="px-2 py-0.5 bg-[#0F131D] text-white text-[10px] rounded outline-none w-full border border-[#2F3A54]"
+                      className="px-2 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[10px] rounded outline-none w-full border border-(--ui-border)"
                     />
-                    <Check className="w-3 h-3 text-[#2652D0]" />
+                    <Check className="w-3 h-3 text-(--ui-accent)" />
                   </div>
                 )}
               </div>
@@ -700,8 +699,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         </div>
       </div>
 
-      <div className="rounded-xl bg-[#1A2031] border border-[#2B364D] p-2.5 space-y-2">
-        <div className="text-[11px] font-semibold text-[#FBFBFC]">画面质感</div>
+      <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-2.5 space-y-2">
+        <div className="text-[11px] font-semibold text-(--ui-strong)">画面质感</div>
         <Slider
           label="纸影"
           value={project.shadowStrength ?? 0.5}
@@ -720,22 +719,23 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               ),
             });
           }}
-          className="w-full text-[10px] py-1 rounded-lg bg-[#1C2335] border border-[#2B364D] text-[#8E9FCA] hover:text-white"
-          title="给还没有设置颗粒的纸片统一加上当前纸片的颗粒强度"
+          className="w-full text-[10px] py-1 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)"
+          data-tip="给还没有设置颗粒的纸片统一加上当前纸片的颗粒强度"
         >
-          把当前颗粒强度应用到未设置的纸片
+          统一颗粒
         </button>
       </div>
 
-      <div className="rounded-xl bg-[#1A2031] border border-[#2B364D] p-2.5 space-y-2">
+      <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-2.5 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-[#FBFBFC] flex items-center gap-1.5">
-            <ImageIcon className="w-3.5 h-3.5 text-[#8E9FCA]" />
+          <span className="text-[11px] font-semibold text-(--ui-strong) flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-(--ui-muted)" />
             临摹参考图
           </span>
           <button
             onClick={onImportReference}
-            className="text-[10px] px-2 py-0.5 rounded-md bg-[#2652D0] hover:bg-[#1E43B8] text-white"
+            data-tip="半透明临摹层，不参与导出"
+            className="text-[10px] px-2 py-0.5 rounded-md bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
           >
             {ref ? '更换' : '导入图片'}
           </button>
@@ -754,27 +754,25 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             <div className="flex items-center gap-1.5 text-[10px]">
               <button
                 onClick={() => onUpdateProject({ reference: { ...ref, visible: !ref.visible } })}
-                className="flex-1 py-1 rounded-md bg-[#1C2335] border border-[#2B364D] text-[#BAC5EB] hover:text-white"
+                className="flex-1 py-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)"
               >
                 {ref.visible ? '隐藏' : '显示'}
               </button>
               <button
                 onClick={() => onUpdateProject({ reference: { ...ref, onTop: !ref.onTop } })}
-                className="flex-1 py-1 rounded-md bg-[#1C2335] border border-[#2B364D] text-[#BAC5EB] hover:text-white"
+                className="flex-1 py-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)"
               >
                 {ref.onTop ? '置于纸片下方' : '置于纸片上方'}
               </button>
               <button
                 onClick={() => onUpdateProject({ reference: undefined })}
-                className="py-1 px-2 rounded-md bg-[#1C2335] border border-[#2B364D] text-red-400 hover:text-red-300"
+                className="py-1 px-2 rounded-md bg-(--ui-raised) border border-(--ui-border) text-red-400 hover:text-red-300"
               >
                 移除
               </button>
             </div>
           </>
-        ) : (
-          <div className="text-[10px] text-[#5E6E94]">参考图只用于临摹，不会被导出。</div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -798,9 +796,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   };
 
   const dock = activeLayer && tab !== 'style' && (
-    <div className="p-2.5 border-t border-[#263147] bg-[#121622] space-y-1.5 shrink-0">
+    <div className="p-2.5 border-t border-(--ui-divider) bg-(--ui-panel-2) space-y-1.5 shrink-0">
       <div className="flex items-center gap-2">
-        <label className="relative w-6 h-6 rounded-md border border-white/30 shrink-0 cursor-pointer overflow-hidden" style={{ backgroundColor: activeLayer.color }} title="纸色">
+        <label className="relative w-6 h-6 rounded-md border border-white/30 shrink-0 cursor-pointer overflow-hidden" style={{ backgroundColor: activeLayer.color }} data-tip="纸色">
           <input
             type="color"
             value={activeLayer.color}
@@ -808,14 +806,14 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             className="absolute inset-0 opacity-0 cursor-pointer"
           />
         </label>
-        <span className="flex-1 text-[11px] font-semibold text-[#FBFBFC] truncate">{activeLayer.name}</span>
+        <span className="flex-1 text-[11px] font-semibold text-(--ui-strong) truncate">{activeLayer.name}</span>
         <button
           onClick={() => {
             playPaperRustle();
             onDuplicateLayer(activeLayer.id);
           }}
-          className="p-1 rounded-md bg-[#1C2335] border border-[#2B364D] text-[#BAC5EB] hover:text-white"
-          title="复制纸片"
+          className="p-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)"
+          data-tip="复制纸片"
         >
           <Copy className="w-3.5 h-3.5" />
         </button>
@@ -824,8 +822,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             playDiscardSwoosh();
             onDeleteLayer(activeLayer.id);
           }}
-          className="p-1 rounded-md bg-[#1C2335] border border-[#2B364D] text-red-400 hover:text-red-300"
-          title="删除纸片"
+          className="p-1 rounded-md bg-(--ui-raised) border border-(--ui-border) text-red-400 hover:text-red-300"
+          data-tip="删除纸片"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -839,13 +837,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         display={`${Math.round(activeLayer.opacity * 100)}%`}
         onChange={(v) => onUpdateLayer(activeLayer.id, { opacity: v })}
       />
-      <div className="flex items-center gap-2 text-[10px] text-[#8E9FCA]">
+      <div className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
         <span className="w-12 shrink-0">混合</span>
         <select
           value={activeLayer.blendMode || 'normal'}
           onChange={(e) => onUpdateLayer(activeLayer.id, { blendMode: e.target.value as Layer['blendMode'] })}
-          className="flex-1 bg-[#0F131D] border border-[#2B364D] rounded-md px-1.5 py-0.5 text-[#FBFBFC] outline-none"
-          title="正片叠底/滤色/叠加导出到 Godot 时会与同物件下方部件合成烘焙"
+          className="flex-1 bg-(--ui-input) border border-(--ui-border) rounded-md px-1.5 py-0.5 text-(--ui-strong) outline-none"
+          data-tip="正片叠底/滤色/叠加导出到 Godot 时会与同物件下方部件合成烘焙"
         >
           <option value="normal">正常</option>
           <option value="multiply">正片叠底</option>
@@ -862,12 +860,12 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         display={`${Math.round((activeLayer.grain ?? 0) * 100)}%`}
         onChange={(v) => onUpdateLayer(activeLayer.id, { grain: v })}
       />
-      <div className="flex items-center gap-2 text-[10px] text-[#8E9FCA]">
+      <div className="flex items-center gap-2 text-[10px] text-(--ui-muted)">
         <span className="w-12 shrink-0">纹样</span>
         <select
           value={pattern?.type || 'none'}
           onChange={(e) => (e.target.value === 'none' ? setPattern(null) : setPattern({ type: e.target.value as PatternType }))}
-          className="flex-1 bg-[#0F131D] border border-[#2B364D] rounded-md px-1.5 py-0.5 text-[#FBFBFC] outline-none"
+          className="flex-1 bg-(--ui-input) border border-(--ui-border) rounded-md px-1.5 py-0.5 text-(--ui-strong) outline-none"
         >
           {PATTERN_OPTIONS.map((o) => (
             <option key={o.id} value={o.id}>
@@ -876,7 +874,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           ))}
         </select>
         {pattern && (
-          <label className="relative w-5 h-5 rounded border border-white/30 cursor-pointer overflow-hidden" style={{ backgroundColor: pattern.color }} title="纹样颜色">
+          <label className="relative w-5 h-5 rounded border border-white/30 cursor-pointer overflow-hidden" style={{ backgroundColor: pattern.color }} data-tip="纹样颜色">
             <input type="color" value={pattern.color} onChange={(e) => setPattern({ color: e.target.value })} className="absolute inset-0 opacity-0 cursor-pointer" />
           </label>
         )}
@@ -893,8 +891,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const ctxLayer = contextMenu ? layers[contextMenu.layerId] : null;
 
   return (
-    <aside className="w-72 xl:w-80 flex flex-col bg-[#161B29] border-l border-[#263147] text-[#BAC5EB] text-xs shrink-0 select-none z-20 relative">
-      <div className="h-11 px-2 border-b border-[#263147] flex items-center gap-1">
+    <aside className="w-72 xl:w-80 flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative">
+      <div className="h-11 px-2 border-b border-(--ui-divider) flex items-center gap-1">
         {([
           { id: 'depth', label: '深度', icon: LayersIcon },
           { id: 'items', label: `物件${items.length ? ` ${items.length}` : ''}`, icon: Box },
@@ -904,7 +902,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-              tab === t.id ? 'bg-[#2652D0] text-white' : 'text-[#8E9FCA] hover:bg-[#1E2538] hover:text-white'
+              tab === t.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-white'
             }`}
           >
             <t.icon className="w-3.5 h-3.5" />
@@ -916,15 +914,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           <>
             <button
               onClick={onAddGroup}
-              className="p-1.5 rounded-lg text-[#8E9FCA] hover:bg-[#1E2538] hover:text-white"
-              title="新建深度层 (图层组)"
+              className="p-1.5 rounded-lg text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)"
+              data-tip="新建深度层 (图层组)"
             >
               <FolderPlus className="w-4 h-4" />
             </button>
             <button
               onClick={() => onAddLayer()}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#2652D0] hover:bg-[#1E43B8] text-white text-[11px]"
-              title="在当前纸片上方新建纸片"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white text-[11px]"
+              data-tip="在当前纸片上方新建纸片"
             >
               <Plus className="w-3 h-3" />
               纸片
@@ -949,7 +947,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           }}
         >
           <div
-            className="absolute bg-[#181E2E]/98 border border-[#3A4766] text-[#CAD0DB] rounded-xl shadow-2xl py-1 w-52 text-xs backdrop-blur-md"
+            className="absolute bg-(--ui-raised)/98 border border-(--ui-border-strong) text-(--ui-text) rounded-xl shadow-2xl py-1 w-52 text-xs backdrop-blur-md"
             style={{
               left: Math.min(contextMenu.x, window.innerWidth - 220),
               top: Math.min(contextMenu.y, window.innerHeight - 320),
@@ -970,15 +968,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   a.run();
                   setContextMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left hover:bg-[#232D42] flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) flex items-center gap-2"
               >
-                <a.icon className="w-3.5 h-3.5 text-[#8E9FCA]" />
+                <a.icon className="w-3.5 h-3.5 text-(--ui-muted)" />
                 {a.label}
               </button>
             ))}
             {items.length > 0 && (
               <>
-                <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-[#7E8FB8] border-t border-[#2B364D] mt-1">加入物件</div>
+                <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-(--ui-muted) border-t border-(--ui-border) mt-1">加入物件</div>
                 {items.map((it) => (
                   <button
                     key={it.id}
@@ -986,11 +984,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                       onAddPartToItem(it.id, ctxLayer.id);
                       setContextMenu(null);
                     }}
-                    className="w-full px-3 py-1 text-left hover:bg-[#232D42] flex items-center gap-2"
+                    className="w-full px-3 py-1 text-left hover:bg-(--ui-hover) flex items-center gap-2"
                   >
-                    <Box className="w-3 h-3 text-[#EB8E88]" />
+                    <Box className="w-3 h-3 text-(--ui-accent-2)" />
                     <span className="truncate">{it.name}</span>
-                    {it.partIds.includes(ctxLayer.id) && <Check className="w-3 h-3 ml-auto text-[#2652D0]" />}
+                    {it.partIds.includes(ctxLayer.id) && <Check className="w-3 h-3 ml-auto text-(--ui-accent)" />}
                   </button>
                 ))}
               </>
@@ -1001,7 +999,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 onDeleteLayer(ctxLayer.id);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-[#2B364D] mt-1"
+              className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-(--ui-border) mt-1"
             >
               <Trash2 className="w-3.5 h-3.5" />
               删除纸片

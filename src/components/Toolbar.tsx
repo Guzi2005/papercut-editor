@@ -87,7 +87,7 @@ const TOOLS: ToolDefinition[] = [
     name: '选择',
     shortName: '选择',
     hotkey: 'V',
-    description: '点选纸片或整个物件，拖动移动，角点等比缩放，顶部圆点旋转 (Shift 约束)',
+    description: '移动、缩放、旋转纸片或物件',
     icon: MousePointer2,
   },
   {
@@ -95,7 +95,7 @@ const TOOLS: ToolDefinition[] = [
     name: '柳叶笔',
     shortName: '柳叶',
     hotkey: 'L',
-    description: '核心笔刷：两端极锐，零预设直径，由运笔弧度实时闭合成叶',
+    description: '按运笔弧度实时成叶',
     icon: Feather,
   },
   {
@@ -103,7 +103,7 @@ const TOOLS: ToolDefinition[] = [
     name: '几何形',
     shortName: '几何',
     hotkey: 'G',
-    description: '基础几何：矩形、圆形、正三角、五角星、菱形与折线',
+    description: '矩形、圆、三角、星、菱形、折线',
     icon: Shapes,
   },
   {
@@ -111,7 +111,7 @@ const TOOLS: ToolDefinition[] = [
     name: '笔刀',
     shortName: '笔刀',
     hotkey: 'K',
-    description: '雕刻笔刀：支持压感动态切口宽度、不同刀头笔尖选择',
+    description: '可调刀头与压感的刻刀',
     icon: PenTool,
   },
   {
@@ -119,7 +119,7 @@ const TOOLS: ToolDefinition[] = [
     name: '手绘',
     shortName: '手绘',
     hotkey: 'B',
-    description: '附属于纸片蒙版的手绘：铅笔(五档软硬)、钢笔、喷枪晕染',
+    description: '铅笔、钢笔、喷枪，不出纸片边界',
     icon: Paintbrush,
   },
   {
@@ -127,7 +127,7 @@ const TOOLS: ToolDefinition[] = [
     name: '锚点微调',
     shortName: '锚点',
     hotkey: 'A',
-    description: '点击并拖动切口控制锚点，自由调整曲线轮廓',
+    description: '拖动切口锚点调整轮廓',
     icon: Spline,
   },
 ];
@@ -155,8 +155,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const carving = CARVING_TOOLS.includes(currentTool);
 
   return (
-    <aside className="w-16 flex flex-col items-center py-3 bg-[#161B29] text-[#CAD0DB] border-r border-[#2B364D] shrink-0 z-20 select-none justify-between overflow-y-auto">
-      <div className="flex flex-col items-center gap-2 w-full px-2">
+    <aside className="w-16 flex flex-col items-center py-2 bg-(--ui-panel) text-(--ui-text) border-r border-(--ui-border) shrink-0 z-20 select-none justify-between">
+      <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {TOOLS.map((tool) => {
           const isActive =
             currentTool === tool.id || (tool.id === 'pen_knife' && currentTool === 'freehand');
@@ -169,18 +169,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 if (isActive && tool.id === 'anchor_edit') onSelectTool('select');
                 else onSelectTool(tool.id);
               }}
-              title={`${tool.name} (${tool.hotkey})：${tool.description}`}
-              className={`relative group w-12 h-12 flex flex-col items-center justify-center rounded-xl transition-all ${
+              data-tip={`${tool.name}（${tool.hotkey}）· ${tool.description}`}
+              data-tip-side="right"
+              className={`relative group w-12 h-11 flex flex-col items-center justify-center rounded-xl transition-all ${
                 isActive
-                  ? 'bg-[#2652D0] text-white shadow-lg shadow-blue-950/70 border border-[#BAC5EB]/60 font-semibold'
-                  : 'bg-[#1E2538] text-[#BAC5EB] border border-[#2F3A54] hover:bg-[#28324A] hover:text-[#FBFBFC] hover:border-[#4B5A82]'
+                  ? 'bg-(--ui-accent) text-white shadow-lg shadow-blue-950/70 border border-(--ui-text-2)/60 font-semibold'
+                  : 'bg-(--ui-raised) text-(--ui-text-2) border border-(--ui-border) hover:bg-(--ui-hover) hover:text-(--ui-strong) hover:border-(--ui-border-strong)'
               }`}
             >
-              <Icon className={`w-4.5 h-4.5 mb-0.5 ${isActive ? 'text-white' : 'text-[#BAC5EB]'}`} />
-              <span className={`text-[10px] leading-none tracking-tight font-medium ${isActive ? 'text-white' : 'text-[#9DAED6]'}`}>
+              <Icon className={`w-4.5 h-4.5 mb-0.5 ${isActive ? 'text-(--ui-strong)' : 'text-(--ui-text-2)'}`} />
+              <span className={`text-[10px] leading-none tracking-tight font-medium ${isActive ? 'text-(--ui-strong)' : 'text-(--ui-text-2)'}`}>
                 {tool.shortName}
               </span>
-              <span className={`absolute top-0.5 right-1 text-[8px] font-mono ${isActive ? 'text-white/70' : 'text-[#56658A]'}`}>
+              <span className={`absolute top-0.5 right-1 text-[8px] font-mono ${isActive ? 'text-white/70' : 'text-(--ui-faint)'}`}>
                 {tool.hotkey}
               </span>
             </button>
@@ -188,8 +189,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         })}
 
         {/* 刻纸 / 贴花 / 剪除：决定柳叶、几何、笔刀的落刀效果 */}
-        <div className="w-full mt-1 pt-2 border-t border-[#263147] flex flex-col items-center gap-1">
-          <span className="text-[9px] text-[#5E6E94]">落刀</span>
+        <div className="w-full mt-1 pt-1.5 border-t border-(--ui-divider) flex flex-col items-center gap-1" data-tip="落刀模式：柳叶、几何、笔刀的效果">
           {CARVE_MODES.map((mode) => {
             const isActive = carveMode === mode.id;
             const Icon = mode.icon;
@@ -197,13 +197,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <button
                 key={mode.id}
                 onClick={() => onChangeCarveMode(mode.id)}
-                title={`${mode.label}模式 (${mode.hotkey})`}
-                className={`w-12 h-8 flex items-center justify-center gap-1 rounded-lg text-[10px] transition-all ${
+                data-tip={`${mode.label}（${mode.hotkey}）`}
+                data-tip-side="right"
+                className={`w-12 h-7 flex items-center justify-center gap-1 rounded-lg text-[10px] transition-all ${
                   isActive
                     ? carving
-                      ? 'bg-[#EB8E88] text-[#1B1626] font-semibold'
-                      : 'bg-[#EB8E88]/25 text-[#EB8E88] font-semibold'
-                    : 'text-[#8E9FCA] hover:bg-[#232D42] hover:text-white'
+                      ? 'bg-(--ui-accent-2) text-[#1B1626] font-semibold'
+                      : 'bg-(--ui-accent-2)/25 text-(--ui-accent-2) font-semibold'
+                    : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-white'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -214,17 +215,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-1.5 w-full px-2 pt-2">
+      <div className="flex flex-col items-center gap-0.5 w-full px-2 pt-2">
         {onUndo && (
           <button
             onClick={onUndo}
             disabled={!canUndo}
-            className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${
+            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
               canUndo
-                ? 'text-[#BAC5EB] hover:text-[#FBFBFC] hover:bg-[#232D42] cursor-pointer'
-                : 'text-[#3E4A66] cursor-not-allowed opacity-40'
+                ? 'text-(--ui-text-2) hover:text-(--ui-strong) hover:bg-(--ui-hover) cursor-pointer'
+                : 'text-(--ui-faint) cursor-not-allowed opacity-40'
             }`}
-            title="撤销 (Ctrl+Z)"
+            data-tip="撤销 (Ctrl+Z)" data-tip-side="right"
           >
             <CuteLinearUndo className="w-4.5 h-4.5" />
           </button>
@@ -233,12 +234,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <button
             onClick={onRedo}
             disabled={!canRedo}
-            className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${
+            className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
               canRedo
-                ? 'text-[#BAC5EB] hover:text-[#FBFBFC] hover:bg-[#232D42] cursor-pointer'
-                : 'text-[#3E4A66] cursor-not-allowed opacity-40'
+                ? 'text-(--ui-text-2) hover:text-(--ui-strong) hover:bg-(--ui-hover) cursor-pointer'
+                : 'text-(--ui-faint) cursor-not-allowed opacity-40'
             }`}
-            title="重做 (Ctrl+Shift+Z)"
+            data-tip="重做 (Ctrl+Shift+Z)" data-tip-side="right"
           >
             <CuteLinearRedo className="w-4.5 h-4.5" />
           </button>
@@ -246,8 +247,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {onFitZoom && (
           <button
             onClick={onFitZoom}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-[#8E9FCA] hover:text-[#FBFBFC] hover:bg-[#232D42] transition-all cursor-pointer"
-            title="适应画板"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-(--ui-muted) hover:text-(--ui-strong) hover:bg-(--ui-hover) transition-all cursor-pointer"
+            data-tip="适应画板" data-tip-side="right"
           >
             <Maximize2 className="w-3.5 h-3.5" />
           </button>
@@ -255,8 +256,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {onShowShortcuts && (
           <button
             onClick={onShowShortcuts}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-[#8E9FCA] hover:text-[#FBFBFC] hover:bg-[#232D42] transition-all cursor-pointer"
-            title="快捷键 (?)"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-(--ui-muted) hover:text-(--ui-strong) hover:bg-(--ui-hover) transition-all cursor-pointer"
+            data-tip="快捷键 (?)" data-tip-side="right"
           >
             <Keyboard className="w-4 h-4" />
           </button>

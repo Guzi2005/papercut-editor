@@ -65,18 +65,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-150">
-      <div className="bg-[#161B29] border border-[#2B364D] rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl text-[#CAD0DB] overflow-hidden">
+      <div className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl text-(--ui-text) overflow-hidden">
         {/* Modal Header */}
-        <div className="h-14 px-6 border-b border-[#2B364D] flex items-center justify-between">
+        <div className="h-14 px-6 border-b border-(--ui-border) flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-[#2652D0] text-white flex items-center justify-center font-bold text-xs shadow-md shadow-blue-950/60 border border-[#BAC5EB]/40">
+            <div className="w-8 h-8 rounded-xl bg-(--ui-accent) text-white flex items-center justify-center font-bold text-xs shadow-md shadow-blue-950/60 border border-(--ui-text-2)/40">
               SVG
             </div>
             <div>
-              <h2 className="font-bold text-base text-[#FBFBFC]">
+              <h2 className="font-bold text-base text-(--ui-strong)">
                 导出民俗剪纸矢量图
               </h2>
-              <p className="text-xs text-[#8E9FCA]">
+              <p className="text-xs text-(--ui-muted)">
                 标准 SVG 矢量格式，兼容 Illustrator, Inkscape, Figma 与激光刻纸机
               </p>
             </div>
@@ -84,13 +84,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
           <div className="flex items-center gap-3">
             {/* Tabs */}
-            <div className="flex items-center bg-[#1E2538] rounded-xl p-0.5 border border-[#2B364D] text-xs">
+            <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) text-xs">
               <button
                 onClick={() => setActiveTab('preview')}
                 className={`px-3 py-1 rounded-lg transition-colors ${
                   activeTab === 'preview'
-                    ? 'bg-[#2652D0] text-white font-medium shadow-sm'
-                    : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                    ? 'bg-(--ui-accent) text-white font-medium shadow-sm'
+                    : 'text-(--ui-muted) hover:text-(--ui-strong)'
                 }`}
               >
                 矢量预览
@@ -99,8 +99,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
                 onClick={() => setActiveTab('code')}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-colors ${
                   activeTab === 'code'
-                    ? 'bg-[#2652D0] text-white font-medium shadow-sm'
-                    : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                    ? 'bg-(--ui-accent) text-white font-medium shadow-sm'
+                    : 'text-(--ui-muted) hover:text-(--ui-strong)'
                 }`}
               >
                 <FileCode className="w-3.5 h-3.5" />
@@ -110,7 +110,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl hover:bg-[#1E2538] text-[#8E9FCA] hover:text-[#FBFBFC] transition-colors"
+              className="p-1.5 rounded-xl hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -135,7 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
               />
               <button
                 onClick={handleCopyCode}
-                className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-white rounded-lg border border-slate-700 shadow-md transition-colors"
+                className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-(--ui-strong) rounded-lg border border-slate-700 shadow-md transition-colors"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? '已复制到剪贴板' : '复制代码'}</span>
@@ -144,24 +144,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
           )}
 
           {/* Options & Action Footer */}
-          <div className="mt-5 pt-4 border-t border-[#2B364D] flex items-center justify-between text-xs">
+          <div className="mt-5 pt-4 border-t border-(--ui-border) flex items-center justify-between text-xs">
             <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer text-[#BAC5EB]">
+              <label className="flex items-center gap-2 cursor-pointer text-(--ui-text-2)">
                 <input
                   type="checkbox"
                   checked={includeBackground}
                   onChange={(e) => setIncludeBackground(e.target.checked)}
-                  className="rounded bg-[#1E2538] border-[#2B364D] text-[#2652D0] focus:ring-[#2652D0]"
+                  className="rounded bg-(--ui-raised) border-(--ui-border) text-(--ui-accent) focus:ring-(--ui-accent)"
                 />
                 <span>包含底板案台色 (默认透明镂空底)</span>
               </label>
 
               <div className="flex items-center gap-2">
-                <span className="text-[#8E9FCA]">PNG分辨率:</span>
+                <span className="text-(--ui-muted)">PNG分辨率:</span>
                 <select
                   value={pngScale}
                   onChange={(e) => setPngScale(Number(e.target.value))}
-                  className="bg-[#1E2538] border border-[#2B364D] rounded-lg px-2 py-1 text-[#FBFBFC] outline-none"
+                  className="bg-(--ui-raised) border border-(--ui-border) rounded-lg px-2 py-1 text-(--ui-strong) outline-none"
                 >
                   <option value={1}>1x (标准尺寸)</option>
                   <option value={2}>2x (高清 2000px)</option>
@@ -173,7 +173,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
             <div className="flex items-center gap-3">
               <button
                 onClick={handleCopyCode}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E2538] hover:bg-[#28324A] text-[#BAC5EB] font-medium border border-[#2B364D] transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-text-2) font-medium border border-(--ui-border) transition-colors"
               >
                 {copied ? <Check className="w-4 h-4 text-[#438B6E]" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? '已复制' : '复制 SVG 代码'}</span>
@@ -182,15 +182,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
               <button
                 onClick={handleDownloadPng}
                 disabled={isExportingPng}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E2538] hover:bg-[#28324A] text-[#BAC5EB] font-medium border border-[#2B364D] transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-text-2) font-medium border border-(--ui-border) transition-colors"
               >
-                <ImageIcon className="w-4 h-4 text-[#EB8E88]" />
+                <ImageIcon className="w-4 h-4 text-(--ui-accent-2)" />
                 <span>{isExportingPng ? '渲染中...' : '下载 PNG 图片'}</span>
               </button>
 
               <button
                 onClick={handleDownloadSvg}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#2652D0] hover:bg-[#1E43B8] text-white font-semibold shadow-lg shadow-blue-950/60 border border-[#BAC5EB]/40 transition-colors"
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white font-semibold shadow-lg shadow-blue-950/60 border border-(--ui-text-2)/40 transition-colors"
               >
                 <Download className="w-4 h-4" />
                 <span>下载 .SVG 矢量文件</span>

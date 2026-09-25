@@ -80,22 +80,22 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   const [showStarSettings, setShowStarSettings] = useState(false);
 
   return (
-    <div className="min-h-10 px-4 py-1.5 bg-[#141926] border-b border-[#263147] text-[#BAC5EB] flex items-center justify-between text-xs select-none overflow-x-auto gap-3 z-20">
+    <div className="relative z-30 min-h-10 px-3 py-1.5 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center justify-between text-xs select-none gap-3">
       {/* Left: Essential Tools Controls */}
       <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
         {currentTool !== 'hand_draw' && currentTool !== 'select' && currentTool !== 'anchor_edit' && (
           <>
             {/* ”剪除“下分两个模式：智能橡皮 vs 柳叶笔橡皮 */}
             {brushSettings.mode === 'erase' && (
-              <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5 animate-in fade-in">
+              <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5 animate-in fade-in">
                 <button
                   onClick={() => onChangeBrushSettings({ eraseMode: 'smart' })}
                   className={`px-2 py-0.5 rounded-lg text-[10px] transition-colors ${
                     (brushSettings.eraseMode || 'smart') === 'smart'
-                      ? 'bg-[#2652D0] text-white font-medium shadow-sm'
-                      : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                      ? 'bg-(--ui-accent) text-white font-medium shadow-sm'
+                      : 'text-(--ui-muted) hover:text-(--ui-strong)'
                   }`}
-                  title="智能橡皮：划过或轻触切口即整体消除该切口"
+                  data-tip="智能橡皮：划过或轻触切口即整体消除该切口"
                 >
                   智能橡皮
                 </button>
@@ -103,23 +103,23 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                   onClick={() => onChangeBrushSettings({ eraseMode: 'willow' })}
                   className={`px-2 py-0.5 rounded-lg text-[10px] transition-colors ${
                     brushSettings.eraseMode === 'willow'
-                      ? 'bg-[#2652D0] text-white font-medium shadow-sm'
-                      : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                      ? 'bg-(--ui-accent) text-white font-medium shadow-sm'
+                      : 'text-(--ui-muted) hover:text-(--ui-strong)'
                   }`}
-                  title="柳叶笔橡皮：以柳叶笔划痕进行局部割除镂空"
+                  data-tip="柳叶笔橡皮：以柳叶笔划痕进行局部割除镂空"
                 >
                   柳叶笔橡皮
                 </button>
               </div>
             )}
 
-            <div className="w-px h-5 bg-[#2B364D] mx-0.5" />
+            <div className="w-px h-5 bg-(--ui-border) mx-0.5" />
           </>
         )}
 
         {currentTool === 'select' && (
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
+            <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5">
               {([
                 { id: 'item', label: '整物件', tip: '点击任一部件即选中它所属的整个物件' },
                 { id: 'part', label: '单部件', tip: '只选中点击到的那一张纸片' },
@@ -127,11 +127,11 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 <button
                   key={opt.id}
                   onClick={() => onChangeSelectionScope(opt.id)}
-                  title={`${opt.tip} (Tab 切换)`}
+                  data-tip={`${opt.tip} (Tab 切换)`}
                   className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-colors ${
                     selectionScope === opt.id
-                      ? 'bg-[#2652D0] text-white font-medium'
-                      : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                      ? 'bg-(--ui-accent) text-white font-medium'
+                      : 'text-(--ui-muted) hover:text-(--ui-strong)'
                   }`}
                 >
                   {opt.label}
@@ -141,14 +141,11 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             <button
               onClick={onCreateItemFromSelection}
               disabled={selectedCount === 0}
-              className="px-2.5 py-1 rounded-xl text-[11px] border border-[#2B364D] bg-[#1C2335] text-[#BAC5EB] hover:text-white hover:border-[#EB8E88] disabled:opacity-40 disabled:cursor-not-allowed"
-              title="把当前选中的纸片打包成一个物件 (对应 Godot 里的一个场景)"
+              className="px-2.5 py-1 rounded-xl text-[11px] border border-(--ui-border) bg-(--ui-raised) text-(--ui-text-2) hover:text-(--ui-strong) hover:border-(--ui-accent-2) disabled:opacity-40 disabled:cursor-not-allowed"
+              data-tip="把选中的纸片打包成物件（导出为一个 Godot 场景）"
             >
-              选中部件 → 打组为物件
+              打组为物件
             </button>
-            <span className="text-[10px] text-[#6E7F9E]">
-              Shift 点击加选 · 方向键微移 · Delete 删除 · Alt 点击任意工具下拾取图层
-            </span>
           </div>
         )}
 
@@ -156,15 +153,15 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         {currentTool === 'willow_leaf' && (
           <div className="flex items-center gap-2 flex-wrap">
             {/* Formation Mode */}
-            <div className="flex items-center gap-1 bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D]">
+            <div className="flex items-center gap-1 bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border)">
               <button
                 onClick={() => onChangeBrushSettings({ willowMode: 'chord' })}
                 className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-colors ${
                   (brushSettings.willowMode || 'chord') === 'chord'
-                    ? 'bg-[#2652D0] text-white font-medium'
-                    : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                    ? 'bg-(--ui-accent) text-white font-medium'
+                    : 'text-(--ui-muted) hover:text-(--ui-strong)'
                 }`}
-                title="单弧画线，起终点实时连弦闭合成叶"
+                data-tip="单弧画线，起终点实时连弦闭合成叶"
               >
                 单弧成叶
               </button>
@@ -172,18 +169,18 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 onClick={() => onChangeBrushSettings({ willowMode: 'symmetric' })}
                 className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-colors ${
                   brushSettings.willowMode === 'symmetric'
-                    ? 'bg-[#2652D0] text-white font-medium'
-                    : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                    ? 'bg-(--ui-accent) text-white font-medium'
+                    : 'text-(--ui-muted) hover:text-(--ui-strong)'
                 }`}
-                title="对称双弧：自动以起终点连线为轴，对称生成饱满双弧柳叶"
+                data-tip="对称双弧：自动以起终点连线为轴，对称生成饱满双弧柳叶"
               >
                 对称双弧
               </button>
             </div>
 
             {/* Stabilizer Slider */}
-            <div className="flex items-center gap-2 bg-[#1C2335] rounded-xl px-3 py-1 border border-[#2B364D]">
-              <span className="text-[11px] text-[#7E8FB8] shrink-0">防抖:</span>
+            <div className="flex items-center gap-2 bg-(--ui-raised) rounded-xl px-3 py-1 border border-(--ui-border)">
+              <span className="text-[11px] text-(--ui-muted) shrink-0">防抖:</span>
               <input
                 type="range"
                 min="0"
@@ -193,10 +190,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 onChange={(e) =>
                   onChangeBrushSettings({ stabilizer: parseFloat(e.target.value) })
                 }
-                className="w-20 sm:w-28 h-1.5 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
-                title="笔刷平滑防抖程度"
+                className="w-20 sm:w-28 h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
+                data-tip="笔刷平滑防抖程度"
               />
-              <span className="text-[10px] font-mono text-[#BAC5EB] w-7 text-right">
+              <span className="text-[10px] font-mono text-(--ui-text-2) w-7 text-right">
                 {Math.round((brushSettings.stabilizer ?? 0.55) * 100)}%
               </span>
             </div>
@@ -206,7 +203,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         {/* 2. 基本几何形创建 (Geom Shapes) */}
         {currentTool === 'geom_shape' && (
           <div className="flex items-center gap-2 flex-wrap relative">
-            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
+            <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5">
               {[
                 { id: 'rect', label: '矩形', icon: Square },
                 { id: 'circle', label: '圆形', icon: Circle },
@@ -231,10 +228,11 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                       onContextMenu={(e) => {
                         if (item.id === 'star') {
                           e.preventDefault();
+                          onChangeBrushSettings({ geomShapeType: 'star' });
                           setShowStarSettings((prev) => !prev);
                         }
                       }}
-                      title={
+                      data-tip={
                         item.id === 'star'
                           ? '星型 (右键可修改角的个数、圆角、不规则度)'
                           : item.id === 'polyline'
@@ -243,12 +241,12 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                       }
                       className={`relative group w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
                         isSelected
-                          ? 'bg-[#2652D0] text-white font-medium shadow-md shadow-blue-950/60 ring-1 ring-[#BAC5EB]/40 scale-105'
-                          : 'text-[#8E9FCA] hover:bg-[#28324A] hover:text-[#FBFBFC]'
+                          ? 'bg-(--ui-accent) text-white font-medium shadow-md shadow-blue-950/60 ring-1 ring-(--ui-text-2)/40 scale-105'
+                          : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
                       }`}
                     >
                       <Icon className="w-3.5 h-3.5" />
-                      <div className="absolute top-full mt-2 hidden group-hover:block px-2 py-0.5 bg-[#121622]/95 backdrop-blur-md text-[#FBFBFC] text-[10px] rounded-md shadow-xl z-50 whitespace-nowrap border border-[#3A4766] pointer-events-none">
+                      <div className="absolute top-full mt-2 hidden group-hover:block px-2 py-0.5 bg-(--ui-panel-2)/95 backdrop-blur-md text-(--ui-strong) text-[10px] rounded-md shadow-xl z-50 whitespace-nowrap border border-(--ui-border-strong) pointer-events-none">
                         {item.label}
                         {item.id === 'star' && ' (右键设置)'}
                       </div>
@@ -265,10 +263,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                   onClick={() => setShowStarSettings(!showStarSettings)}
                   className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] border transition-colors ${
                     showStarSettings
-                      ? 'bg-[#2652D0] text-white border-[#BAC5EB]/50'
-                      : 'bg-[#1C2335] text-[#BAC5EB] hover:text-white border-[#2B364D]'
+                      ? 'bg-(--ui-accent) text-white border-(--ui-text-2)/50'
+                      : 'bg-(--ui-raised) text-(--ui-text-2) hover:text-white border-(--ui-border)'
                   }`}
-                  title="自定义星型：角的个数、圆角程度、不规则程度"
+                  data-tip="自定义星型：角的个数、圆角程度、不规则程度"
                 >
                   <SlidersHorizontal className="w-3 h-3" />
                   <span>星型设置 ({brushSettings.starPoints || 5}角)</span>
@@ -277,14 +275,14 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 {/* 星型参数弹出框 */}
                 {showStarSettings && (
                   <div
-                    className="absolute top-full left-0 mt-2 bg-[#161B29] border border-[#3A4766] p-3 rounded-2xl shadow-2xl z-50 w-64 backdrop-blur-md space-y-2.5 animate-in fade-in zoom-in-95 text-xs text-[#CAD0DB]"
+                    className="absolute top-full left-0 mt-2 bg-(--ui-panel) border border-(--ui-border-strong) p-3 rounded-2xl shadow-2xl z-50 w-64 backdrop-blur-md space-y-2.5 animate-in fade-in zoom-in-95 text-xs text-(--ui-text)"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center justify-between font-semibold text-[#FBFBFC] border-b border-[#2B364D] pb-1.5">
+                    <div className="flex items-center justify-between font-semibold text-(--ui-strong) border-b border-(--ui-border) pb-1.5">
                       <span>星型属性调节</span>
                       <button
                         onClick={() => setShowStarSettings(false)}
-                        className="text-[#8E9FCA] hover:text-white p-0.5"
+                        className="text-(--ui-muted) hover:text-(--ui-strong) p-0.5"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -292,9 +290,9 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
                     {/* 1. 角的个数 */}
                     <div>
-                      <div className="flex items-center justify-between text-[11px] text-[#8E9FCA] mb-1">
+                      <div className="flex items-center justify-between text-[11px] text-(--ui-muted) mb-1">
                         <span>角的个数</span>
-                        <span className="font-mono text-[#FBFBFC] font-semibold">
+                        <span className="font-mono text-(--ui-strong) font-semibold">
                           {brushSettings.starPoints || 5} 角
                         </span>
                       </div>
@@ -309,15 +307,15 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                             starPoints: parseInt(e.target.value),
                           })
                         }
-                        className="w-full h-1.5 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+                        className="w-full h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
                       />
                     </div>
 
                     {/* 2. 圆角程度 */}
                     <div>
-                      <div className="flex items-center justify-between text-[11px] text-[#8E9FCA] mb-1">
+                      <div className="flex items-center justify-between text-[11px] text-(--ui-muted) mb-1">
                         <span>圆角程度</span>
-                        <span className="font-mono text-[#FBFBFC] font-semibold">
+                        <span className="font-mono text-(--ui-strong) font-semibold">
                           {brushSettings.starRoundness || 0}px
                         </span>
                       </div>
@@ -332,15 +330,15 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                             starRoundness: parseInt(e.target.value),
                           })
                         }
-                        className="w-full h-1.5 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+                        className="w-full h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
                       />
                     </div>
 
                     {/* 3. 不规则程度 */}
                     <div>
-                      <div className="flex items-center justify-between text-[11px] text-[#8E9FCA] mb-1">
+                      <div className="flex items-center justify-between text-[11px] text-(--ui-muted) mb-1">
                         <span>不规则程度</span>
-                        <span className="font-mono text-[#FBFBFC] font-semibold">
+                        <span className="font-mono text-(--ui-strong) font-semibold">
                           {brushSettings.starIrregularity || 0}%
                         </span>
                       </div>
@@ -355,7 +353,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                             starIrregularity: parseInt(e.target.value),
                           })
                         }
-                        className="w-full h-1.5 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+                        className="w-full h-1.5 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
                       />
                     </div>
                   </div>
@@ -363,15 +361,8 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               </div>
             )}
 
-            {/* 折线提示 */}
-            {brushSettings.geomShapeType === 'polyline' ? (
-              <span className="text-[11px] text-[#2652D0] font-medium bg-[#20293D] px-2 py-0.5 rounded-lg border border-[#2652D0]/40">
-                折线模式：单击画板新增锚点，双击结束闭合
-              </span>
-            ) : (
-              <span className="text-[11px] text-[#5C6D94] hidden md:inline">
-                在画布拖拽或单击成形
-              </span>
+            {brushSettings.geomShapeType === 'polyline' && (
+              <span className="text-[11px] text-(--ui-muted)" data-tip="单击添加锚点，双击或点回起点闭合">单击加点 · 双击闭合</span>
             )}
           </div>
         )}
@@ -386,17 +377,17 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               }
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] transition-all ${
                 brushSettings.knifePressure
-                  ? 'bg-[#2652D0] text-white border-[#BAC5EB]/50 shadow-sm font-medium'
-                  : 'bg-[#1C2335] text-[#8E9FCA] border-[#2B364D] hover:bg-[#28324A]'
+                  ? 'bg-(--ui-accent) text-white border-(--ui-text-2)/50 shadow-sm font-medium'
+                  : 'bg-(--ui-raised) text-(--ui-muted) border-(--ui-border) hover:bg-(--ui-hover)'
               }`}
-              title="切换数位板/触控笔压感（压感将实时影响下刀切口粗细）"
+              data-tip="切换数位板/触控笔压感（压感将实时影响下刀切口粗细）"
             >
               <Zap className="w-3 h-3" />
-              <span>压感: {brushSettings.knifePressure ? '已开启' : '关闭'}</span>
+              <span>压感</span>
             </button>
 
             {/* 笔尖形状选择 */}
-            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
+            <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5">
               {KNIFE_TIPS.map((tip) => {
                 const isSelected = (brushSettings.knifeTipShape || 'round') === tip.id;
                 return (
@@ -405,10 +396,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                     onClick={() => onChangeBrushSettings({ knifeTipShape: tip.id })}
                     className={`px-2 py-0.5 rounded-lg text-[11px] transition-colors ${
                       isSelected
-                        ? 'bg-[#2652D0] text-white font-medium shadow-sm'
-                        : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                        ? 'bg-(--ui-accent) text-white font-medium shadow-sm'
+                        : 'text-(--ui-muted) hover:text-(--ui-strong)'
                     }`}
-                    title={tip.desc}
+                    data-tip={tip.desc}
                   >
                     {tip.label}
                   </button>
@@ -417,7 +408,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             </div>
 
             {/* 刀印预设宽度与微调滑杆 */}
-            <div className="flex items-center gap-1.5 bg-[#1C2335] rounded-xl px-2 py-0.5 border border-[#2B364D]">
+            <div className="flex items-center gap-1.5 bg-(--ui-raised) rounded-xl px-2 py-0.5 border border-(--ui-border)">
               <div className="flex items-center gap-0.5">
                 {[
                   { label: '细刀', val: 16 },
@@ -429,15 +420,15 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                     onClick={() => onChangeBrushSettings({ stampSize: sz.val })}
                     className={`px-1.5 py-0.5 rounded-lg text-[10px] transition-colors ${
                       (brushSettings.stampSize || 26) === sz.val
-                        ? 'bg-[#2652D0] text-white font-medium'
-                        : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                        ? 'bg-(--ui-accent) text-white font-medium'
+                        : 'text-(--ui-muted) hover:text-(--ui-strong)'
                     }`}
                   >
                     {sz.label}
                   </button>
                 ))}
               </div>
-              <div className="w-px h-3.5 bg-[#2B364D] mx-0.5 hidden sm:block" />
+              <div className="w-px h-3.5 bg-(--ui-border) mx-0.5 hidden sm:block" />
               <div className="hidden sm:flex items-center gap-1">
                 <input
                   type="range"
@@ -448,10 +439,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                   onChange={(e) =>
                     onChangeBrushSettings({ stampSize: parseInt(e.target.value) })
                   }
-                  className="w-14 sm:w-16 h-1 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
-                  title="笔刀切口宽度"
+                  className="w-14 sm:w-16 h-1 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
+                  data-tip="笔刀切口宽度"
                 />
-                <span className="text-[10px] font-mono text-[#BAC5EB] w-4 text-right">
+                <span className="text-[10px] font-mono text-(--ui-text-2) w-4 text-right">
                   {brushSettings.stampSize || 26}
                 </span>
               </div>
@@ -463,7 +454,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         {currentTool === 'hand_draw' && (
           <div className="flex items-center gap-2 flex-wrap">
             {/* 笔刷类型：铅笔、钢笔、喷枪 */}
-            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
+            <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) gap-0.5">
               {DRAW_BRUSHES.map((b) => {
                 const isSelected = (brushSettings.drawBrushType || 'pencil') === b.id;
                 const Icon = b.icon;
@@ -473,8 +464,8 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                     onClick={() => onChangeBrushSettings({ drawBrushType: b.id })}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
                       isSelected
-                        ? 'bg-[#2652D0] text-white shadow-sm'
-                        : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                        ? 'bg-(--ui-accent) text-white shadow-sm'
+                        : 'text-(--ui-muted) hover:text-(--ui-strong)'
                     }`}
                   >
                     <Icon className="w-3.5 h-3.5" />
@@ -491,19 +482,19 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               }
               className={`flex items-center gap-1 px-2 py-1 rounded-xl border text-[11px] transition-all ${
                 brushSettings.drawPressure
-                  ? 'bg-[#2652D0] text-white border-[#BAC5EB]/50 shadow-sm font-medium'
-                  : 'bg-[#1C2335] text-[#8E9FCA] border-[#2B364D] hover:bg-[#28324A]'
+                  ? 'bg-(--ui-accent) text-white border-(--ui-text-2)/50 shadow-sm font-medium'
+                  : 'bg-(--ui-raised) text-(--ui-muted) border-(--ui-border) hover:bg-(--ui-hover)'
               }`}
-              title="触控笔压感调节笔触大小与下笔浓淡"
+              data-tip="触控笔压感调节笔触大小与下笔浓淡"
             >
               <Zap className="w-3 h-3" />
-              <span>压感: {brushSettings.drawPressure ? '开' : '关'}</span>
+              <span>压感</span>
             </button>
 
             {/* 铅笔专属：SAI 软硬五档 */}
             {(brushSettings.drawBrushType || 'pencil') === 'pencil' && (
-              <div className="flex items-center gap-1 bg-[#1C2335] rounded-xl px-2 py-0.5 border border-[#2B364D]">
-                <span className="text-[10px] text-[#7E8FB8]">软硬:</span>
+              <div className="flex items-center gap-1 bg-(--ui-raised) rounded-xl px-2 py-0.5 border border-(--ui-border)">
+                <span className="text-[10px] text-(--ui-muted)">软硬</span>
                 <div className="flex items-center gap-0.5">
                   {PENCIL_HARDNESS_LEVELS.map((hl) => {
                     const isSelected = (brushSettings.pencilHardness || 3) === hl.level;
@@ -513,10 +504,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                         onClick={() => onChangeBrushSettings({ pencilHardness: hl.level })}
                         className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
                           isSelected
-                            ? 'bg-[#2652D0] text-white font-semibold'
-                            : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                            ? 'bg-(--ui-accent) text-white font-semibold'
+                            : 'text-(--ui-muted) hover:text-(--ui-strong)'
                         }`}
-                        title={`${hl.label} (${hl.desc})`}
+                        data-tip={`${hl.label} (${hl.desc})`}
                       >
                         {hl.label}
                       </button>
@@ -527,8 +518,8 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             )}
 
             {/* 不透明度调节 */}
-            <div className="flex items-center gap-1.5 bg-[#1C2335] rounded-xl px-2.5 py-1 border border-[#2B364D]">
-              <span className="text-[10px] text-[#7E8FB8]">不透明度:</span>
+            <div className="flex items-center gap-1.5 bg-(--ui-raised) rounded-xl px-2.5 py-1 border border-(--ui-border)">
+              <span className="text-[10px] text-(--ui-muted)">不透明</span>
               <input
                 type="range"
                 min="0.1"
@@ -538,17 +529,17 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 onChange={(e) =>
                   onChangeBrushSettings({ drawOpacity: parseFloat(e.target.value) })
                 }
-                className="w-14 sm:w-18 h-1 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+                className="w-14 sm:w-18 h-1 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
               />
-              <span className="text-[10px] font-mono text-[#BAC5EB] w-7 text-right">
+              <span className="text-[10px] font-mono text-(--ui-text-2) w-7 text-right">
                 {Math.round((brushSettings.drawOpacity ?? 0.85) * 100)}%
               </span>
             </div>
 
             {/* 笔尖粗细 */}
-            <div className="flex items-center gap-1.5 bg-[#1C2335] rounded-xl px-2.5 py-1 border border-[#2B364D]">
-              <span className="text-[10px] text-[#7E8FB8]">
-                {brushSettings.drawBrushType === 'airbrush' ? '晕染半径:' : '线宽:'}
+            <div className="flex items-center gap-1.5 bg-(--ui-raised) rounded-xl px-2.5 py-1 border border-(--ui-border)">
+              <span className="text-[10px] text-(--ui-muted)">
+                {brushSettings.drawBrushType === 'airbrush' ? '晕染' : '粗细'}
               </span>
               <input
                 type="range"
@@ -559,9 +550,9 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                 onChange={(e) =>
                   onChangeBrushSettings({ drawSize: parseInt(e.target.value) })
                 }
-                className="w-14 sm:w-18 h-1 bg-[#2B364D] rounded-lg appearance-none cursor-pointer accent-[#2652D0]"
+                className="w-14 sm:w-18 h-1 bg-(--ui-border) rounded-lg appearance-none cursor-pointer accent-(--ui-accent)"
               />
-              <span className="text-[10px] font-mono text-[#BAC5EB] w-5 text-right">
+              <span className="text-[10px] font-mono text-(--ui-text-2) w-5 text-right">
                 {brushSettings.drawSize ?? 6}
               </span>
             </div>
@@ -570,20 +561,19 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             <div className="relative">
               <button
                 onClick={() => setShowColorPicker(!showColorPicker)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-[#1C2335] hover:bg-[#28324A] border border-[#2B364D] text-[11px]"
-                title="选择手绘笔刷颜色"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) border border-(--ui-border) text-[11px]"
+                data-tip="画笔颜色"
               >
                 <span
                   className="w-3.5 h-3.5 rounded-full border border-white/40 shadow-sm"
                   style={{ backgroundColor: brushSettings.drawColor || '#161B29' }}
                 />
-                <span className="text-[10px] text-[#BAC5EB]">画笔颜色</span>
               </button>
 
               {/* Color picker popover */}
               {showColorPicker && (
                 <div
-                  className="absolute left-0 top-full mt-1 bg-[#161B29] border border-[#3A4766] p-2.5 rounded-xl shadow-2xl z-50 grid grid-cols-5 gap-1.5 w-44 backdrop-blur-md"
+                  className="absolute left-0 top-full mt-1 bg-(--ui-panel) border border-(--ui-border-strong) p-2.5 rounded-xl shadow-2xl z-50 grid grid-cols-5 gap-1.5 w-44 backdrop-blur-md"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {FOLK_PALETTE.slice(0, 15).map((col) => (
@@ -595,47 +585,18 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
                       }}
                       className="w-6 h-6 rounded-md border border-white/20 hover:scale-110 transition-transform cursor-pointer"
                       style={{ backgroundColor: col.hex }}
-                      title={col.name}
+                      data-tip={col.name}
                     />
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Clipping Mask Active Indicator */}
-            <div className="flex items-center gap-1 text-[10px] bg-[#20293D] px-2 py-0.5 rounded-lg border border-[#2652D0]/60 text-[#BAC5EB]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#438B6E]" />
-              <span>剪贴蒙版保护中 (不出图层界限)</span>
-            </div>
           </div>
         )}
 
-        {/* 5. 锚点调整 (勾勾 / 叉叉) */}
-        {currentTool === 'anchor_edit' && onSelectTool && (
-          <div className="flex items-center gap-1 bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D]">
-            <button
-              onClick={() => onSelectTool('geom_shape')}
-              className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#2652D0] hover:bg-[#1E43B8] text-white transition-all shadow-md hover:scale-105 cursor-pointer"
-              title="完成并退出锚点微调"
-            >
-              <Check className="w-4 h-4 stroke-[2.5]" />
-            </button>
-            <button
-              onClick={() => onSelectTool('geom_shape')}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[#28324A] text-[#8E9FCA] hover:text-white transition-all hover:scale-105 cursor-pointer"
-              title="退出锚点微调"
-            >
-              <X className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Right status hint */}
-      <div className="text-[11px] text-[#6E7F9E] shrink-0 font-mono hidden lg:flex items-center gap-1.5">
-        <span className="text-[#2652D0]">❖</span>
-        <span>空格拖动画布 · Ctrl+滚轮缩放 · ? 快捷键</span>
-      </div>
     </div>
   );
 };

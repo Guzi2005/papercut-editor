@@ -69,37 +69,33 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
   };
 
   const Toggle: React.FC<{ k: keyof GodotExportOptions; label: string; hint: string }> = ({ k, label, hint }) => (
-    <label className="flex items-start gap-2 cursor-pointer">
+    <label className="flex items-center gap-2 cursor-pointer" data-tip={hint}>
       <input
         type="checkbox"
         checked={!!opts[k]}
         onChange={(e) => update({ [k]: e.target.checked } as Partial<GodotExportOptions>)}
-        className="mt-0.5 accent-[#2652D0]"
+        className="mt-0.5 accent-(--ui-accent)"
       />
-      <span>
-        <span className="text-[#FBFBFC]">{label}</span>
-        <span className="block text-[10px] text-[#7E8FB8]">{hint}</span>
-      </span>
+      <span className="text-(--ui-strong)">{label}</span>
     </label>
   );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
       <div
-        className="bg-[#161B29] border border-[#2B364D] rounded-2xl w-full max-w-2xl shadow-2xl text-[#CAD0DB] text-xs overflow-hidden"
+        className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-2xl shadow-2xl text-(--ui-text) text-xs overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="h-14 px-5 border-b border-[#2B364D] flex items-center justify-between">
+        <div className="h-14 px-5 border-b border-(--ui-border) flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-[#438B6E] text-white flex items-center justify-center">
               <Gamepad2 className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-sm text-[#FBFBFC]">导出到 Godot 4</h2>
-              <p className="text-[10px] text-[#8E9FCA]">解压到项目根目录即可使用 · 每个物件一个 .tscn</p>
+              <h2 className="font-bold text-sm text-(--ui-strong)">导出到 Godot 4</h2>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-[#1E2538] text-[#8E9FCA] hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong)">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -107,32 +103,31 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
         <div className="p-5 grid grid-cols-2 gap-5">
           <div className="space-y-3">
             <div>
-              <label className="text-[10px] text-[#8E9FCA] block mb-1">导出位置 (Godot 资源路径)</label>
+              <label className="text-[10px] text-(--ui-muted) block mb-1">导出位置 (Godot 资源路径)</label>
               <input
                 value={opts.resRoot}
                 onChange={(e) => update({ resRoot: e.target.value })}
-                className="w-full bg-[#0F131D] border border-[#2B364D] rounded-lg px-2 py-1.5 text-white font-mono text-[11px] outline-none focus:border-[#2652D0]"
+                className="w-full bg-(--ui-input) border border-(--ui-border) rounded-lg px-2 py-1.5 text-(--ui-strong) font-mono text-[11px] outline-none focus:border-(--ui-accent)"
               />
-              <div className="text-[10px] text-[#5E6E94] mt-1 font-mono truncate">
+              <div className="text-[10px] text-(--ui-faint) mt-1 font-mono truncate">
                 → {opts.resRoot.replace(/\/+$/, '')}/{slug}/
               </div>
             </div>
             <div>
-              <label className="text-[10px] text-[#8E9FCA] block mb-1">纹理倍率</label>
+              <label className="text-[10px] text-(--ui-muted) block mb-1" data-tip="Sprite2D 会自动缩放回 1 单位 = 1 画布像素">纹理倍率</label>
               <div className="flex gap-1">
                 {([1, 2, 4] as const).map((s) => (
                   <button
                     key={s}
                     onClick={() => update({ textureScale: s })}
                     className={`flex-1 py-1 rounded-lg border ${
-                      opts.textureScale === s ? 'bg-[#2652D0] border-[#2652D0] text-white' : 'bg-[#1C2335] border-[#2B364D] text-[#8E9FCA]'
+                      opts.textureScale === s ? 'bg-(--ui-accent) border-(--ui-accent) text-white' : 'bg-(--ui-raised) border-(--ui-border) text-(--ui-muted)'
                     }`}
                   >
                     @{s}x
                   </button>
                 ))}
               </div>
-              <div className="text-[10px] text-[#5E6E94] mt-1">Sprite2D 自动缩放回 1 单位 = 1 画布像素</div>
             </div>
             <Toggle k="bakeGrain" label="烘焙颗粒质感" hint="水粉颗粒写进 PNG" />
             <Toggle k="bakeShadow" label="烘焙纸影" hint="每个部件自带浅投影，纹理四周留 14px 边" />
@@ -141,23 +136,23 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-xl bg-[#1A2031] border border-[#2B364D] p-3">
-              <div className="text-[11px] font-semibold text-[#FBFBFC] mb-2">将生成</div>
+            <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-3">
+              <div className="text-[11px] font-semibold text-(--ui-strong) mb-2">将生成</div>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {items.map((it) => (
                   <div key={it.id} className="flex items-center gap-1.5">
-                    <Box className="w-3 h-3 text-[#EB8E88]" />
+                    <Box className="w-3 h-3 text-(--ui-accent-2)" />
                     <span className="flex-1 truncate">{it.name}</span>
-                    <span className="text-[10px] text-[#7E8FB8]">
+                    <span className="text-[10px] text-(--ui-muted)">
                       {it.partIds.length} 部件 · {it.sockets.length} 挂点
                     </span>
                   </div>
                 ))}
-                {items.length === 0 && <div className="text-[10px] text-[#7E8FB8]">还没有物件：可在右侧「物件」页打组</div>}
+                {items.length === 0 && <div className="text-[10px] text-(--ui-muted)">还没有物件：可在右侧「物件」页打组</div>}
               </div>
             </div>
-            <div className="rounded-xl bg-[#1A2031] border border-[#2B364D] p-3">
-              <div className="text-[11px] font-semibold text-[#FBFBFC] mb-2">深度层 → z_index</div>
+            <div className="rounded-xl bg-(--ui-raised) border border-(--ui-border) p-3">
+              <div className="text-[11px] font-semibold text-(--ui-strong) mb-2">深度层 → z_index</div>
               <div className="space-y-0.5 max-h-32 overflow-y-auto font-mono text-[10px]">
                 {slots
                   .slice()
@@ -165,7 +160,7 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
                   .map((sl) => (
                     <div key={sl.id} className="flex justify-between">
                       <span className="truncate font-sans">{sl.name}</span>
-                      <span className="text-[#8E9FCA]">{sl.zBase}</span>
+                      <span className="text-(--ui-muted)">{sl.zBase}</span>
                     </div>
                   ))}
               </div>
@@ -196,8 +191,8 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
           </div>
         )}
 
-        <div className="px-5 py-3 border-t border-[#2B364D] flex items-center justify-between">
-          <span className="text-[10px] text-[#5E6E94]">给物件加脚本请用「新建继承场景」，重新导出不会覆盖你的改动</span>
+        <div className="px-5 py-3 border-t border-(--ui-border) flex items-center justify-between">
+          <span className="text-[10px] text-(--ui-faint)" data-tip="给物件加脚本请用「新建继承场景」，重新导出不会覆盖你的改动">解压到 Godot 项目根目录</span>
           <button
             onClick={run}
             disabled={busy}

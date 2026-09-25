@@ -59,27 +59,27 @@ export const ShortcutsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =
     onClick={onClose}
   >
     <div
-      className="bg-[#161B29] border border-[#2B364D] rounded-2xl w-full max-w-2xl p-5 shadow-2xl text-[#CAD0DB]"
+      className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-2xl p-5 shadow-2xl text-(--ui-text)"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between pb-3 border-b border-[#263147]">
-        <div className="flex items-center gap-2 text-[#FBFBFC] font-bold text-sm">
-          <Keyboard className="w-4 h-4 text-[#2652D0]" />
+      <div className="flex items-center justify-between pb-3 border-b border-(--ui-divider)">
+        <div className="flex items-center gap-2 text-(--ui-strong) font-bold text-sm">
+          <Keyboard className="w-4 h-4 text-(--ui-accent)" />
           快捷键
         </div>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#232D42] text-[#7E8FB8] hover:text-white">
+        <button onClick={onClose} className="p-1 rounded-lg hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong)">
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-4 text-xs">
         {SECTIONS.map((sec) => (
           <div key={sec.title}>
-            <div className="text-[11px] font-semibold text-[#EB8E88] mb-1.5">{sec.title}</div>
+            <div className="text-[11px] font-semibold text-(--ui-accent-2) mb-1.5">{sec.title}</div>
             <div className="space-y-1">
               {sec.rows.map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between gap-3">
-                  <span className="text-[#BAC5EB]">{v}</span>
-                  <kbd className="shrink-0 px-1.5 py-0.5 rounded-md bg-[#0F131D] border border-[#2B364D] font-mono text-[10px] text-[#FBFBFC]">
+                  <span className="text-(--ui-text-2)">{v}</span>
+                  <kbd className="shrink-0 px-1.5 py-0.5 rounded-md bg-(--ui-input) border border-(--ui-border) font-mono text-[10px] text-(--ui-strong)">
                     {k}
                   </kbd>
                 </div>
