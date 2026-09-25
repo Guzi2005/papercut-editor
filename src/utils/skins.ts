@@ -5,14 +5,7 @@
 
 import type React from 'react';
 
-export type WorkbenchSkin =
-  | 'indigo'
-  | 'cinnabar'
-  | 'celadon'
-  | 'wisteria'
-  | 'ebony'
-  | 'xuan'
-  | 'linen';
+export type WorkbenchSkin = 'indigo' | 'songyan' | 'xuan' | 'linen';
 
 interface SkinColors {
   app: string;
@@ -73,54 +66,15 @@ export const SKINS: SkinDefinition[] = [
     colors: dark({ accent: '#2652D0', accentHover: '#1E43B8', accentGlow: '#3A6DF0', accent2: '#EB8E88' }),
   },
   {
-    id: 'cinnabar',
-    name: '朱砂玄墨',
+    id: 'songyan',
+    name: '松烟墨',
     tone: 'dark',
-    desc: '印泥朱红配玄墨案台',
+    desc: '石墨灰与印泥红，安静的深色',
     colors: dark(
-      { accent: '#C23A30', accentHover: '#A52F27', accentGlow: '#E0564A', accent2: '#E3A548' },
+      { accent: '#A9483A', accentHover: '#913C30', accentGlow: '#BE5B4C', accent2: '#B89B6A' },
       {
-        app: '#150F10', panel: '#1C1416', panel2: '#171012', input: '#110B0C', raised: '#241A1C', hover: '#312326',
-        divider: '#35272A', border: '#3D2D30', borderStrong: '#523C40', text: '#DACBCB', text2: '#E7C9C4', muted: '#B08F8C', faint: '#7A605E', grid: '#5A3A3C',
-      }
-    ),
-  },
-  {
-    id: 'celadon',
-    name: '青绿山水',
-    tone: 'dark',
-    desc: '冷杉深翠与湖水青绿',
-    colors: dark(
-      { accent: '#2F7A5E', accentHover: '#25644C', accentGlow: '#43A07E', accent2: '#E3C07A' },
-      {
-        app: '#0D1512', panel: '#121C18', panel2: '#0F1714', input: '#0A110E', raised: '#18251F', hover: '#20322A',
-        divider: '#23362D', border: '#2A4036', borderStrong: '#3A5749', text: '#C9D8D0', text2: '#B4D4C4', muted: '#86A999', faint: '#587565', grid: '#2F5343',
-      }
-    ),
-  },
-  {
-    id: 'wisteria',
-    name: '紫藤花影',
-    tone: 'dark',
-    desc: '深绛紫茄配丁香粉藕',
-    colors: dark(
-      { accent: '#7A56C4', accentHover: '#6545A8', accentGlow: '#9577DC', accent2: '#E48CB0' },
-      {
-        app: '#15101B', panel: '#1B1522', panel2: '#17111D', input: '#110C16', raised: '#231B2D', hover: '#2E2439',
-        divider: '#33283F', border: '#3A2E48', borderStrong: '#4F4062', text: '#D6CCE0', text2: '#CDBDEB', muted: '#A08FBF', faint: '#6E6088', grid: '#4A3A63',
-      }
-    ),
-  },
-  {
-    id: 'ebony',
-    name: '暖木纸香',
-    tone: 'dark',
-    desc: '乌木刻台配蜜蜡明黄',
-    colors: dark(
-      { accent: '#B97A1C', accentHover: '#9C6615', accentGlow: '#D6962F', accent2: '#E48C8C' },
-      {
-        app: '#16120E', panel: '#1D1813', panel2: '#18140F', input: '#120E0B', raised: '#262019', hover: '#322A21',
-        divider: '#372E24', border: '#40362A', borderStrong: '#574A39', text: '#DCD2C4', text2: '#E6D5B8', muted: '#AF9C80', faint: '#7A6B57', grid: '#5A4A36',
+        app: '#141413', panel: '#1B1B1A', panel2: '#171716', input: '#111110', raised: '#222221', hover: '#2A2A28',
+        divider: '#2A2927', border: '#32312E', borderStrong: '#46443F', strong: '#ECE8E1', text: '#CFCAC1', text2: '#DAD4CA', muted: '#8F8A81', faint: '#625E58', grid: '#3A3834',
       }
     ),
   },
