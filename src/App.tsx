@@ -1198,6 +1198,7 @@ export default function App() {
           colorNotes={colorNotes}
           onUpdateColorNote={handleUpdateColorNote}
           onSelectLayer={handlePanelSelectLayer}
+          onSelectLayers={handleSelectLayers}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
           onCreateItemFromLayer={(layerId) => createItemFrom([layerId], project.layers[layerId]?.name)}

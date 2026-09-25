@@ -65,6 +65,8 @@ interface LayersPanelProps {
   colorNotes?: Record<string, string>;
   onUpdateColorNote?: (hex: string, note: string) => void;
   onSelectLayer: (layerId: string) => void;
+  /** Multi-selection from Shift (range) / Ctrl (toggle) clicks. */
+  onSelectLayers: (layerIds: string[], activeId?: string) => void;
   onUpdateLayer: (layerId: string, updates: Partial<Layer>) => void;
   onAddLayer: (groupId?: string, kind?: 'paper' | 'doodle') => void;
   onDeleteLayer: (layerId: string) => void;
@@ -143,6 +145,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   colorNotes = {},
   onUpdateColorNote,
   onSelectLayer,
+  onSelectLayers,
   onUpdateLayer,
   onAddLayer,
   onDeleteLayer,
@@ -289,6 +292,33 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     setDropHint(null);
   };
 
+  // Shift extends from the last plain / Ctrl click in on-screen order; Ctrl toggles one row.
+  const anchorRef = useRef<string | null>(null);
+  const clickRow = (e: React.MouseEvent, id: string) => {
+    const toggle = e.ctrlKey || e.metaKey;
+    const anchor = anchorRef.current && selectedLayerIds.includes(anchorRef.current) ? anchorRef.current : activeLayerId;
+    if (e.shiftKey && anchor) {
+      const order = Array.from(
+        new Set(Array.from(listRef.current?.querySelectorAll('[data-row-layer]') ?? []).map((el) => el.getAttribute('data-row-layer')!))
+      );
+      const a = order.indexOf(anchor);
+      const b = order.indexOf(id);
+      if (a !== -1 && b !== -1) {
+        const range = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+        onSelectLayers(toggle ? Array.from(new Set([...selectedLayerIds, ...range])) : range, id);
+        return;
+      }
+    }
+    anchorRef.current = id;
+    if (toggle) {
+      const has = selectedLayerIds.includes(id);
+      const next = has ? selectedLayerIds.filter((x) => x !== id) : [...selectedLayerIds, id];
+      onSelectLayers(next, has ? (activeLayerId === id ? next[next.length - 1] : activeLayerId ?? undefined) : id);
+      return;
+    }
+    onSelectLayer(id);
+  };
+
   const renderLayerRow = (layer: Layer, scope: PanelTab, extra?: React.ReactNode) => {
     const isActive = activeLayerId === layer.id;
     const isSelected = selectedSet.has(layer.id);
@@ -323,7 +353,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           clearDrag();
         }}
         onDragEnd={clearDrag}
-        onClick={() => onSelectLayer(layer.id)}
+        data-row-layer={layer.id}
+        onClick={(e) => clickRow(e, layer.id)}
         onContextMenu={(e) => {
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY, layerId: layer.id });
