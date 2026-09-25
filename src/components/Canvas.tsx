@@ -49,7 +49,7 @@ import {
   applyToPoint,
 } from '../utils/pathTransform';
 import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds, transformLayer } from '../utils/projectOps';
-import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
 import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
@@ -129,7 +129,6 @@ interface DragState {
   clickSelect?: { ids: string[]; active: string };
 }
 
-const MODE_LABELS: Record<string, string> = { cutout: '刻纸', positive: '贴花', erase: '剪除' };
 
 type ShadowOptions = ReturnType<typeof projectShadowOptions>;
 
@@ -268,7 +267,6 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const activeLayer = activeLayerId ? project.layers[activeLayerId] : null;
   const activeGroup = activeLayerId ? findGroupOfLayer(project, activeLayerId) : null;
-  const activeItem = activeLayerId ? findItemOfLayer(project, activeLayerId) : null;
   const activeLocked = !!activeLayer && (activeLayer.locked || !!activeGroup?.locked);
   const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
   const activeDoodle = activeLayer?.kind === 'doodle';
@@ -1937,72 +1935,6 @@ export const Canvas: React.FC<CanvasProps> = ({
       </div>
 
       <ShortcutHints keymap={keymap} currentTool={currentTool} spaceHeld={isSpacePressed} />
-
-      {/* HUD: 当前图层 / 物件 / 模式，永远知道笔落在哪 */}
-      <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1.5 max-w-[60%]">
-        {currentTool === 'select' ? (
-          selectedLayerIds.length > 0 && (
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border border-(--ui-border) text-[11px] text-(--ui-text) shadow-lg backdrop-blur-md">
-              {selectedItem && <Box className="w-3 h-3 text-(--ui-accent-2)" />}
-              <span className="text-(--ui-strong) font-medium">
-                {selectedItem
-                  ? `${selectedItem.name} · ${selectedItem.partIds.length} 个部件`
-                  : `${selectedLayerIds.length} 个部件`}
-              </span>
-            </div>
-          )
-        ) : activeLayer ? (
-          <div
-            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border text-[11px] text-(--ui-text) shadow-lg backdrop-blur-md ${
-              activeLocked || activeHidden ? 'border-[#D23838]/70' : 'border-(--ui-border)'
-            }`}
-          >
-            <span className="w-3 h-3 rounded-sm border border-white/40 shrink-0" style={{ backgroundColor: activeLayer.color }} />
-            <span className="text-(--ui-strong) font-medium truncate">{activeLayer.name}</span>
-            {activeGroup && <span className="text-(--ui-muted) truncate">· {activeGroup.name}</span>}
-            {activeItem && (
-              <span className="flex items-center gap-1 text-(--ui-accent-2) truncate">
-                <Box className="w-3 h-3" />
-                {activeItem.name}
-              </span>
-            )}
-            {activeDoodle ? (
-              <span
-                className={`px-1.5 py-0.5 rounded-md ${
-                  currentTool === 'hand_draw' ? 'bg-(--ui-accent)/25 text-(--ui-text-2)' : 'text-(--ui-accent-2)'
-                }`}
-              >
-                {currentTool === 'hand_draw' ? '涂鸦' : '涂鸦图层 · 只能手绘'}
-              </span>
-            ) : (
-              currentTool !== 'hand_draw' &&
-              currentTool !== 'anchor_edit' && (
-                <span className="px-1.5 py-0.5 rounded-md bg-(--ui-accent)/25 text-(--ui-text-2)">
-                  {carveMode === 'erase'
-                    ? brushSettings.eraseMode === 'wipe'
-                      ? '剪除 · 一笔擦除'
-                      : '剪除 · 镂空'
-                    : MODE_LABELS[carveMode]}
-                </span>
-              )
-            )}
-            {activeLocked && (
-              <span className="flex items-center gap-1 text-(--ui-accent-2)">
-                <Lock className="w-3 h-3" />已锁定
-              </span>
-            )}
-            {activeHidden && (
-              <span className="flex items-center gap-1 text-(--ui-accent-2)">
-                <EyeOff className="w-3 h-3" />已隐藏
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="px-2.5 py-1.5 rounded-xl bg-(--ui-panel)/92 border border-[#D23838]/70 text-[11px] text-(--ui-accent-2)">
-            未选中纸片 · Alt+点击拾取
-          </div>
-        )}
-      </div>
 
       {/* Floating Check and Cross for Anchor Edit */}
       {currentTool === 'anchor_edit' && onExitAnchorEdit && (

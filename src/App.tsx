@@ -1172,6 +1172,9 @@ export default function App() {
           brushColor={brushSettings.brushColor}
           recentColors={recentBrushColors}
           onChangeBrushColor={changeBrushColor}
+          currentTool={currentTool}
+          brushSettings={brushSettings}
+          selectedItem={selectedItem}
           onDeleteLayer={handleDeleteLayer}
           onDuplicateLayer={handleDuplicateLayer}
           onInvertLayerCutouts={handleInvertLayerCutouts}

@@ -11,6 +11,8 @@ import {
   PapercutItem,
   PapercutProject,
   PatternType,
+  ToolType,
+  BrushSettings,
 } from '../types/papercut';
 import { getPathBoundingBox } from '../utils/bezierMath';
 import { renderLayerMarkup } from '../utils/layerSvg';
@@ -52,6 +54,7 @@ import {
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
 import { ColorStudio } from './ColorStudio';
+import { WorkStatus } from './WorkStatus';
 import { isLight, layerColors, normalizeHex, projectColors } from '../utils/color';
 
 interface LayersPanelProps {
@@ -84,6 +87,9 @@ interface LayersPanelProps {
   onImportReference: () => void;
   brushColor: string;
   recentColors: string[];
+  currentTool: ToolType;
+  brushSettings: BrushSettings;
+  selectedItem: PapercutItem | null;
   onChangeBrushColor: (hex: string, commit?: boolean) => void;
 }
 
@@ -159,6 +165,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   brushColor,
   recentColors,
   onChangeBrushColor,
+  currentTool,
+  brushSettings,
+  selectedItem,
 }) => {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -985,6 +994,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       </div>
 
       {dock}
+
+      <WorkStatus
+        project={project}
+        activeLayerId={activeLayerId}
+        currentTool={currentTool}
+        brushSettings={brushSettings}
+        selectedLayerIds={selectedLayerIds}
+        selectedItem={selectedItem}
+      />
 
       {contextMenu && ctxLayer && (
         <div
