@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { Box, Lasso, PaintBucket, Pipette, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
+import { Box, Lasso, PaintBucket, Pipette, RotateCw, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { DRAW_BRUSHES, GEOM_SHAPES, Glyph, KNIFE_TIPS } from './ToolOptions';
 import { TOOLS } from './Toolbar';
@@ -142,6 +142,15 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
         run: () => set({ knifeTipShape: t.id }),
       })),
     });
+    if (['flat', 'chisel'].includes(bs.knifeTipShape || 'round')) {
+      sections.push({
+        title: '刀头角度',
+        entries: [
+          { key: 'fixed', label: `固定 ${bs.knifeAngle ?? 0}°`, icon: <Glyph d="M3 8h10" />, active: !bs.knifeFollow, run: () => set({ knifeFollow: false }) },
+          { key: 'follow', label: '随笔画旋转', icon: icon(RotateCw), active: !!bs.knifeFollow, run: () => set({ knifeFollow: true }) },
+        ],
+      });
+    }
   } else if (tool === 'hand_draw') {
     sections.push({
       entries: DRAW_BRUSHES.map((b) => ({

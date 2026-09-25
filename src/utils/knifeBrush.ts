@@ -106,13 +106,17 @@ function roundNib(pts: Point[], radius: number, usePressure: boolean): string {
   return smoothClosed(ring);
 }
 
-/** Broad nib swept at a fixed angle: width follows stroke direction, like a flat or chisel blade. */
-function broadNib(pts: Point[], length: number, thickness: number, angle: number, usePressure: boolean): string {
-  const ux = Math.cos(angle);
-  const uy = Math.sin(angle);
-  const vx = -uy;
-  const vy = ux;
-  const corners = (p: Point) => {
+/**
+ * Broad nib swept along the stroke, like a flat or chisel blade. `angleAt` gives the blade
+ * direction at each sample: constant for a fixed nib, following the tangent for a turning one.
+ */
+function broadNib(pts: Point[], length: number, thickness: number, angleAt: (i: number) => number, usePressure: boolean): string {
+  const corners = (p: Point, i: number) => {
+    const angle = angleAt(i);
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const vx = -uy;
+    const vy = ux;
     const s = pressureScale(p, usePressure);
     const hl = (length / 2) * s;
     const ht = Math.max(0.8, (thickness / 2) * s);
@@ -143,7 +147,7 @@ function broadNib(pts: Point[], length: number, thickness: number, angle: number
   // stamps is exact for a straight step and every hull is emitted with the same winding.
   const parts: string[] = [];
   for (let i = 1; i < pts.length; i++) {
-    const h = hull([...corners(pts[i - 1]), ...corners(pts[i])]);
+    const h = hull([...corners(pts[i - 1], i - 1), ...corners(pts[i], i)]);
     parts.push(`M ${h.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
   }
   return parts.join(' ');
@@ -176,15 +180,37 @@ export const FLAT_NIB_ANGLE = 0;
 export const CHISEL_NIB_ANGLE = -Math.PI / 4;
 export const NIB_THICKNESS_RATIO = 0.16;
 
-export function generateKnifeCut(raw: Point[], size: number, tip: KnifeTipShape, usePressure: boolean): string {
+export interface NibAngle {
+  /** Degrees. Fixed: blade direction from horizontal. Follow: offset from the stroke's normal. */
+  angle: number;
+  follow: boolean;
+}
+
+/** Blade direction of a broad nib when it does not turn with the stroke (radians). */
+export function fixedNibAngle(tip: KnifeTipShape, nib?: NibAngle): number {
+  const base = tip === 'chisel' ? CHISEL_NIB_ANGLE : FLAT_NIB_ANGLE;
+  return base + ((nib?.angle ?? 0) * Math.PI) / 180;
+}
+
+export function generateKnifeCut(raw: Point[], size: number, tip: KnifeTipShape, usePressure: boolean, nib?: NibAngle): string {
   if (raw.length < 2) return '';
   const pts = smoothStroke(raw);
   if (pts.length < 2) return '';
   switch (tip) {
     case 'flat':
-      return broadNib(pts, size, size * NIB_THICKNESS_RATIO, FLAT_NIB_ANGLE, usePressure);
-    case 'chisel':
-      return broadNib(pts, size, size * NIB_THICKNESS_RATIO, CHISEL_NIB_ANGLE, usePressure);
+    case 'chisel': {
+      let angleAt: (i: number) => number;
+      if (nib?.follow) {
+        // Blade across the stroke by default, so a turning flat nib cuts an even ribbon.
+        const ns = normals(pts);
+        const offset = fixedNibAngle(tip, nib);
+        angleAt = (i) => Math.atan2(ns[i].y, ns[i].x) + offset;
+      } else {
+        const a = fixedNibAngle(tip, nib);
+        angleAt = () => a;
+      }
+      return broadNib(pts, size, size * NIB_THICKNESS_RATIO, angleAt, usePressure);
+    }
     case 'slash':
       return willowNib(pts, size / 2, usePressure);
     default:
@@ -193,10 +219,9 @@ export function generateKnifeCut(raw: Point[], size: number, tip: KnifeTipShape,
 }
 
 /** Cursor outline (centered at the origin) that previews exactly what the nib will cut. */
-export function knifeCursorPath(size: number, tip: KnifeTipShape): string {
+export function knifeCursorPath(size: number, tip: KnifeTipShape, angle = fixedNibAngle(tip)): string {
   const r = size / 2;
   if (tip === 'flat' || tip === 'chisel') {
-    const angle = tip === 'flat' ? FLAT_NIB_ANGLE : CHISEL_NIB_ANGLE;
     const ht = Math.max(0.8, (size * NIB_THICKNESS_RATIO) / 2);
     const ux = Math.cos(angle), uy = Math.sin(angle), vx = -uy, vy = ux;
     const c = [

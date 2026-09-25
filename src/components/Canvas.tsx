@@ -34,7 +34,7 @@ import {
 } from '../utils/soundEffects';
 import { renderLayerMarkup, projectShadowOptions, BASE_BLOCK } from '../utils/layerSvg';
 import { classifyCarve, pathContains, paperAt, topBlockAt } from '../utils/paperHit';
-import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
+import { generateKnifeCut, knifeCursorPath, fixedNibAngle } from '../utils/knifeBrush';
 import { generateWillowShape, pullString, stabilizerRadius } from '../utils/willowShape';
 import {
   Matrix,
@@ -636,7 +636,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         }
         const g = brushRef.current;
         if (g && lastClientRef.current && pointerTypeRef.current !== 'touch') {
-          g.setAttribute('transform', `translate(${tip.x} ${tip.y})`);
+          g.setAttribute('transform', `translate(${tip.x} ${tip.y})${cursorTurnRef.current(tip)}`);
           g.setAttribute('visibility', g.dataset.show === '1' ? 'visible' : 'hidden');
         }
       }
@@ -645,13 +645,37 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
+  const nib = { angle: brushSettings.knifeAngle ?? 0, follow: !!brushSettings.knifeFollow };
+  const turningNib =
+    nib.follow && (currentTool === 'pen_knife' || currentTool === 'freehand') && ['flat', 'chisel'].includes(brushSettings.knifeTipShape || 'round');
+  // A turning nib's cursor faces across the pointer's recent direction of travel.
+  const cursorDirRef = useRef<{ last: Point | null; deg: number }>({ last: null, deg: 0 });
+  const cursorTurnRef = useRef<(p: Point) => string>(() => '');
+  const cursorTurn = (p: Point): string => {
+    if (!turningNib) return '';
+    const st = cursorDirRef.current;
+    if (st.last) {
+      const dx = p.x - st.last.x, dy = p.y - st.last.y;
+      if (Math.hypot(dx, dy) * zoom > 3) {
+        const target = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+        let delta = ((target - st.deg + 540) % 360) - 180;
+        if (Math.abs(delta) > 90) delta -= Math.sign(delta) * 180;
+        st.deg += delta * 0.5;
+        st.last = p;
+      }
+    } else st.last = p;
+    return ` rotate(${st.deg.toFixed(1)})`;
+  };
+  cursorTurnRef.current = cursorTurn;
+
   // The canvas cursor is the brush itself, so there is only one pointer on screen and it is
   // drawn in the same frame as the stroke it leaves.
   const brushCursor: { d: string; cross: boolean } | null = (() => {
     if (activeLocked || activeHidden) return null;
     if (activeDoodle && currentTool !== 'hand_draw') return null;
     if (currentTool === 'pen_knife' || currentTool === 'freehand') {
-      return { d: knifeCursorPath(brushSettings.stampSize || 26, brushSettings.knifeTipShape || 'round'), cross: false };
+      const tipShape = brushSettings.knifeTipShape || 'round';
+      return { d: knifeCursorPath(brushSettings.stampSize || 26, tipShape, fixedNibAngle(tipShape, nib)), cross: false };
     }
     if (currentTool === 'hand_draw') {
       if (brushSettings.drawBrushType === 'willow') return { d: '', cross: true };
@@ -671,7 +695,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
     const pt = clientToCanvas(clientX, clientY);
-    g.setAttribute('transform', `translate(${pt.x} ${pt.y})`);
+    g.setAttribute('transform', `translate(${pt.x} ${pt.y})${cursorTurn(pt)}`);
     g.setAttribute('visibility', 'visible');
   };
 
@@ -1405,7 +1429,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             strokePoints,
             brushSettings.stampSize || 26,
             brushSettings.knifeTipShape || 'round',
-            brushSettings.pressure
+            brushSettings.pressure,
+            nib
           );
           cutoutPoints = strokePoints;
         }
@@ -1624,7 +1649,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           pts,
           brushSettings.stampSize || 26,
           brushSettings.knifeTipShape || 'round',
-          brushSettings.pressure
+          brushSettings.pressure,
+          nib
         );
       }
     } else if (currentTool === 'hand_draw') {

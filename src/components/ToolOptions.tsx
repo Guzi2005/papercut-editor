@@ -34,6 +34,7 @@ import {
   CornerDownRight,
   Spline,
   Link2,
+  RotateCw,
   Lasso,
   PaintBucket,
   Unlink2,
@@ -295,6 +296,28 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             ))}
           </Segmented>
           <WheelNumber tip="画笔大小 ( [ / ] )" icon={<Circle className="w-3 h-3" />} value={brushSettings.stampSize || 26} min={4} max={120} onChange={(v) => set({ stampSize: v })} />
+          {['flat', 'chisel'].includes(brushSettings.knifeTipShape || 'round') && (
+            <>
+              <Segmented>
+                <IconButton active={!brushSettings.knifeFollow} tip="刀头固定角度" onClick={() => set({ knifeFollow: false })}>
+                  <Glyph d="M3 8h10" />
+                </IconButton>
+                <IconButton active={!!brushSettings.knifeFollow} tip="刀头随笔画旋转" onClick={() => set({ knifeFollow: true })}>
+                  <RotateCw className="w-3.5 h-3.5" />
+                </IconButton>
+              </Segmented>
+              <WheelNumber
+                tip={brushSettings.knifeFollow ? '刀头相对笔画的偏角（0° 横跨笔画）' : '刀头角度（0° 水平）'}
+                icon={<span className="text-[10px]">∠</span>}
+                value={brushSettings.knifeAngle ?? 0}
+                min={-90}
+                max={90}
+                step={5}
+                format={(v) => `${v}°`}
+                onChange={(v) => set({ knifeAngle: v })}
+              />
+            </>
+          )}
         </>
       )}
 

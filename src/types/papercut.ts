@@ -248,6 +248,8 @@ export interface BrushSettings {
 
   // 笔刀 (Pen knife)
   knifeTipShape: KnifeTipShape; // 笔尖形状选择: 'round' | 'flat' | 'chisel' | 'slash'
+  knifeAngle?: number; // 刀头角度（度）：固定时为相对水平，随笔画时为相对笔画法线
+  knifeFollow?: boolean; // 刀头随笔画方向旋转
 
   // 手绘 (Hand draw)
   drawBrushType: DrawBrushType; // 'pencil' | 'pen' | 'airbrush'
