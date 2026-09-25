@@ -29,11 +29,14 @@ import {
   PanelRight,
   Keyboard,
   Layers as LayersGlyph,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { PaperMode } from '../types/papercut';
-import { ZOOM_STEP } from '../utils/zoom';
+import { ZOOM_STEP, WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
+import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
 
 const ModeGlyph: React.FC<{ kind: PaperMode }> = ({ kind }) => (
   <svg viewBox="0 0 24 24" className="w-6 h-6">
@@ -140,6 +143,25 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [settingsFlyout, setSettingsFlyout] = useState<'skin' | 'mode' | null>(null);
+  const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
+  const zoomBoxRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const onZoomRef = useRef(onZoomChange);
+  onZoomRef.current = onZoomChange;
+  useEffect(() => {
+    const el = zoomBoxRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const next = clampZoom(zoomRef.current * Math.exp(-e.deltaY * px * WHEEL_ZOOM_RATE));
+      zoomRef.current = next;
+      onZoomRef.current(next);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
   const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | null>(null);
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
 
@@ -452,6 +474,18 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 onPointerEnter={() => setSettingsFlyout(null)}
                 onClick={() => {
+                  setSoundOn(!toggleSound());
+                  playCrispClick();
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2 text-left text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
+              >
+                {soundOn ? <Volume2 className="w-3.5 h-3.5 text-(--ui-muted)" /> : <VolumeX className="w-3.5 h-3.5 text-(--ui-muted)" />}
+                <span className="flex-1">音效</span>
+                <span className={`text-[10px] ${soundOn ? 'text-(--ui-accent-2)' : 'text-(--ui-faint)'}`}>{soundOn ? '开' : '关'}</span>
+              </button>
+              <button
+                onPointerEnter={() => setSettingsFlyout(null)}
+                onClick={() => {
                   setShowSettingsMenu(false);
                   onOpenKeymap();
                 }}
@@ -557,7 +591,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* 3. Right: Zoom (放缩) + Unified Export Square Button */}
       <div className="flex items-center gap-2 shrink-0">
         {/* Zoom Controls */}
-        <div className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) text-(--ui-text-2)">
+        <div ref={zoomBoxRef} className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) text-(--ui-text-2)">
           <button
             onClick={() => onZoomChange(zoom / ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
@@ -568,7 +602,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             onClick={onResetZoom}
             className="px-2 py-0.5 font-mono text-[11px] text-(--ui-strong) hover:bg-(--ui-hover) rounded-md transition-colors"
-            data-tip="重置缩放至100%"
+            data-tip="缩放 · 滚轮调节 · 单击回到 100%"
           >
             {Math.round(zoom * 100)}%
           </button>

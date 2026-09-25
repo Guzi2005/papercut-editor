@@ -23,8 +23,13 @@ import {
 } from '../utils/bezierMath';
 import {
   playPaperRustle,
+  playPaperPlace,
   playDiscardSwoosh,
   playCrispClick,
+  strokeStart,
+  strokeMove,
+  strokeEnd,
+  StrokeSound,
 } from '../utils/soundEffects';
 import { renderLayerMarkup, projectShadowOptions } from '../utils/layerSvg';
 import { classifyCarve, pathContains } from '../utils/paperHit';
@@ -405,6 +410,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [fitSignal]);
 
   const abortGestureConflicts = () => {
+    strokeEnd();
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
     strokeRef.current = [];
@@ -912,7 +918,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           points: finalPts,
         };
         onAddCutout(newCutout);
-        playPaperRustle();
+        if (isHole) playPaperRustle();
+        else playPaperPlace();
         setPolylinePoints([]);
         return;
       }
@@ -924,6 +931,20 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
 
     if (activeDoodle && currentTool !== 'hand_draw') return;
+
+    if (activeLayer && !activeLocked && !activeHidden) {
+      const voice: StrokeSound | null =
+        currentTool === 'hand_draw'
+          ? brushSettings.drawBrushType === 'willow'
+            ? 'brush'
+            : brushSettings.drawBrushType || 'pencil'
+          : currentTool === 'willow_leaf'
+          ? 'scissors'
+          : currentTool === 'pen_knife' || currentTool === 'freehand'
+          ? 'knife'
+          : null;
+      if (voice) strokeStart(voice, e.clientX, e.clientY);
+    }
 
     // 3. Normal drawing (Willow Leaf, Geom Shapes, Pen Knife, Hand Draw)
     strokeRef.current = [pt];
@@ -976,6 +997,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         currentTool === 'willow_leaf' || (currentTool === 'hand_draw' && brushSettings.drawBrushType === 'willow');
       const radius = stabilized ? stabilizerRadius(brushSettings.stabilizer ?? 0.55, zoom) : 0;
       if (collectsStroke) {
+        strokeMove(e.clientX, e.clientY);
         (samples.length > 0 ? samples : [e]).forEach((ev) => {
           const sp = clientToCanvas(ev.clientX, ev.clientY);
           sp.pressure = getEventPressure(ev);
@@ -993,6 +1015,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     };
 
     const handleWindowMouseUp = () => {
+      strokeEnd();
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
       if (isPanning) {
@@ -1173,7 +1196,8 @@ export const Canvas: React.FC<CanvasProps> = ({
         };
 
         onAddCutout(newCutout);
-        playPaperRustle();
+        if (isHole) playPaperRustle();
+        else playPaperPlace();
       }
 
       setIsDrawing(false);
@@ -1392,7 +1416,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           <svg
             ref={svgRef}
             viewBox={`0 0 ${project.width} ${project.height}`}
-            className="rounded-xl overflow-visible w-full h-full"
+            className="overflow-visible w-full h-full"
           >
             <defs>
               <pattern id="craft-grid" width="24" height="24" patternUnits="userSpaceOnUse">
@@ -1401,8 +1425,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             </defs>
 
             {/* Underlay Notepad Backing */}
-            <rect width={project.width} height={project.height} fill="#FAF8F2" rx="16" />
-            <rect width={project.width} height={project.height} fill="url(#craft-grid)" rx="16" opacity="0.85" />
+            <rect width={project.width} height={project.height} fill="#FAF8F2" />
+            <rect width={project.width} height={project.height} fill="url(#craft-grid)" opacity="0.85" />
 
             {ref && !ref.onTop && referenceNode}
 

@@ -49,6 +49,7 @@ import { GodotExportModal } from './components/GodotExportModal';
 import { KeymapModal } from './components/KeymapModal';
 import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeymap } from './utils/keymap';
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
+import { playHistory, playToolPick } from './utils/soundEffects';
 
 interface DocumentItem {
   id: string;
@@ -94,6 +95,11 @@ export default function App() {
 
   // Tool & Brush Settings
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
+  const toolMounted = useRef(false);
+  useEffect(() => {
+    if (toolMounted.current) playToolPick();
+    toolMounted.current = true;
+  }, [currentTool]);
   const [brushSettings, setBrushSettings] = useState<BrushSettings>({
     willowMode: 'chord',
     stabilizer: 0.55,
@@ -233,6 +239,7 @@ export default function App() {
   const canRedo = activeDoc.historyIndex < activeDoc.history.length - 1;
 
   const handleUndo = useCallback(() => {
+    if (canUndo) playHistory(false);
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => {
         if (doc.id !== activeDocId || doc.historyIndex <= 0) return doc;
@@ -240,9 +247,10 @@ export default function App() {
         return { ...doc, historyIndex: newIdx, project: doc.history[newIdx] };
       })
     );
-  }, [activeDocId]);
+  }, [activeDocId, canUndo]);
 
   const handleRedo = useCallback(() => {
+    if (canRedo) playHistory(true);
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => {
         if (doc.id !== activeDocId || doc.historyIndex >= doc.history.length - 1) return doc;
@@ -250,7 +258,7 @@ export default function App() {
         return { ...doc, historyIndex: newIdx, project: doc.history[newIdx] };
       })
     );
-  }, [activeDocId]);
+  }, [activeDocId, canRedo]);
 
   const handleZoomChange = (newZoom: number) => {
     const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
