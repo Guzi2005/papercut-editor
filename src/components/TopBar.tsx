@@ -32,6 +32,7 @@ import {
   Volume2,
   VolumeX,
   SlidersHorizontal,
+  CloudUpload,
   Sun,
   CloudFog,
   Blend,
@@ -41,6 +42,8 @@ import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
+import { SaveSettingsPanel } from './SaveSettingsPanel';
+import { SaveSettings, SaveStatus, describeSaveSettings } from '../utils/saveSettings';
 import { ZOOM_STEP, WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
 
@@ -88,7 +91,12 @@ interface TopBarProps {
   onOpenPreset: (presetId: string) => void;
   onOpenProjectFile: () => void;
   onSaveProjectFile: () => void;
-  saveStatus: 'idle' | 'saving' | 'saved';
+  saveStatus: SaveStatus;
+  saveSettings: SaveSettings;
+  onChangeSaveSettings: (patch: Partial<SaveSettings>) => void;
+  onSaveNow: () => void;
+  saveFileName: string | null;
+  onPickSaveFile: () => void;
   onOpenGodotExport: () => void;
   paperMode: PaperMode;
   onChangePaperMode: (mode: PaperMode) => void;
@@ -124,6 +132,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenProjectFile,
   onSaveProjectFile,
   saveStatus,
+  saveSettings,
+  onChangeSaveSettings,
+  onSaveNow,
+  saveFileName,
+  onPickSaveFile,
   onOpenGodotExport,
   paperMode,
   onChangePaperMode,
@@ -152,7 +165,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [settingsFlyout, setSettingsFlyout] = useState<'mode' | null>(null);
+  const [settingsFlyout, setSettingsFlyout] = useState<'mode' | 'save' | null>(null);
   const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
   const zoomBoxRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
@@ -251,12 +264,19 @@ export const TopBar: React.FC<TopBarProps> = ({
           <div className="w-6 h-6 rounded-lg bg-(--ui-accent) flex items-center justify-center text-white text-[12px] font-bold" data-tip="Weave 剪纸工坊">
             ❖
           </div>
-          <span
-            className={saveStatus === 'saving' ? 'text-(--ui-muted)' : 'text-[#438B6E]'}
-            data-tip={saveStatus === 'saving' ? '保存中…' : '已自动保存 · Ctrl+S 另存为文件'}
+          <button
+            onClick={onSaveNow}
+            className={saveStatus === 'saving' ? 'text-(--ui-muted)' : saveStatus === 'dirty' ? 'text-(--ui-accent-2)' : 'text-[#438B6E]'}
+            data-tip={
+              saveStatus === 'saving'
+                ? '保存中…'
+                : saveStatus === 'dirty'
+                ? `有未保存的修改（${describeSaveSettings(saveSettings)}）· 单击立即保存`
+                : '已保存 · 单击立即保存 · Ctrl+S 另存为文件'
+            }
           >
-            <CloudCheck className="w-4 h-4" />
-          </span>
+            {saveStatus === 'dirty' ? <CloudUpload className="w-4 h-4" /> : <CloudCheck className="w-4 h-4" />}
+          </button>
         </div>
 
         {/* Menu Tab 1: 文件 (File Menu) */}
@@ -516,6 +536,28 @@ export const TopBar: React.FC<TopBarProps> = ({
                 )}
               </div>
               <div className="h-px bg-(--ui-divider) my-1" />
+              <div className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('save')}>
+                <button
+                  onClick={() => setSettingsFlyout((v) => (v === 'save' ? null : 'save'))}
+                  className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                    settingsFlyout === 'save' ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-text-2) hover:bg-(--ui-hover)'
+                  }`}
+                >
+                  <Save className="w-3.5 h-3.5 text-(--ui-muted)" />
+                  <span className="flex-1">保存</span>
+                  <span className="text-[10px] text-(--ui-faint)">{describeSaveSettings(saveSettings)}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted)" />
+                </button>
+                {settingsFlyout === 'save' && (
+                  <SaveSettingsPanel
+                    settings={saveSettings}
+                    onChange={onChangeSaveSettings}
+                    onSaveNow={onSaveNow}
+                    fileName={saveFileName}
+                    onPickFile={onPickSaveFile}
+                  />
+                )}
+              </div>
               <button
                 onPointerEnter={() => setSettingsFlyout(null)}
                 onClick={() => {

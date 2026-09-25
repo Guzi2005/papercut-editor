@@ -52,6 +52,8 @@ import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeym
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
 import { playHistory, playToolPick } from './utils/soundEffects';
 import { projectShadowOptions } from './utils/layerSvg';
+import { SaveSettings, SaveStatus, loadSaveSettings, storeSaveSettings } from './utils/saveSettings';
+import { SaveBanner } from './components/SaveBanner';
 
 interface DocumentItem {
   id: string;
@@ -89,7 +91,16 @@ export default function App() {
   const [documents, setDocuments] = useState<DocumentItem[]>(initialDocuments);
   const [activeDocId, setActiveDocId] = useState<string>(() => documents[0].id);
   const [hydrated, setHydrated] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [saveSettings, setSaveSettingsState] = useState<SaveSettings>(loadSaveSettings);
+  const setSaveSettings = (patch: Partial<SaveSettings>) =>
+    setSaveSettingsState((prev) => {
+      const next = { ...prev, ...patch };
+      storeSaveSettings(next);
+      return next;
+    });
+  const [saveBanner, setSaveBanner] = useState<{ id: number; text: string; error?: boolean } | null>(null);
+  const [saveFile, setSaveFile] = useState<{ docId: string; name: string; handle: FileSystemFileHandle } | null>(null);
 
   // Selection (not persisted)
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
@@ -179,27 +190,108 @@ export default function App() {
     };
   }, []);
 
+  // Saves are driven by the user's settings; the latest state is read through refs so timers
+  // never write a stale workspace.
+  const dirtyRef = useRef(false);
+  const savingRef = useRef(false);
+  const stateRef = useRef({ documents, activeDocId, saveSettings, saveFile });
+  stateRef.current = { documents, activeDocId, saveSettings, saveFile };
+
+  const performSave = useCallback(async (reason: 'auto' | 'manual' | 'leave') => {
+    if (savingRef.current) return;
+    const { documents: docs, activeDocId: activeId, saveSettings: st, saveFile: file } = stateRef.current;
+    savingRef.current = true;
+    dirtyRef.current = false;
+    setSaveStatus('saving');
+    let fileNote = '';
+    try {
+      await saveWorkspace({
+        documents: docs.map(({ id, name, project, activeLayerId, zoom }) => ({ id, name, project, activeLayerId, zoom })),
+        activeDocId: activeId,
+        savedAt: Date.now(),
+      });
+      const linked = file && st.toFile ? docs.find((d) => d.id === file.docId) : undefined;
+      if (file && linked) {
+        const w = await file.handle.createWritable();
+        await w.write(serializeProject(linked.project));
+        await w.close();
+        fileNote = ` · 已写入 ${file.name}`;
+      }
+      setSaveStatus(dirtyRef.current ? 'dirty' : 'saved');
+      if (reason !== 'leave' && (reason === 'manual' || st.banner)) {
+        const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        setSaveBanner({ id: Date.now(), text: `${reason === 'manual' ? '已保存' : '已自动保存'} · ${time}${fileNote}` });
+      }
+    } catch (err) {
+      dirtyRef.current = true;
+      setSaveStatus('dirty');
+      setSaveBanner({ id: Date.now(), text: `保存失败：${err instanceof Error ? err.message : String(err)}`, error: true });
+    } finally {
+      savingRef.current = false;
+    }
+  }, []);
+
+  const lastSeen = useRef<{ documents: typeof documents; activeDocId: string } | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (!hydrated) return;
-    setSaveStatus('saving');
+    const prev = lastSeen.current;
+    lastSeen.current = { documents, activeDocId };
+    // The restore itself is not an edit; a settings change only reschedules pending work.
+    if (!prev) return;
+    if (prev.documents !== documents || prev.activeDocId !== activeDocId) {
+      dirtyRef.current = true;
+      setSaveStatus('dirty');
+    }
     window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      saveWorkspace({
-        documents: documents.map(({ id, name, project, activeLayerId, zoom }) => ({
-          id,
-          name,
-          project,
-          activeLayerId,
-          zoom,
-        })),
-        activeDocId,
-        savedAt: Date.now(),
-      })
-        .then(() => setSaveStatus('saved'))
-        .catch(() => setSaveStatus('idle'));
-    }, 600);
-  }, [documents, activeDocId, hydrated]);
+    if (!dirtyRef.current) return;
+    if (saveSettings.auto && saveSettings.trigger === 'edit') {
+      saveTimer.current = window.setTimeout(() => performSave('auto'), saveSettings.delay * 1000);
+    }
+  }, [documents, activeDocId, hydrated, saveSettings.auto, saveSettings.trigger, saveSettings.delay, performSave]);
+
+  useEffect(() => {
+    if (!hydrated || !saveSettings.auto || saveSettings.trigger !== 'interval') return;
+    const t = window.setInterval(() => dirtyRef.current && performSave('auto'), saveSettings.interval * 60000);
+    return () => window.clearInterval(t);
+  }, [hydrated, saveSettings.auto, saveSettings.trigger, saveSettings.interval, performSave]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden' && dirtyRef.current && stateRef.current.saveSettings.auto) performSave('leave');
+    };
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current && stateRef.current.saveSettings.warnOnLeave) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('beforeunload', onLeave);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('beforeunload', onLeave);
+    };
+  }, [performSave]);
+
+  const pickSaveFile = async () => {
+    const picker = (window as unknown as {
+      showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle>;
+    }).showSaveFilePicker;
+    if (!picker) return;
+    try {
+      const handle = await picker({
+        suggestedName: `${(project.name || 'papercut').replace(/[\\/:*?"<>|\s]+/g, '_')}${PROJECT_FILE_EXT}`,
+        types: [{ description: 'Weave 剪纸项目', accept: { 'application/json': [PROJECT_FILE_EXT, '.json'] } }],
+      });
+      setSaveFile({ docId: activeDocId, name: handle.name, handle });
+      setSaveSettings({ toFile: true });
+      dirtyRef.current = true;
+      performSave('manual');
+    } catch {
+      /* cancelled */
+    }
+  };
 
   // Current active document object
   const activeDoc = documents.find((d) => d.id === activeDocId) || documents[0];
@@ -938,6 +1030,11 @@ export default function App() {
         onOpenProjectFile={handleOpenProjectFile}
         onSaveProjectFile={handleSaveProjectFile}
         saveStatus={saveStatus}
+        saveSettings={saveSettings}
+        onChangeSaveSettings={setSaveSettings}
+        onSaveNow={() => performSave('manual')}
+        saveFileName={saveFile ? `${saveFile.name}（${documents.find((d) => d.id === saveFile.docId)?.name ?? '已关闭的文档'}）` : null}
+        onPickSaveFile={pickSaveFile}
         currentWidth={project.width}
         currentHeight={project.height}
         onUpdateCanvasSize={handleUpdateCanvasSize}
@@ -1005,6 +1102,7 @@ export default function App() {
         />
 
         <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
+          <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
             project={project}
             activeLayerId={activeLayerId}
