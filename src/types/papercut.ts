@@ -82,6 +82,22 @@ export type ShadowBlend = 'normal' | 'multiply' | 'color-burn' | 'darken' | 'ove
 
 export type PaperTextureType = 'xuan' | 'rough' | 'smooth' | 'speckle';
 
+/**
+ * 表面纹理（与纹样、描边并列）：金银箔、皱纸、宣纸、胶带纸等。
+ * inheritColor 为真时随纸色；否则用 color，并可用预设色点选。
+ */
+export type SurfaceTextureType = 'foil' | 'crinkle' | 'xuanSheet' | 'tape';
+
+export interface LayerSurface {
+  type: SurfaceTextureType;
+  inheritColor: boolean;
+  color: string;
+  /** 纹理强度 0 ~ 1 */
+  intensity: number;
+  /** 纹理尺度（相对默认） */
+  scale: number;
+}
+
 export type KnifeTipShape = 'round' | 'flat' | 'chisel' | 'slash';
 export type DrawBrushType = 'pencil' | 'pen' | 'airbrush' | 'willow';
 export type PencilHardness = 1 | 2 | 3 | 4 | 5;
@@ -118,6 +134,8 @@ export interface Layer {
   pattern?: LayerPattern; // 纹样填充 (蓝印菱花、条纹、格纹、圆点)
   grain?: number; // 水粉颗粒质感强度 0 ~ 1
   stroke?: LayerStroke; // 描边
+  /** 表面纹理：金银箔 / 皱纸 / 宣纸 / 胶带纸 */
+  surface?: LayerSurface;
 }
 
 export type StrokePosition = 'inside' | 'center' | 'outside';

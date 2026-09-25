@@ -334,6 +334,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
   const [chipMenu, setChipMenu] = useState<string | null>(null);
   const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; groupId: string } | null>(null);
+  const [itemMenu, setItemMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
+  const [twinOpen, setTwinOpen] = useState(false);
+  const [opacityEdit, setOpacityEdit] = useState<{ kind: 'group' | 'item'; id: string } | null>(null);
   /** After merge-down: pick which name the surviving layer keeps. */
   const [mergeNamePick, setMergeNamePick] = useState<{ layerId: string; names: [string, string] } | null>(null);
   useEffect(() => setChipMenu(null), [contextMenu]);
@@ -591,7 +594,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             <span className="max-w-0 overflow-hidden whitespace-nowrap text-[10px] opacity-0 transition-all duration-200 group-hover/item:max-w-24 group-hover/item:opacity-100 group-hover/item:mr-1">
               {item.name}
             </span>
-            <Box className="w-3.5 h-3.5 shrink-0" />
+            <MousePointer2 className="w-3.5 h-3.5 shrink-0" />
           </button>
         )}
         <button
@@ -668,6 +671,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           onContextMenu={(e) => {
             e.preventDefault();
             setGroupMenu({ x: e.clientX, y: e.clientY, groupId: group.id });
+            setOpacityEdit(null);
           }}
           className="relative flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover) text-(--ui-text-2) hover:bg-(--ui-hover) cursor-pointer select-none"
         >
@@ -802,7 +806,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           >
             <div
               onClick={() => onSelectItem(item.id)}
-              data-tip="单击选中物件并显示锚点"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setItemMenu({ x: e.clientX, y: e.clientY, itemId: item.id });
+                setOpacityEdit(null);
+              }}
+              data-tip="单击选中物件并显示锚点 · 右键更多"
               className="flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover) cursor-pointer"
             >
               <button
@@ -832,6 +842,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 )}
               </div>
               <span className="text-[9px] text-(--ui-muted)">{item.partIds.length} 部件</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectItem(item.id);
+                }}
+                className="p-0.5 rounded hover:bg-(--ui-accent-2)/15 text-(--ui-accent-2)"
+                data-tip="在画布上选中整个物件"
+              >
+                <MousePointer2 className="w-3.5 h-3.5" />
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1216,13 +1236,43 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             >
               <Brush className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => onAddLayer()}
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
-              data-tip="新建纸片"
+            <div
+              className="relative"
+              onPointerEnter={(e) => e.pointerType === 'mouse' && setTwinOpen(true)}
+              onPointerLeave={() => setTwinOpen(false)}
             >
-              <Plus className="w-4 h-4" />
-            </button>
+              <button
+                onClick={() => onAddLayer()}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
+                data-tip="新建纸片 · 悬停选孪生预设"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              {twinOpen && twinPresets.length > 0 && (
+                <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-(--ui-raised)/98 border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 text-xs backdrop-blur-md">
+                  <div className="px-2.5 py-1 text-[10px] text-(--ui-muted)">孪生图层</div>
+                  {twinPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => {
+                        onAddTwin?.(preset.id);
+                        setTwinOpen(false);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left hover:bg-(--ui-hover) flex flex-col gap-0.5"
+                      data-tip="一次创建多层并按前后关系插入"
+                    >
+                      <span className="text-(--ui-strong)">{preset.name}</span>
+                      <span className="text-[10px] text-(--ui-faint)">
+                        {preset.parts.map((part) => part.suffix).join(' · ')}
+                      </span>
+                    </button>
+                  ))}
+                  <div className="px-2.5 pt-1 pb-1 text-[10px] text-(--ui-faint) border-t border-(--ui-border)">
+                    可在设置里编辑预设
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -1411,7 +1461,14 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       {groupMenu && (() => {
         const g = groups.find((gg) => gg.id === groupMenu.groupId);
         if (!g) return null;
+        const avgOpacity = g.layerIds.length
+          ? Math.round((g.layerIds.reduce((a, id) => a + (layers[id]?.opacity ?? 1), 0) / g.layerIds.length) * 100)
+          : 100;
+        const setGroupOpacity = (pct: number) => {
+          g.layerIds.forEach((id) => layers[id] && onUpdateLayer(id, { opacity: pct / 100 }));
+        };
         const actions = [
+          { label: '全部选中', icon: MousePointer2, run: () => onSelectLayers(g.layerIds, g.layerIds[g.layerIds.length - 1]) },
           { label: '高亮这些图形', icon: Scan, run: () => onHighlightLayers(g.layerIds) },
           { label: '新建纸片', icon: Plus, run: () => onAddLayer(g.id) },
           { label: '重命名', icon: Edit2, run: () => startRename('group', g.id, g.name) },
@@ -1449,16 +1506,148 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 </button>
               ))}
               <button
+                onClick={() => setOpacityEdit((v) => (v?.kind === 'group' && v.id === g.id ? null : { kind: 'group', id: g.id }))}
+                className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) flex items-center gap-2"
+              >
+                <Droplet className="w-3.5 h-3.5 text-(--ui-muted)" />
+                透明度
+              </button>
+              {opacityEdit?.kind === 'group' && opacityEdit.id === g.id && (
+                <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
+                  <WheelNumber
+                    tip="深度层内全部纸片透明度"
+                    icon={<Droplet className="w-3 h-3" />}
+                    value={avgOpacity}
+                    min={0}
+                    max={100}
+                    step={5}
+                    format={(v) => `${v}%`}
+                    onChange={setGroupOpacity}
+                  />
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  playDiscardSwoosh();
+                  if (onDeleteLayers && g.layerIds.length) onDeleteLayers(g.layerIds);
+                  onDeleteGroup(g.id);
+                  setGroupMenu(null);
+                }}
+                data-tip="删除组内全部纸片并移除深度层"
+                className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-(--ui-border) mt-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                删除
+              </button>
+              <button
                 onClick={() => {
                   playDiscardSwoosh();
                   onDeleteGroup(g.id);
                   setGroupMenu(null);
                 }}
                 data-tip="纸片会移到根层级"
+                className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) text-(--ui-muted) flex items-center gap-2"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                解散深度层
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+      {itemMenu && (() => {
+        const it = items.find((x) => x.id === itemMenu.itemId);
+        if (!it) return null;
+        const partIds = it.partIds.filter((id) => layers[id]);
+        const avgOp = partIds.length
+          ? Math.round((partIds.reduce((a, id) => a + (layers[id]?.opacity ?? 1), 0) / partIds.length) * 100)
+          : 100;
+        const setItemOpacity = (pct: number) => {
+          partIds.forEach((id) => onUpdateLayer(id, { opacity: pct / 100 }));
+        };
+        return (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => {
+              setItemMenu(null);
+              setOpacityEdit(null);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setItemMenu(null);
+            }}
+          >
+            <div
+              ref={(el) => {
+                if (el) el.style.top = `${Math.max(8, Math.min(itemMenu.y, window.innerHeight - el.offsetHeight - 8))}px`;
+              }}
+              className="absolute bg-(--ui-raised)/98 border border-(--ui-border-strong) text-(--ui-text) rounded-xl shadow-2xl py-1 w-48 text-xs backdrop-blur-md"
+              style={{ left: Math.max(8, Math.min(itemMenu.x, window.innerWidth - 200)), top: itemMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {[
+                { label: '全部选中', icon: MousePointer2, run: () => onSelectItem(it.id) },
+                { label: '高亮这些图形', icon: Scan, run: () => onHighlightLayers(partIds) },
+                { label: '重命名', icon: Edit2, run: () => startRename('item', it.id, it.name) },
+              ].map((a) => (
+                <button
+                  key={a.label}
+                  onClick={() => {
+                    a.run();
+                    setItemMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) flex items-center gap-2"
+                >
+                  <a.icon className="w-3.5 h-3.5 text-(--ui-muted)" />
+                  {a.label}
+                </button>
+              ))}
+              <button
+                onClick={() =>
+                  setOpacityEdit((v) => (v?.kind === 'item' && v.id === it.id ? null : { kind: 'item', id: it.id }))
+                }
+                className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) flex items-center gap-2"
+              >
+                <Droplet className="w-3.5 h-3.5 text-(--ui-muted)" />
+                透明度
+              </button>
+              {opacityEdit?.kind === 'item' && opacityEdit.id === it.id && (
+                <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
+                  <WheelNumber
+                    tip="物件全部部件透明度"
+                    icon={<Droplet className="w-3 h-3" />}
+                    value={avgOp}
+                    min={0}
+                    max={100}
+                    step={5}
+                    format={(v) => `${v}%`}
+                    onChange={setItemOpacity}
+                  />
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  playDiscardSwoosh();
+                  if (onDeleteLayers) onDeleteLayers(partIds);
+                  else partIds.forEach((id) => onDeleteLayer(id));
+                  setItemMenu(null);
+                }}
+                data-tip="删除物件全部纸片"
                 className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-(--ui-border) mt-1"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                删除深度层
+                删除
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteItem(it.id);
+                  setItemMenu(null);
+                }}
+                data-tip="解散物件，纸片保留"
+                className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) text-(--ui-muted) flex items-center gap-2"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                解散物件
               </button>
             </div>
           </div>

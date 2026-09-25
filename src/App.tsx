@@ -1259,13 +1259,77 @@ export default function App() {
   return (
     <div
       className="flex flex-col h-dvh w-screen bg-(--ui-app) text-(--ui-text) overflow-hidden font-sans select-none pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={(e) => {
+        const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+        if (!file) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const preview = URL.createObjectURL(file);
+        setImageDrop({ file, preview });
+      }}
     >
       <TooltipLayer />
+      {imageDrop && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => {
+            URL.revokeObjectURL(imageDrop.preview);
+            setImageDrop(null);
+          }}
+        >
+          <div
+            className="bg-(--ui-panel) border border-(--ui-border-strong) rounded-2xl w-full max-w-sm p-4 shadow-2xl space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-semibold text-(--ui-strong)">导入图片</div>
+            <div className="text-[11px] text-(--ui-muted) truncate">{imageDrop.file.name}</div>
+            <img src={imageDrop.preview} alt="" className="w-full max-h-40 object-contain rounded-lg bg-(--ui-raised)" />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="h-9 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-text-2) hover:text-(--ui-strong) text-xs border border-(--ui-border)"
+                onClick={async () => {
+                  const { file, preview } = imageDrop;
+                  setImageDrop(null);
+                  URL.revokeObjectURL(preview);
+                  await applyImageAsReference(file);
+                }}
+              >
+                作为参考图
+              </button>
+              <button
+                className="h-9 rounded-xl bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white text-xs font-medium"
+                onClick={async () => {
+                  const { file, preview } = imageDrop;
+                  setImageDrop(null);
+                  URL.revokeObjectURL(preview);
+                  await applyImageAsEditObject(file);
+                }}
+              >
+                作为编辑对象
+              </button>
+            </div>
+            <button
+              className="w-full h-8 text-[11px] text-(--ui-muted) hover:text-(--ui-strong)"
+              onClick={() => {
+                URL.revokeObjectURL(imageDrop.preview);
+                setImageDrop(null);
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
       <TopBar
         documents={documentTabItems}
         activeDocId={activeDocId}
         onSelectDocument={setActiveDocId}
-        onNewDocument={(name, width, height) => handleNewDocument({ name, width, height })}
+        onNewDocument={handleNewDocument}
         onCloseDocument={handleCloseDocument}
         onRenameDocument={handleRenameDocument}
         onOpenPreset={handleOpenPreset}
@@ -1299,6 +1363,8 @@ export default function App() {
           return { strength: o.shadow, softness: o.shadowSoftness, blend: o.shadowBlend };
         })()}
         onChangeShadow={handleUpdateProject}
+        twinPresets={twinPresets}
+        onChangeTwinPresets={setTwinPresets}
         canvasBg={project.canvasBg}
         onChangeCanvasBg={(canvasBg) => handleUpdateProject({ canvasBg })}
         onQuickCopySvg={handleQuickCopySvg}
@@ -1423,6 +1489,8 @@ export default function App() {
           onHighlightLayers={(layerIds) => setFlash({ key: Date.now(), layerIds })}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
+          twinPresets={twinPresets}
+          onAddTwin={handleAddTwin}
           onCreateItemFromLayer={(layerId) => createItemFrom([layerId], project.layers[layerId]?.name)}
           brushColor={brushSettings.brushColor}
           recentColors={recentBrushColors}

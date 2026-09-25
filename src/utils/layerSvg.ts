@@ -4,6 +4,7 @@
  */
 
 import { CutoutPath, Layer, LayerPattern, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
+import { surfaceOverlayMarkup } from './paperSurface';
 
 export interface LayerRenderOptions {
   /** Prefix for def ids so several renders can share one DOM without collisions. */
@@ -163,6 +164,7 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   const patId = `${pid}_pat`;
   const grainId = `${pid}_grain`;
   const shadowId = `${pid}_shadow`;
+  const silId = `${pid}_sil`;
 
   const doodle = layer.kind === 'doodle';
   const seq = doodle ? [] : paperSequence(layer);
@@ -172,13 +174,23 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   const shadow = mode === 'vector' || doodle ? 0 : opts.shadow ?? 0;
   const base = doodle ? '' : layer.baseShape?.d || '';
   const drawings = layer.drawings || [];
+  const surface = !doodle && mode !== 'vector' ? layer.surface : undefined;
 
   const defs: string[] = [];
   defs.push(maskOpen(maskId) + fillPaths(base, '#fff') + holes.map((h) => fillPaths(h.d, '#000')).join('') + `</mask>`);
   // Brush strokes stay inside the paper as it currently stands: base and appliqués, minus holes.
-  if (!doodle && (drawings.length > 0 || opts.interactive)) {
+  if (!doodle && (drawings.length > 0 || opts.interactive || surface)) {
     defs.push(
       maskOpen(paperMaskId) +
+        fillPaths(base, '#fff') +
+        seq.map((c) => fillPaths(c.d, c.isHole ? '#000' : '#fff')).join('') +
+        `</mask>`
+    );
+  }
+  if (surface) {
+    // Silhouette of finished paper (base + appliqués − holes) for the surface wash.
+    defs.push(
+      maskOpen(silId) +
         fillPaths(base, '#fff') +
         seq.map((c) => fillPaths(c.d, c.isHole ? '#000' : '#fff')).join('') +
         `</mask>`
@@ -218,6 +230,10 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
     }
     body.push(`<g data-element-id="${elem.id}"${mask}>${fillPaths(elem.d, escapeAttr(elem.fillColor || layer.color))}</g>`);
   });
+
+  if (surface) {
+    body.push(`<g mask="url(#${silId})" pointer-events="none">${surfaceOverlayMarkup(surface, pid, layer.color, defs)}</g>`);
+  }
 
   const strokes = drawings
     .map((drw) => {

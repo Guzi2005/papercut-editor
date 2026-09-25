@@ -37,11 +37,16 @@ import {
   Sun,
   CloudFog,
   Blend,
+  GitBranch,
+  Scissors,
 } from 'lucide-react';
-import { PRESET_PROJECTS } from '../utils/presetTemplates';
+import { PRESET_PROJECTS, FOLK_PALETTE, NewCanvasMode } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { CanvasBackground, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 import { CanvasBgPanel } from './CanvasBgPanel';
+import { TwinPresetsPanel } from './TwinPresetsPanel';
+import { AspectSizeButton, SIZE_PRESETS } from './AspectSizeButton';
+import { TwinPreset } from '../utils/twinPresets';
 import { DocThumbnail } from './DocThumbnail';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
@@ -89,7 +94,15 @@ interface TopBarProps {
   documents: DocumentTabItem[];
   activeDocId: string;
   onSelectDocument: (docId: string) => void;
-  onNewDocument: (name?: string, width?: number, height?: number) => void;
+  onNewDocument: (opts?: {
+    name?: string;
+    width?: number;
+    height?: number;
+    mode?: NewCanvasMode;
+    paperColor?: string;
+  }) => void;
+  twinPresets?: TwinPreset[];
+  onChangeTwinPresets?: (presets: TwinPreset[]) => void;
   onCloseDocument: (docId: string) => void;
   onRenameDocument: (docId: string, newName: string) => void;
   onOpenPreset: (presetId: string) => void;
@@ -132,6 +145,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   activeDocId,
   onSelectDocument,
   onNewDocument,
+  twinPresets = [],
+  onChangeTwinPresets,
   onCloseDocument,
   onRenameDocument,
   onOpenPreset,
@@ -173,7 +188,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [settingsFlyout, setSettingsFlyout] = useState<'mode' | 'save' | null>(null);
+  const [settingsFlyout, setSettingsFlyout] = useState<'mode' | 'save' | 'twin' | null>(null);
   const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
   const [thumb, setThumb] = useState<{ id: string; x: number; y: number } | null>(null);
   const thumbTimer = useRef<number | undefined>(undefined);
@@ -213,6 +228,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [newDocName, setNewDocName] = useState('新建剪纸');
   const [newDocWidth, setNewDocWidth] = useState(800);
   const [newDocHeight, setNewDocHeight] = useState(800);
+  const [newDocMode, setNewDocMode] = useState<NewCanvasMode>('cut');
+  const [newDocPaperColor, setNewDocPaperColor] = useState('#D72626');
 
   // Settings menu fields (canvas size)
   const [customWidth, setCustomWidth] = useState(currentWidth);
@@ -269,11 +286,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   const handleCreateDocument = () => {
-    onNewDocument(
-      newDocName.trim() || `新建剪纸 ${documents.length + 1}`,
-      newDocWidth,
-      newDocHeight
-    );
+    const fallback = newDocMode === 'cut' ? `新建剪纸 ${documents.length + 1}` : `新建创作 ${documents.length + 1}`;
+    onNewDocument({
+      name: newDocName.trim() || fallback,
+      width: newDocWidth,
+      height: newDocHeight,
+      mode: newDocMode,
+      paperColor: newDocPaperColor,
+    });
     setShowNewDocDialog(false);
   };
 
@@ -403,27 +423,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                           </label>
                         ))}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {[
-                          [800, 800],
-                          [1000, 800],
-                          [750, 1000],
-                          [1920, 1080],
-                        ].map(([w, h]) => (
-                          <button
+                      <div className="flex flex-wrap gap-1.5 justify-between">
+                        {SIZE_PRESETS.map(({ w, h }) => (
+                          <AspectSizeButton
                             key={`${w}x${h}`}
+                            w={w}
+                            h={h}
+                            active={customWidth === w && customHeight === h}
                             onClick={() => {
                               setCustomWidth(w);
                               setCustomHeight(h);
                             }}
-                            className={`h-7 rounded-lg text-[10px] font-mono border transition-colors ${
-                              customWidth === w && customHeight === h
-                                ? 'border-(--ui-accent) text-(--ui-strong)'
-                                : 'border-(--ui-border) text-(--ui-text-2) hover:text-(--ui-strong)'
-                            }`}
-                          >
-                            {w} × {h}
-                          </button>
+                          />
                         ))}
                       </div>
                       <button
@@ -559,6 +570,22 @@ export const TopBar: React.FC<TopBarProps> = ({
                 )}
               </div>
               <div className="h-px bg-(--ui-divider) my-1" />
+              <div className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('twin')}>
+                <button
+                  onClick={() => setSettingsFlyout((v) => (v === 'twin' ? null : 'twin'))}
+                  className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                    settingsFlyout === 'twin' ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-text-2) hover:bg-(--ui-hover)'
+                  }`}
+                >
+                  <GitBranch className="w-3.5 h-3.5 text-(--ui-muted)" />
+                  <span className="flex-1">孪生图层</span>
+                  <span className="text-[10px] text-(--ui-faint)">{twinPresets.length}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted)" />
+                </button>
+                {settingsFlyout === 'twin' && onChangeTwinPresets && (
+                  <TwinPresetsPanel value={twinPresets} onChange={onChangeTwinPresets} />
+                )}
+              </div>
               <div className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('save')}>
                 <button
                   onClick={() => setSettingsFlyout((v) => (v === 'save' ? null : 'save'))}
@@ -873,6 +900,66 @@ export const TopBar: React.FC<TopBarProps> = ({
 
             <div className="space-y-4 py-4 text-xs">
               <div>
+                <label className="text-(--ui-muted) block mb-1.5">模式</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { id: 'cut' as const, label: '剪纸模式', tip: '一张居中色纸，可改颜色', icon: Scissors },
+                      { id: 'create' as const, label: '创造模式', tip: '空画布，不含纸片', icon: Sparkles },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setNewDocMode(m.id);
+                        setNewDocName(m.id === 'cut' ? '新建剪纸' : '新建创作');
+                      }}
+                      data-tip={m.tip}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-colors ${
+                        newDocMode === m.id
+                          ? 'border-(--ui-accent) bg-(--ui-hover) text-(--ui-strong)'
+                          : 'border-(--ui-border) text-(--ui-text-2) hover:bg-(--ui-hover)'
+                      }`}
+                    >
+                      <m.icon className="w-4 h-4 text-(--ui-accent)" />
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {newDocMode === 'cut' && (
+                <div>
+                  <label className="text-(--ui-muted) block mb-1.5">色纸颜色</label>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {FOLK_PALETTE.slice(0, 10).map((c) => (
+                      <button
+                        key={c.hex}
+                        onClick={() => setNewDocPaperColor(c.hex)}
+                        data-tip={c.name}
+                        className={`w-6 h-6 rounded-md border-2 ${
+                          newDocPaperColor.toUpperCase() === c.hex.toUpperCase() ? 'border-(--ui-accent)' : 'border-white/20'
+                        }`}
+                        style={{ backgroundColor: c.hex }}
+                      />
+                    ))}
+                    <label
+                      className="relative w-6 h-6 rounded-md border border-(--ui-border) overflow-hidden cursor-pointer"
+                      data-tip="自定义颜色"
+                      style={{ background: newDocPaperColor }}
+                    >
+                      <input
+                        type="color"
+                        value={newDocPaperColor}
+                        onChange={(e) => setNewDocPaperColor(e.target.value.toUpperCase())}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div>
                 <label className="text-(--ui-muted) block mb-1">名称</label>
                 <input
                   type="text"
@@ -909,25 +996,20 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </div>
               </div>
 
-              {/* Preset dimensions */}
               <div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { name: '800 × 800', w: 800, h: 800 },
-                    { name: '1000 × 800', w: 1000, h: 800 },
-                    { name: '750 × 1000', w: 750, h: 1000 },
-                    { name: '1920 × 1080', w: 1920, h: 1080 },
-                  ].map((preset) => (
-                    <button
-                      key={preset.name}
+                <label className="text-(--ui-muted) block mb-1.5">推荐尺寸</label>
+                <div className="flex flex-wrap gap-2 justify-between">
+                  {SIZE_PRESETS.map(({ w, h }) => (
+                    <AspectSizeButton
+                      key={`${w}x${h}`}
+                      w={w}
+                      h={h}
+                      active={newDocWidth === w && newDocHeight === h}
                       onClick={() => {
-                        setNewDocWidth(preset.w);
-                        setNewDocHeight(preset.h);
+                        setNewDocWidth(w);
+                        setNewDocHeight(h);
                       }}
-                      className="px-2.5 py-1.5 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-text-2) hover:text-(--ui-strong) border border-(--ui-border) text-left transition-colors"
-                    >
-                      {preset.name}
-                    </button>
+                    />
                   ))}
                 </div>
               </div>
