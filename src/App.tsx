@@ -884,8 +884,10 @@ export default function App() {
 
   const setItems = (next: PapercutItem[]) => pushHistory({ ...project, items: next });
 
-  const handleCreateItem = () => {
-    const ids = selectedLayerIds.length > 0 ? selectedLayerIds : activeLayerId ? [activeLayerId] : [];
+  const handleCreateItem = () =>
+    createItemFrom(selectedLayerIds.length > 0 ? selectedLayerIds : activeLayerId ? [activeLayerId] : []);
+
+  const createItemFrom = (ids: string[], name?: string) => {
     if (ids.length === 0) return;
     let pivot = { x: project.width / 2, y: project.height / 2 };
     const boxes = ids
@@ -904,7 +906,7 @@ export default function App() {
     const orderedIds = flattenLayerIds(project).filter((id) => idSet.has(id));
     const item: PapercutItem = {
       id: newId('item'),
-      name: `物件 ${items.length + 1}`,
+      name: name || `物件 ${items.length + 1}`,
       partIds: orderedIds,
       pivot,
       sockets: [],
@@ -1198,6 +1200,7 @@ export default function App() {
           onSelectLayer={handlePanelSelectLayer}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
+          onCreateItemFromLayer={(layerId) => createItemFrom([layerId], project.layers[layerId]?.name)}
           brushColor={brushSettings.brushColor}
           recentColors={recentBrushColors}
           onChangeBrushColor={changeBrushColor}

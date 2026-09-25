@@ -78,6 +78,7 @@ interface LayersPanelProps {
   onUpdateGroup: (groupId: string, updates: Partial<LayerGroup>) => void;
   onDeleteGroup: (groupId: string) => void;
   onCreateItem: () => void;
+  onCreateItemFromLayer: (layerId: string) => void;
   onSelectItem: (itemId: string) => void;
   onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
   onDeleteItem: (itemId: string) => void;
@@ -155,6 +156,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onUpdateGroup,
   onDeleteGroup,
   onCreateItem,
+  onCreateItemFromLayer,
   onSelectItem,
   onUpdateItem,
   onDeleteItem,
@@ -1069,9 +1071,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 {a.label}
               </button>
             ))}
+            <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-(--ui-muted) border-t border-(--ui-border) mt-1">加入物件</div>
             {items.length > 0 && (
               <>
-                <div className="px-3 pt-1.5 pb-0.5 text-[10px] text-(--ui-muted) border-t border-(--ui-border) mt-1">加入物件</div>
                 {items.map((it) => (
                   <button
                     key={it.id}
@@ -1088,6 +1090,17 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 ))}
               </>
             )}
+            <button
+              onClick={() => {
+                onCreateItemFromLayer(ctxLayer.id);
+                setContextMenu(null);
+              }}
+              data-tip={`新建物件「${ctxLayer.name}」，只含这张纸片`}
+              className="w-full px-3 py-1 text-left hover:bg-(--ui-hover) flex items-center gap-2 text-(--ui-text-2)"
+            >
+              <Plus className="w-3 h-3 text-(--ui-accent-2)" />
+              <span>新增物件</span>
+            </button>
             <button
               onClick={() => {
                 playDiscardSwoosh();
