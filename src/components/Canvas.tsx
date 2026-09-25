@@ -751,6 +751,91 @@ export const Canvas: React.FC<CanvasProps> = ({
     setDragPoint(null);
   };
 
+  // ---------- Lasso: selects whatever the loop touches, in the current scope ----------
+  const lassoMode = !!brushSettings.selectLasso;
+  const [lasso, setLasso] = useState<Point[] | null>(null);
+
+  const finishLasso = (poly: Point[], additive: boolean) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const xs = poly.map((p) => p.x), ys = poly.map((p) => p.y);
+    const pb = { x: Math.min(...xs), y: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+    const inPoly = (x: number, y: number) => {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+      return inside;
+    };
+    const touches = (el: Element | null, hit: (x: number, y: number) => boolean) => {
+      let bb: DOMRect | undefined;
+      try {
+        bb = (el as SVGGraphicsElement | null)?.getBBox();
+      } catch {
+        return false;
+      }
+      if (!bb || (bb.width === 0 && bb.height === 0)) return false;
+      const x0 = Math.max(bb.x, pb.x), x1 = Math.min(bb.x + bb.width, pb.x2);
+      const y0 = Math.max(bb.y, pb.y), y1 = Math.min(bb.y + bb.height, pb.y2);
+      if (x0 > x1 || y0 > y1) return false;
+      const step = Math.max(1.5, (x1 - x0) / 24, (y1 - y0) / 24);
+      for (let y = y0; y <= y1; y += step) {
+        for (let x = x0; x <= x1; x += step) {
+          if (inPoly(x, y) && hit(x, y)) return true;
+        }
+      }
+      return false;
+    };
+    const layerEl = (id: string) => svg.querySelector(`[data-layer-id="${id}"]`);
+
+    if (colorScope) {
+      const next: BlockSelection = additive ? { ...blockSel } : {};
+      renderLayerOrder.forEach((layer) => {
+        const found: string[] = [];
+        const root = layerEl(layer.id);
+        const blockEl = (id: string) => root?.querySelector(`[data-element-id="${id}"]`) ?? null;
+        if (layer.kind !== 'doodle' && layer.baseShape?.d && touches(blockEl(BASE_BLOCK), (x, y) => pathContains(layer.baseShape.d, x, y))) found.push(BASE_BLOCK);
+        [...layer.positiveElements, ...layer.cutouts].forEach((c) => !c.isHole && touches(blockEl(c.id), (x, y) => pathContains(c.d, x, y)) && found.push(c.id));
+        (layer.drawings || []).forEach((d) => touches(blockEl(d.id), () => true) && found.push(d.id));
+        if (found.length) next[layer.id] = Array.from(new Set([...(next[layer.id] || []), ...found]));
+      });
+      setBlockSel(next);
+      const keys = Object.keys(next);
+      onSelectLayers(keys, keys[keys.length - 1]);
+      return;
+    }
+    const hitIds = renderLayerOrder
+      .filter((layer) => touches(layerEl(layer.id), layer.kind === 'doodle' ? () => true : (x, y) => paperAt(layer, x, y)))
+      .flatMap((layer) => expandToScope(layer.id));
+    const ids = Array.from(new Set([...(additive ? selectedLayerIds : []), ...hitIds]));
+    onSelectLayers(ids, hitIds[hitIds.length - 1] ?? ids[ids.length - 1]);
+  };
+
+  const beginLasso = (start: Point, additive: boolean, onClick: () => void) => {
+    const pts = [start];
+    setLasso(pts);
+    const move = (ev: PointerEvent) => {
+      const p = clientToCanvas(ev.clientX, ev.clientY);
+      const last = pts[pts.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) * zoom > 3) {
+        pts.push(p);
+        setLasso([...pts]);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      setLasso(null);
+      const w = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x));
+      const h = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
+      if (pts.length < 3 || Math.hypot(w, h) * zoom < 6) onClick();
+      else finishLasso(pts, additive);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   const handleSelectDown = (e: React.PointerEvent, pt: Point) => {
     const handle = (e.target as Element).closest?.('[data-handle]')?.getAttribute('data-handle');
     const box = selectionBBox;
@@ -783,6 +868,21 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
+    const insideBox = !!box && pt.x >= box.x && pt.x <= box.x + box.width && pt.y >= box.y && pt.y <= box.y + box.height;
+    if (!insideBox && (lassoMode || !layerIdFromTarget(e.target))) {
+      const target = e.target;
+      const shift = e.shiftKey;
+      beginLasso(pt, shift, () => clickSelect(target, shift, pt, false));
+      return;
+    }
+    clickSelect(e.target, e.shiftKey, pt, true);
+  };
+
+  /** Selection by clicking; `allowDrag` is false when replaying a click after a lasso that never grew. */
+  const clickSelect = (target: EventTarget | null, shiftKey: boolean, pt: Point, allowDrag: boolean) => {
+    const box = selectionBBox;
+    const startDrag: typeof beginSelectDrag = (...args) => allowDrag && beginSelectDrag(...args);
+    const e = { target, shiftKey };
     if (colorScope) {
       const lid = layerIdFromTarget(e.target);
       const layer = lid ? project.layers[lid] : null;
@@ -808,11 +908,11 @@ export const Canvas: React.FC<CanvasProps> = ({
         }
         setBlockSel(next);
         onSelectLayers(Object.keys(next), lid);
-        if (!e.shiftKey || has) beginSelectDrag({ kind: 'move' }, pt);
+        if (!e.shiftKey || has) startDrag({ kind: 'move' }, pt);
         return;
       }
       if (box && pt.x >= box.x && pt.x <= box.x + box.width && pt.y >= box.y && pt.y <= box.y + box.height) {
-        beginSelectDrag({ kind: 'move' }, pt);
+        startDrag({ kind: 'move' }, pt);
         return;
       }
       setBlockSel({});
@@ -833,10 +933,10 @@ export const Canvas: React.FC<CanvasProps> = ({
       }
       if (!alreadySelected) {
         onSelectLayers(scoped, hitId);
-        beginSelectDrag({ kind: 'move' }, pt);
+        startDrag({ kind: 'move' }, pt);
       } else {
         const narrows = scoped.length < selectedLayerIds.length;
-        beginSelectDrag({ kind: 'move' }, pt, narrows ? { ids: scoped, active: hitId } : undefined);
+        startDrag({ kind: 'move' }, pt, narrows ? { ids: scoped, active: hitId } : undefined);
         if (!narrows && hitId !== activeLayerId) onPickLayer(hitId);
       }
       return;
@@ -847,7 +947,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       pt.x >= box.x && pt.x <= box.x + box.width &&
       pt.y >= box.y && pt.y <= box.y + box.height
     ) {
-      beginSelectDrag({ kind: 'move' }, pt);
+      startDrag({ kind: 'move' }, pt);
       return;
     }
     onSelectLayers([]);
@@ -1558,7 +1658,9 @@ export const Canvas: React.FC<CanvasProps> = ({
     : isSpacePressed || isPanning
     ? 'cursor-grab'
     : currentTool === 'select'
-    ? 'cursor-default'
+    ? lassoMode
+      ? 'cursor-crosshair'
+      : 'cursor-default'
     : currentTool === 'anchor_edit'
     ? 'cursor-default'
     : activeLocked || activeHidden || (activeDoodle && currentTool !== 'hand_draw')
@@ -1759,6 +1861,19 @@ export const Canvas: React.FC<CanvasProps> = ({
                 stroke="#2652D0"
                 strokeWidth={2 / zoom}
                 strokeDasharray="4 3"
+                pointerEvents="none"
+              />
+            )}
+
+            {lasso && lasso.length > 1 && (
+              <polygon
+                points={lasso.map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="#2652D0"
+                fillOpacity={0.07}
+                stroke="#2652D0"
+                strokeWidth={1.3 / zoom}
+                strokeDasharray={`${5 / zoom} ${3 / zoom}`}
+                strokeLinejoin="round"
                 pointerEvents="none"
               />
             )}

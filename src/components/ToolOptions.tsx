@@ -34,6 +34,7 @@ import {
   CornerDownRight,
   Spline,
   Link2,
+  Lasso,
   PaintBucket,
   Unlink2,
 } from 'lucide-react';
@@ -206,6 +207,13 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               <PaintBucket className="w-3.5 h-3.5" />
             </IconButton>
           </Segmented>
+          <IconButton
+            active={!!brushSettings.selectLasso}
+            tip={brushSettings.selectLasso ? '圈选：拖动圈画选中（Shift 加选）' : '点选：单击选中，空白处拖动圈选'}
+            onClick={() => set({ selectLasso: !brushSettings.selectLasso })}
+          >
+            <Lasso className="w-3.5 h-3.5" />
+          </IconButton>
           <IconButton tip="把选中纸片打组为物件" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}>
             <Group className="w-3.5 h-3.5" />
           </IconButton>

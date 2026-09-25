@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { Box, PaintBucket, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
+import { Box, Lasso, PaintBucket, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { DRAW_BRUSHES, GEOM_SHAPES, Glyph, KNIFE_TIPS } from './ToolOptions';
 import { TOOLS } from './Toolbar';
@@ -89,6 +89,7 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
     });
     sections.push({
       entries: [
+        { key: 'lasso', label: '圈选', icon: icon(Lasso), active: !!bs.selectLasso, stay: true, run: () => set({ selectLasso: !bs.selectLasso }) },
         { key: 'lock', label: lock ? '锁定长宽比' : '自由长宽比', icon: icon(lock ? Link2 : Unlink2), active: lock, stay: true, run: () => set({ lockAspect: !lock }) },
         { key: 'group', label: '打组为物件', icon: icon(Group), disabled: selectedCount === 0, run: onCreateItemFromSelection },
       ],
