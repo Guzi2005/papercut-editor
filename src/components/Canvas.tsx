@@ -16,7 +16,6 @@ import {
   PaperMode,
 } from '../types/papercut';
 import {
-  generateRealtimeWillowLeaf,
   generateFreehandDrawPath,
   generateGeomShape,
   rebuildPathFromPoints,
@@ -30,6 +29,7 @@ import {
 } from '../utils/soundEffects';
 import { renderLayerMarkup } from '../utils/layerSvg';
 import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
+import { generateWillowShape, pullString, stabilizerRadius } from '../utils/willowShape';
 import {
   Matrix,
   IDENTITY,
@@ -178,6 +178,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const rafRef = useRef(0);
   const rectRef = useRef<DOMRect | null>(null);
   const brushRef = useRef<SVGGElement>(null);
+  const stringRef = useRef<SVGLineElement>(null);
   const previewRef = useRef<SVGPathElement>(null);
   const lastClientRef = useRef<{ x: number; y: number } | null>(null);
   const previewFnRef = useRef<(pts: Point[], cur: Point) => string>(() => '');
@@ -463,6 +464,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         const pts = strokeRef.current;
         const tip = curRef.current;
         previewRef.current?.setAttribute('d', previewFnRef.current(pts, curRef.current) || 'M 0 0');
+        const line = stringRef.current;
+        const last = pts[pts.length - 1];
+        if (line && last) {
+          line.setAttribute('x1', String(last.x));
+          line.setAttribute('y1', String(last.y));
+          line.setAttribute('x2', String(tip.x));
+          line.setAttribute('y2', String(tip.y));
+        }
         const g = brushRef.current;
         if (g && lastClientRef.current && pointerTypeRef.current !== 'touch') {
           g.setAttribute('transform', `translate(${tip.x} ${tip.y})`);
@@ -883,11 +892,20 @@ export const Canvas: React.FC<CanvasProps> = ({
         currentTool === 'freehand' ||
         currentTool === 'hand_draw';
       const samples = e.getCoalescedEvents?.() || [];
+      const stabilized =
+        currentTool === 'willow_leaf' || (currentTool === 'hand_draw' && brushSettings.drawBrushType === 'willow');
+      const radius = stabilized ? stabilizerRadius(brushSettings.stabilizer ?? 0.55, zoom) : 0;
       if (collectsStroke) {
         (samples.length > 0 ? samples : [e]).forEach((ev) => {
           const sp = clientToCanvas(ev.clientX, ev.clientY);
           sp.pressure = getEventPressure(ev);
-          strokeRef.current.push(sp);
+          if (radius > 0) {
+            const pts = strokeRef.current;
+            const tip = pullString(pts[pts.length - 1], sp, radius);
+            if (tip) pts.push(tip);
+          } else {
+            strokeRef.current.push(sp);
+          }
         });
       }
       curRef.current = pt;
@@ -930,12 +948,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       // 1. Hand Draw Tool (手绘：铅笔/钢笔/喷枪，附属于当前图层蒙版)
       if (currentTool === 'hand_draw') {
         if (activeLayer && canEdit && strokePoints.length >= 2 && brushSettings.drawBrushType === 'willow') {
-          const leafD = generateRealtimeWillowLeaf(
-            strokePoints,
-            brushSettings.willowMode || 'chord',
-            brushSettings.stabilizer ?? 0.55,
-            brushSettings.simplifyTolerance ?? 4.5
-          );
+          const leafD = generateWillowShape(strokePoints, brushSettings.willowMode || 'chord');
           if (leafD) {
             onAddDrawingStroke?.({
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -997,12 +1010,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
       if (currentTool === 'willow_leaf') {
         if (strokePoints.length >= 2) {
-          baseD = generateRealtimeWillowLeaf(
-            strokePoints,
-            brushSettings.willowMode || 'chord',
-            brushSettings.stabilizer ?? 0.55,
-            brushSettings.simplifyTolerance ?? 4.5
-          );
+          baseD = generateWillowShape(strokePoints, brushSettings.willowMode || 'chord');
           cutoutPoints = strokePoints;
         }
       } else if (currentTool === 'geom_shape') {
@@ -1035,12 +1043,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (brushSettings.mode === 'erase' && activeLayer && canEdit) {
         if (brushSettings.eraseMode === 'willow') {
           if (strokePoints.length >= 2) {
-            const willowD = generateRealtimeWillowLeaf(
-              strokePoints,
-              brushSettings.willowMode || 'chord',
-              brushSettings.stabilizer ?? 0.55,
-              brushSettings.simplifyTolerance ?? 4.5
-            );
+            const willowD = generateWillowShape(strokePoints, brushSettings.willowMode || 'chord');
             if (willowD) {
               const newCutout: CutoutPath = {
                 id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -1154,6 +1157,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     onAddCutout,
     onRemoveCutout,
     onAddDrawingStroke,
+    zoom,
   ]);
 
   // Live preview geometry, evaluated from refs inside the animation-frame flush
@@ -1162,12 +1166,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (!start) return '';
     if (currentTool === 'willow_leaf') {
       if (pts.length < 2) return '';
-      return generateRealtimeWillowLeaf(
-        pts,
-        brushSettings.willowMode || 'chord',
-        brushSettings.stabilizer ?? 0.55,
-        brushSettings.simplifyTolerance ?? 4.5
-      );
+      return generateWillowShape(pts, brushSettings.willowMode || 'chord');
     } else if (currentTool === 'geom_shape') {
       const origin = startPoint || start;
       const dist = Math.hypot(cur.x - origin.x, cur.y - origin.y);
@@ -1190,12 +1189,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     } else if (currentTool === 'hand_draw') {
       if (pts.length < 2) return '';
       if (brushSettings.drawBrushType === 'willow') {
-        return generateRealtimeWillowLeaf(
-          pts,
-          brushSettings.willowMode || 'chord',
-          brushSettings.stabilizer ?? 0.55,
-          brushSettings.simplifyTolerance ?? 4.5
-        );
+        return generateWillowShape(pts, brushSettings.willowMode || 'chord');
       }
       return generateFreehandDrawPath(pts);
     }
@@ -1570,6 +1564,18 @@ export const Canvas: React.FC<CanvasProps> = ({
                 })}
               </g>
             )}
+            {isDrawing &&
+              (brushSettings.stabilizer ?? 0) > 0 &&
+              (currentTool === 'willow_leaf' || (currentTool === 'hand_draw' && brushSettings.drawBrushType === 'willow')) && (
+                <line
+                  ref={stringRef}
+                  stroke="#EB8E88"
+                  strokeWidth={1.4 / zoom}
+                  strokeDasharray={`${3 / zoom} ${2 / zoom}`}
+                  pointerEvents="none"
+                />
+              )}
+
             {/* Brush size ring following the pointer */}
             <g ref={brushRef} data-show={brushCursor && !isSpacePressed && !isPanning ? '1' : '0'} visibility="hidden" pointerEvents="none">
               {brushCursor?.d && (

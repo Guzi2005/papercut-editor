@@ -136,7 +136,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         </IconButton>
       </Segmented>
       <WheelNumber
-        tip="防抖"
+        tip="防抖（牵绳长度，越大越稳）"
         icon={<Waves className="w-3 h-3" />}
         value={Math.round((brushSettings.stabilizer ?? 0.55) * 100)}
         min={0}
