@@ -54,5 +54,5 @@ export const fileSaveSupported = () => typeof window !== 'undefined' && 'showSav
 
 export function describeSaveSettings(s: SaveSettings): string {
   if (!s.auto) return '手动';
-  return s.trigger === 'edit' ? `编辑后 ${s.delay} 秒` : `每 ${s.interval} 分钟`;
+  return s.trigger === 'edit' ? `停笔 ${s.delay} 秒` : `每 ${s.interval} 分`;
 }
