@@ -60,6 +60,7 @@ import { WheelNumber } from './WheelNumber';
 import { ColorStudio } from './ColorStudio';
 import { WorkStatus } from './WorkStatus';
 import { StrokeButton } from './StrokePanel';
+import { TextureButton } from './TextureButton';
 import { isLight, layerColors, normalizeHex, projectColors } from '../utils/color';
 
 interface LayersPanelProps {
@@ -1146,6 +1147,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             .filter((l) => l.id !== activeLayer.id && l.stroke?.enabled)
             .map((l) => ({ stroke: l.stroke!, layerName: l.name }))}
         />
+        <TextureButton
+          surface={activeLayer.surface}
+          paperColor={activeLayer.color}
+          onChange={(surface) => onUpdateLayer(activeLayer.id, { surface })}
+        />
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="纹样">
@@ -1465,7 +1471,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           ? Math.round((g.layerIds.reduce((a, id) => a + (layers[id]?.opacity ?? 1), 0) / g.layerIds.length) * 100)
           : 100;
         const setGroupOpacity = (pct: number) => {
-          g.layerIds.forEach((id) => layers[id] && onUpdateLayer(id, { opacity: pct / 100 }));
+          const next = { ...layers };
+          g.layerIds.forEach((id) => {
+            if (next[id]) next[id] = { ...next[id], opacity: pct / 100 };
+          });
+          onUpdateProject({ layers: next });
         };
         const actions = [
           { label: '全部选中', icon: MousePointer2, run: () => onSelectLayers(g.layerIds, g.layerIds[g.layerIds.length - 1]) },
@@ -1563,7 +1573,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           ? Math.round((partIds.reduce((a, id) => a + (layers[id]?.opacity ?? 1), 0) / partIds.length) * 100)
           : 100;
         const setItemOpacity = (pct: number) => {
-          partIds.forEach((id) => onUpdateLayer(id, { opacity: pct / 100 }));
+          const next = { ...layers };
+          partIds.forEach((id) => {
+            if (next[id]) next[id] = { ...next[id], opacity: pct / 100 };
+          });
+          onUpdateProject({ layers: next });
         };
         return (
           <div
