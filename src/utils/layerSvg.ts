@@ -23,6 +23,15 @@ export const escapeAttr = (s: string) =>
 
 const HUGE = 20000;
 
+/**
+ * Splits a compound path at each absolute moveto. Mirrored copies wind the opposite way, so
+ * overlapping pieces inside one path would cancel under nonzero fill; drawing each piece as its
+ * own element makes overlaps always union, like stacked paper.
+ */
+export function splitSubpaths(d: string): string[] {
+  return d.split(/(?=M)/).map((p) => p.trim()).filter(Boolean);
+}
+
 export function patternTileMarkup(p: LayerPattern): string {
   const s = Math.max(4, p.scale);
   const h = s / 2;
@@ -117,8 +126,8 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   const defs: string[] = [];
   defs.push(
     `<mask id="${maskId}" maskUnits="userSpaceOnUse" x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}">` +
-      (base ? `<path d="${base}" fill="#fff"/>` : '') +
-      holes.map((h) => `<path d="${h.d}" fill="#000"/>`).join('') +
+      splitSubpaths(base).map((d) => `<path d="${d}" fill="#fff"/>`).join('') +
+      holes.flatMap((h) => splitSubpaths(h.d)).map((d) => `<path d="${d}" fill="#000"/>`).join('') +
       `</mask>`
   );
   if (layer.pattern) {
@@ -135,13 +144,15 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   const body: string[] = [];
   if (base) {
     body.push(`<g mask="url(#${maskId})">`);
-    body.push(`<path d="${base}" fill="${escapeAttr(layer.color)}"/>`);
+    const pieces = splitSubpaths(base);
+    pieces.forEach((d) => body.push(`<path d="${d}" fill="${escapeAttr(layer.color)}"/>`));
     if (layer.pattern) {
-      body.push(`<path d="${base}" fill="url(#${patId})" opacity="${layer.pattern.opacity}"/>`);
+      pieces.forEach((d) => body.push(`<path d="${d}" fill="url(#${patId})" opacity="${layer.pattern!.opacity}"/>`));
     }
     (layer.drawings || []).forEach((drw) => {
       if (drw.fill) {
-        body.push(`<path d="${drw.d}" fill="${escapeAttr(drw.color)}" fill-opacity="${drw.opacity}"/>`);
+        const fill = escapeAttr(drw.color);
+        body.push(`<g opacity="${drw.opacity}">${splitSubpaths(drw.d).map((d) => `<path d="${d}" fill="${fill}"/>`).join('')}</g>`);
         return;
       }
       const blur = drw.blur ? ` style="filter: blur(${drw.blur}px)"` : '';
@@ -152,7 +163,13 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
     body.push(`</g>`);
   }
   positives.forEach((elem) => {
-    body.push(`<path d="${elem.d}" fill="${escapeAttr(elem.fillColor || layer.color)}" data-element-id="${elem.id}"/>`);
+    const fill = escapeAttr(elem.fillColor || layer.color);
+    const parts = splitSubpaths(elem.d);
+    if (parts.length === 1) {
+      body.push(`<path d="${elem.d}" fill="${fill}" data-element-id="${elem.id}"/>`);
+    } else {
+      body.push(`<g data-element-id="${elem.id}">${parts.map((d) => `<path d="${d}" fill="${fill}"/>`).join('')}</g>`);
+    }
   });
 
   const attrs = [

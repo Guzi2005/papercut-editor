@@ -34,6 +34,28 @@ import {
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
+import { DEFAULT_SYMMETRY, SymmetryKind } from '../utils/symmetry';
+
+const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
+  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+    {kind === 'none' && <path d="M3 12 L7 4 L7 12 Z" />}
+    {kind === 'mirror' && (
+      <>
+        <path d="M2 12 L7 4 L7 12 Z" />
+        <path d="M14 12 L9 4 L9 12 Z" />
+        <path d="M8 1 V15" fill="none" strokeDasharray="1.5 1.5" />
+      </>
+    )}
+    {kind === 'rotate' && (
+      <>
+        <path d="M8 8 L8 1.5 L12 5 Z" />
+        <path d="M8 8 L14.5 8 L11 12 Z" />
+        <path d="M8 8 L8 14.5 L4 11 Z" />
+        <path d="M8 8 L1.5 8 L5 4 Z" />
+      </>
+    )}
+  </svg>
+);
 
 interface ToolOptionsProps {
   currentTool: ToolType;
@@ -44,6 +66,8 @@ interface ToolOptionsProps {
   onChangeSelectionScope: (scope: 'part' | 'item') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
+  canvasWidth: number;
+  canvasHeight: number;
 }
 
 const Glyph: React.FC<{ d: string; fill?: boolean }> = ({ d, fill }) => (
@@ -110,9 +134,24 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   onChangeSelectionScope,
   selectedCount,
   onCreateItemFromSelection,
+  canvasWidth,
+  canvasHeight,
 }) => {
   const [showStarSettings, setShowStarSettings] = useState(false);
   const starRef = useRef<HTMLDivElement>(null);
+  const [showSym, setShowSym] = useState(false);
+  const symRef = useRef<HTMLDivElement>(null);
+  const sym = brushSettings.symmetry ?? DEFAULT_SYMMETRY;
+  const setSym = (patch: Partial<typeof sym>) => onChangeBrushSettings({ symmetry: { ...sym, ...patch } });
+
+  useEffect(() => {
+    if (!showSym) return;
+    const close = (e: PointerEvent) => {
+      if (!symRef.current?.contains(e.target as Node)) setShowSym(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [showSym]);
   const set = onChangeBrushSettings;
   const carving = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand'].includes(currentTool);
 
@@ -269,6 +308,91 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             <WheelNumber tip="晕染" icon={<SprayCan className="w-3 h-3" />} value={brushSettings.airbrushSoftness || 12} min={2} max={40} onChange={(v) => set({ airbrushSoftness: v })} />
           )}
         </>
+      )}
+      {(carving || currentTool === 'hand_draw') && (
+        <div className="relative ml-auto" ref={symRef}>
+          <IconButton
+            active={sym.kind !== 'none'}
+            tip={sym.kind === 'none' ? '对称：关' : sym.kind === 'mirror' ? `轴对称 · ${sym.count} 条轴` : `中心对称 · ${sym.count} 份`}
+            onClick={() => setShowSym((v) => !v)}
+          >
+            <SymGlyph kind={sym.kind} />
+          </IconButton>
+          {showSym && (
+            <div className="absolute top-full right-0 mt-2 z-50 p-2 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl flex flex-col gap-2">
+              <Segmented>
+                {(
+                  [
+                    { id: 'none', tip: '关闭对称' },
+                    { id: 'mirror', tip: '轴对称（镜像）' },
+                    { id: 'rotate', tip: '中心对称（旋转）' },
+                  ] as const
+                ).map((k) => (
+                  <IconButton
+                    key={k.id}
+                    active={sym.kind === k.id}
+                    tip={k.tip}
+                    onClick={() =>
+                      setSym({
+                        kind: k.id,
+                        count: k.id === 'rotate' ? Math.max(2, sym.count) : k.id === 'mirror' ? Math.min(sym.count, 12) : sym.count,
+                      })
+                    }
+                  >
+                    <SymGlyph kind={k.id} />
+                  </IconButton>
+                ))}
+              </Segmented>
+              {sym.kind !== 'none' && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  <WheelNumber
+                    tip={sym.kind === 'mirror' ? '对称轴数量' : '旋转份数'}
+                    icon={<span className="text-[10px]">×</span>}
+                    value={sym.count}
+                    min={sym.kind === 'mirror' ? 1 : 2}
+                    max={sym.kind === 'mirror' ? 12 : 24}
+                    onChange={(v) => setSym({ count: v })}
+                  />
+                  <WheelNumber
+                    tip={sym.kind === 'mirror' ? '轴角度（90° 为竖直）' : '起始角度'}
+                    icon={<span className="text-[10px]">∠</span>}
+                    value={sym.angle}
+                    min={0}
+                    max={179}
+                    step={sym.kind === 'mirror' ? 15 : 5}
+                    format={(v) => `${v}°`}
+                    onChange={(v) => setSym({ angle: v })}
+                  />
+                  <WheelNumber
+                    tip="中心 X（也可在画布上拖动中心点）"
+                    icon={<span className="text-[10px]">X</span>}
+                    value={Math.round(sym.cx ?? canvasWidth / 2)}
+                    min={0}
+                    max={canvasWidth}
+                    step={10}
+                    onChange={(v) => setSym({ cx: v })}
+                  />
+                  <WheelNumber
+                    tip="中心 Y（也可在画布上拖动中心点）"
+                    icon={<span className="text-[10px]">Y</span>}
+                    value={Math.round(sym.cy ?? canvasHeight / 2)}
+                    min={0}
+                    max={canvasHeight}
+                    step={10}
+                    onChange={(v) => setSym({ cy: v })}
+                  />
+                  <button
+                    onClick={() => setSym({ cx: undefined, cy: undefined })}
+                    data-tip="中心回到画布正中"
+                    className="col-span-2 h-7 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong) text-[11px]"
+                  >
+                    居中
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

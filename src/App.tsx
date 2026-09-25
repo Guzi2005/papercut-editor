@@ -944,6 +944,8 @@ export default function App() {
         onChangeSelectionScope={setSelectionScope}
         selectedCount={selectedLayerIds.length}
         onCreateItemFromSelection={handleCreateItem}
+        canvasWidth={project.width}
+        canvasHeight={project.height}
       />
 
       <div className="flex-1 flex overflow-hidden relative">

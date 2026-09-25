@@ -44,6 +44,8 @@ import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
 import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
+import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
+import { splitSubpaths } from '../utils/layerSvg';
 
 export type SelectionScope = 'part' | 'item';
 
@@ -136,6 +138,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   activeLayerId,
   currentTool,
   brushSettings,
+  onChangeBrushSettings,
   zoom,
   onZoomChange,
   onAddCutout,
@@ -183,7 +186,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const rectRef = useRef<DOMRect | null>(null);
   const brushRef = useRef<SVGGElement>(null);
   const stringRef = useRef<SVGLineElement>(null);
-  const previewRef = useRef<SVGPathElement>(null);
+  const previewRef = useRef<SVGGElement>(null);
   const lastClientRef = useRef<{ x: number; y: number } | null>(null);
   const previewFnRef = useRef<(pts: Point[], cur: Point) => string>(() => '');
 
@@ -498,7 +501,10 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (curRef.current) {
         const pts = strokeRef.current;
         const tip = curRef.current;
-        previewRef.current?.setAttribute('d', previewFnRef.current(pts, curRef.current) || 'M 0 0');
+        if (previewRef.current) {
+          const d = previewFnRef.current(pts, curRef.current);
+          previewRef.current.innerHTML = d ? splitSubpaths(d).map((piece) => `<path d="${piece}"/>`).join('') : '';
+        }
         const line = stringRef.current;
         const last = pts[pts.length - 1];
         if (line && last) {
@@ -809,6 +815,11 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
+    if ((e.target as Element).closest?.('[data-handle="sym-center"]')) {
+      setSymDragging(true);
+      return;
+    }
+
     if (currentTool === 'select') {
       handleSelectDown(e, pt);
       return;
@@ -862,7 +873,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
       if (closeNearStart || doubleClick) {
         const finalPts = [...polylinePoints];
-        const d = `M ${finalPts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`;
+        const d = withSymmetry(`M ${finalPts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
         const isHole =
           brushSettings.mode === 'cutout' ||
           (brushSettings.mode === 'erase' && brushSettings.eraseMode === 'willow');
@@ -997,7 +1008,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             onAddDrawingStroke?.({
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               brushType: 'willow',
-              d: leafD,
+              d: withSymmetry(leafD),
               color: brushSettings.brushColor,
               opacity: brushSettings.drawOpacity ?? 0.85,
               strokeWidth: 0,
@@ -1023,7 +1034,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             const newStroke: LayerDrawStroke = {
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               brushType,
-              d: drawD,
+              d: withSymmetry(drawD),
               color: brushSettings.brushColor,
               opacity: finalOpacity,
               strokeWidth,
@@ -1093,7 +1104,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                 name: `柳叶橡皮 ${activeLayer.cutouts.length + 1}`,
                 type: 'willow_leaf',
-                d: willowD,
+                d: withSymmetry(willowD),
                 isHole: true,
                 createdAt: Date.now(),
                 points: strokePoints,
@@ -1134,6 +1145,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           }
         }
       } else if (baseD && activeLayer && canEdit) {
+        baseD = withSymmetry(baseD);
         const isHole = brushSettings.mode === 'cutout';
         const toolNames: Record<string, string> = {
           willow_leaf: '柳叶',
@@ -1204,8 +1216,43 @@ export const Canvas: React.FC<CanvasProps> = ({
     zoom,
   ]);
 
+  const symmetry = brushSettings.symmetry ?? DEFAULT_SYMMETRY;
+  const symMats = useMemo(
+    () => symmetryMatrices(symmetry, project.width, project.height),
+    [symmetry, project.width, project.height]
+  );
+  const withSymmetry = (d: string) => applySymmetry(d, symMats);
+
+  const [symDragging, setSymDragging] = useState(false);
+  const symmetryRef = useRef(symmetry);
+  symmetryRef.current = symmetry;
+  useEffect(() => {
+    if (!symDragging) return;
+    const onMove = (e: PointerEvent) => {
+      const p = clientToCanvas(e.clientX, e.clientY);
+      const snap = 8 / zoom;
+      let x = Math.round(p.x);
+      let y = Math.round(p.y);
+      if (Math.abs(x - project.width / 2) < snap) x = project.width / 2;
+      if (Math.abs(y - project.height / 2) < snap) y = project.height / 2;
+      onChangeBrushSettings({ symmetry: { ...symmetryRef.current, cx: x, cy: y } });
+    };
+    const onUp = () => setSymDragging(false);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [symDragging, clientToCanvas, zoom, project.width, project.height, onChangeBrushSettings]);
+
+  const drawingTool = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand', 'hand_draw'].includes(currentTool);
+  const symGuides = drawingTool ? symmetryGuides(symmetry, project.width, project.height) : [];
+  const symCenter = symmetryCenter(symmetry, project.width, project.height);
+
   // Live preview geometry, evaluated from refs inside the animation-frame flush
-  previewFnRef.current = (pts: Point[], cur: Point): string => {
+  previewFnRef.current = (pts: Point[], cur: Point): string => withSymmetry(previewShape(pts, cur));
+  const previewShape = (pts: Point[], cur: Point): string => {
     const start = pts[0] || startPoint;
     if (!start) return '';
     if (currentTool === 'willow_leaf') {
@@ -1425,7 +1472,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             {/* Real-time Hand Drawing Stroke Preview (Clipped by active layer mask) */}
             {isDrawing && currentTool === 'hand_draw' && activeLayer && (
               <g mask={`url(#cv_${activeLayer.id}_mask)`}>
-                <path
+                <g
                   ref={previewRef}
                   fill={brushSettings.drawBrushType === 'willow' ? brushSettings.brushColor : 'none'}
                   fillOpacity={brushSettings.drawOpacity ?? 0.85}
@@ -1448,7 +1495,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {/* Real-time Cutout Preview (Willow Leaf, Geom Shapes, Pen Knife) */}
             {isDrawing && currentTool !== 'hand_draw' && (
-              <path
+              <g
                 ref={previewRef}
                 fill={
                   brushSettings.mode === 'erase'
@@ -1620,6 +1667,29 @@ export const Canvas: React.FC<CanvasProps> = ({
                   pointerEvents="none"
                 />
               )}
+
+            {symGuides.length > 0 && (
+              <g>
+                {symGuides.map(([x1, y1, x2, y2], i) => (
+                  <line
+                    key={i}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="#EB8E88"
+                    strokeOpacity={0.75}
+                    strokeWidth={1.2 / zoom}
+                    strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                    pointerEvents="none"
+                  />
+                ))}
+                <g data-handle="sym-center" pointerEvents="all" className="cursor-move">
+                  <circle cx={symCenter.x} cy={symCenter.y} r={(coarse ? 14 : 8) / zoom} fill="#FBFBFC" fillOpacity={0.9} stroke="#EB8E88" strokeWidth={2 / zoom} />
+                  <circle cx={symCenter.x} cy={symCenter.y} r={2 / zoom} fill="#EB8E88" />
+                </g>
+              </g>
+            )}
 
             {/* Brush size ring following the pointer */}
             <g ref={brushRef} data-show={brushCursor && !isSpacePressed && !isPanning ? '1' : '0'} visibility="hidden" pointerEvents="none">

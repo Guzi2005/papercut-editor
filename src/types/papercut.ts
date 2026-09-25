@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { SymmetrySettings } from '../utils/symmetry';
+
 export interface Point {
   x: number;
   y: number;
@@ -200,6 +202,7 @@ export interface BrushSettings {
   starRoundness?: number; // 圆角程度 (0 ~ 25)
   starIrregularity?: number; // 不规则程度 (0 ~ 100)
 
+  symmetry?: SymmetrySettings; // 对称：轴对称 / 中心对称
   pressure: boolean; // 全局压感：笔刀切口宽度与手绘笔触粗细
   brushColor: string; // 全局画笔颜色：手绘笔触与贴花纸片
 
