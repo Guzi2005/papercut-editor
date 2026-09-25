@@ -503,12 +503,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               >
                 {layer.name}
               </span>
-              {scope === 'depth' && item && (
-                <span className="flex items-center gap-0.5 text-[9px] text-(--ui-accent-2) truncate min-w-0 shrink" data-tip={`物件：${item.name}`}>
-                  <Box className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{item.name}</span>
-                </span>
-              )}
               {scope === 'items' && (
                 <span className="text-[9px] text-(--ui-faint) truncate min-w-0 shrink">{findGroupOfLayer(project, layer.id)?.name || '根层级'}</span>
               )}
@@ -535,6 +529,21 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           </div>
         </div>
         {extra}
+        {scope === 'depth' && item && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectItem(item.id);
+            }}
+            data-tip={`物件：${item.name} · 单击选中整个物件`}
+            className="group/item flex items-center h-6 px-1 rounded-md text-(--ui-accent-2) hover:bg-(--ui-accent-2)/15 transition-colors shrink-0"
+          >
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-[10px] opacity-0 transition-all duration-200 group-hover/item:max-w-24 group-hover/item:opacity-100 group-hover/item:mr-1">
+              {item.name}
+            </span>
+            <Box className="w-3.5 h-3.5 shrink-0" />
+          </button>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
