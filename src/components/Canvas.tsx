@@ -1140,15 +1140,17 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {ref && !ref.onTop && referenceNode}
 
-            {/* Layer Stacks */}
-            {renderLayerOrder.map((layer) => (
-              <LayerMarkup
-                key={layer.id}
-                layer={layer}
-                shadow={shadow}
-                transform={selectedSet.has(layer.id) ? previewTransform : undefined}
-              />
-            ))}
+            {/* Isolated so blend modes mix only between paper layers, never with the notepad backing */}
+            <g style={{ isolation: 'isolate' }}>
+              {renderLayerOrder.map((layer) => (
+                <LayerMarkup
+                  key={layer.id}
+                  layer={layer}
+                  shadow={shadow}
+                  transform={selectedSet.has(layer.id) ? previewTransform : undefined}
+                />
+              ))}
+            </g>
 
             {ref && ref.onTop && referenceNode}
 
