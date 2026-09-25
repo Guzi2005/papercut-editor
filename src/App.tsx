@@ -45,7 +45,7 @@ import { WorkbenchSkin, skinVariables, loadSkin, saveSkin } from './utils/skins'
 import { useMediaQuery, COMPACT_QUERY } from './hooks/useMediaQuery';
 import { Toolbar } from './components/Toolbar';
 import { ToolOptions } from './components/ToolOptions';
-import { Canvas, SelectionScope, PointInfo } from './components/Canvas';
+import { Canvas, SelectionScope, PointInfo, FlashRequest } from './components/Canvas';
 import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
 import { GodotExportModal } from './components/GodotExportModal';
@@ -109,7 +109,7 @@ export default function App() {
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [selectionScope, setSelectionScope] = useState<SelectionScope>('item');
   const [toolMenu, setToolMenu] = useState<{ x: number; y: number; here?: PointInfo } | null>(null);
-  const [flashItem, setFlashItem] = useState<{ id: string; key: number } | null>(null);
+  const [flash, setFlash] = useState<FlashRequest | null>(null);
   const closeToolMenu = useCallback(() => setToolMenu(null), []);
 
   // Tool & Brush Settings
@@ -923,7 +923,7 @@ export default function App() {
     setSelectedLayerIds([...item.partIds]);
     setSelectionScope('item');
     setCurrentTool('select');
-    setFlashItem({ id: itemId, key: Date.now() });
+    setFlash({ key: Date.now(), layerIds: item.partIds, itemId });
     if (!item.partIds.includes(activeLayerId)) handleSelectLayer(item.partIds[item.partIds.length - 1]);
   };
 
@@ -1164,7 +1164,7 @@ export default function App() {
             onRedo={handleRedo}
             fitSignal={fitSignal}
             onOpenToolMenu={(x, y, here) => setToolMenu({ x, y, here })}
-            flashItem={flashItem}
+            flash={flash}
           />
           {toolMenu && (
             <ToolQuickMenu
@@ -1207,6 +1207,7 @@ export default function App() {
           onUpdateColorNote={handleUpdateColorNote}
           onSelectLayer={handlePanelSelectLayer}
           onSelectLayers={handleSelectLayers}
+          onHighlightLayers={(layerIds) => setFlash({ key: Date.now(), layerIds })}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
           onCreateItemFromLayer={(layerId) => createItemFrom([layerId], project.layers[layerId]?.name)}

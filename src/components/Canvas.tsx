@@ -71,6 +71,12 @@ import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath'
 
 export type SelectionScope = 'part' | 'item' | 'color';
 
+export interface FlashRequest {
+  key: number;
+  layerIds: string[];
+  itemId?: string;
+}
+
 /** What lies under a canvas point: the colour showing there and every layer covering it, top first. */
 export interface PointInfo {
   color: string | null;
@@ -108,8 +114,8 @@ interface CanvasProps {
   keymap: Keymap;
   /** Right click without dragging: the current tool's quick menu at the pointer. */
   onOpenToolMenu?: (x: number, y: number, here?: PointInfo) => void;
-  /** Bumped when an item is picked from the items tab: flash it and point at its pivot. */
-  flashItem?: { id: string; key: number } | null;
+  /** Briefly outline these layers to help find them; with `itemId`, also point at the item's pivot. */
+  flash?: FlashRequest | null;
 }
 
 interface BBox {
@@ -211,15 +217,15 @@ export const Canvas: React.FC<CanvasProps> = ({
   fitSignal = 0,
   keymap,
   onOpenToolMenu,
-  flashItem,
+  flash,
 }) => {
-  const [flashing, setFlashing] = useState<{ id: string; key: number } | null>(null);
+  const [flashing, setFlashing] = useState<FlashRequest | null>(null);
   useEffect(() => {
-    if (!flashItem) return;
-    setFlashing(flashItem);
+    if (!flash) return;
+    setFlashing(flash);
     const t = window.setTimeout(() => setFlashing(null), 1900);
     return () => window.clearTimeout(t);
-  }, [flashItem]);
+  }, [flash]);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -2029,8 +2035,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
 
             {flashing && (() => {
-              const item = (project.items || []).find((it) => it.id === flashing.id);
-              if (!item) return null;
+              const ids = flashing.layerIds.filter((id) => isLayerRendered(project, id));
+              if (ids.length === 0) return null;
               return (
                 <g key={flashing.key} className="item-flash" pointerEvents="none">
                   <defs>
@@ -2048,9 +2054,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       </feMerge>
                     </filter>
                   </defs>
-                  {item.partIds
-                    .filter((id) => isLayerRendered(project, id))
-                    .map((id) => (
+                  {ids.map((id) => (
                       <use key={id} href={`#cv_${id}_body`} filter="url(#item-flash-halo)" />
                     ))}
                 </g>
@@ -2088,7 +2092,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </g>
                   );
                 })}
-                {flashing?.id === selectedItem.id && (
+                {flashing?.itemId === selectedItem.id && (
                   <g key={flashing.key} pointerEvents="none">
                     {[0, 0.45].map((delay) => (
                       <circle key={delay} cx={itemPivot.x} cy={itemPivot.y} r={9 * hh} fill="none" stroke="#D23838" strokeWidth={2 * hh} opacity="0">

@@ -49,6 +49,7 @@ import {
   ArrowUp,
   ArrowDown,
   Brush,
+  Scan,
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -66,6 +67,7 @@ interface LayersPanelProps {
   onSelectLayer: (layerId: string) => void;
   /** Multi-selection from Shift (range) / Ctrl (toggle) clicks. */
   onSelectLayers: (layerIds: string[], activeId?: string) => void;
+  onHighlightLayers: (layerIds: string[]) => void;
   onUpdateLayer: (layerId: string, updates: Partial<Layer>) => void;
   onAddLayer: (groupId?: string, kind?: 'paper' | 'doodle') => void;
   onDeleteLayer: (layerId: string) => void;
@@ -111,25 +113,91 @@ const PATTERN_OPTIONS: { id: PatternType | 'none'; label: string }[] = [
   { id: 'argyle', label: '菱格' },
 ];
 
-const LayerThumb = React.memo(function LayerThumb({ layer, w, h }: { layer: Layer; w: number; h: number }) {
-  const { html, viewBox } = useMemo(() => {
-    const holes = layer.cutouts.filter((c) => c.isHole).map((c) => c.d);
-    const bbox = getPathBoundingBox(
-      [
-        layer.baseShape.d,
-        ...layer.positiveElements.map((e) => e.d),
-        ...layer.cutouts.filter((c) => !c.isHole).map((c) => c.d),
-        ...holes,
-        ...(layer.kind === 'doodle' ? (layer.drawings || []).map((d) => d.d) : []),
-      ].filter(Boolean),
-      w,
-      h
-    );
-    return {
-      html: renderLayerMarkup(layer, { idPrefix: 'th_', shadow: 0, grain: false }),
-      viewBox: `${bbox.minX} ${bbox.minY} ${bbox.width} ${bbox.height}`,
+type Box4 = { minX: number; minY: number; width: number; height: number };
+const visibleBoundsCache = new WeakMap<Layer, Box4 | null>();
+
+/** Bounds of every coordinate that could paint, padded for stroke widths: a safe superset. */
+function roughLayerBounds(layer: Layer, w: number, h: number): Box4 {
+  const b = getPathBoundingBox(
+    [
+      layer.baseShape.d,
+      ...layer.positiveElements.map((e) => e.d),
+      ...layer.cutouts.filter((c) => !c.isHole).map((c) => c.d),
+      ...(layer.drawings || []).map((d) => d.d),
+    ].filter(Boolean),
+    w,
+    h
+  );
+  const pad = Math.max(2, ...(layer.drawings || []).map((d) => d.strokeWidth / 2 + (d.blur ?? 0) * 2));
+  return { minX: b.minX - pad, minY: b.minY - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
+}
+
+/**
+ * What actually shows, measured from a small raster: pieces later cut away or erased no longer
+ * stretch the thumbnail.
+ */
+function measureVisible(layer: Layer, rough: Box4): Promise<Box4 | null> {
+  const R = 160;
+  const k = R / Math.max(rough.width, rough.height, 1);
+  const pw = Math.max(1, Math.round(rough.width * k)), ph = Math.max(1, Math.round(rough.height * k));
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${rough.minX} ${rough.minY} ${rough.width} ${rough.height}" width="${pw}" height="${ph}">` +
+    renderLayerMarkup({ ...layer, opacity: 1, stroke: undefined }, { idPrefix: 'tm_', shadow: 0, grain: false }) +
+    `</svg>`;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = pw;
+      c.height = ph;
+      const ctx = c.getContext('2d');
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, pw, ph).data;
+      let x0 = pw, y0 = ph, x1 = -1, y1 = -1;
+      for (let y = 0; y < ph; y++) {
+        for (let x = 0; x < pw; x++) {
+          if (data[(y * pw + x) * 4 + 3] > 10) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      if (x1 < 0) return resolve(null);
+      const px = 1 / k;
+      resolve({ minX: rough.minX + (x0 - 1) * px, minY: rough.minY + (y0 - 1) * px, width: (x1 - x0 + 3) * px, height: (y1 - y0 + 3) * px });
     };
-  }, [layer, w, h]);
+    img.onerror = () => resolve(null);
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+}
+
+const LayerThumb = React.memo(function LayerThumb({ layer, w, h }: { layer: Layer; w: number; h: number }) {
+  const html = useMemo(() => renderLayerMarkup(layer, { idPrefix: 'th_', shadow: 0, grain: false }), [layer]);
+  const rough = useMemo(() => roughLayerBounds(layer, w, h), [layer, w, h]);
+  const [measured, setMeasured] = useState<Box4 | null | undefined>(() => visibleBoundsCache.get(layer));
+  useEffect(() => {
+    if (visibleBoundsCache.has(layer)) {
+      setMeasured(visibleBoundsCache.get(layer));
+      return;
+    }
+    let live = true;
+    // Edits arrive in bursts; measure once they settle.
+    const t = window.setTimeout(() => {
+      measureVisible(layer, rough).then((b) => {
+        visibleBoundsCache.set(layer, b);
+        if (live) setMeasured(b);
+      });
+    }, 150);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [layer, rough]);
+  const box = measured ?? rough;
+  const viewBox = `${box.minX} ${box.minY} ${box.width} ${box.height}`;
   return (
     <svg viewBox={viewBox} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
       <g dangerouslySetInnerHTML={{ __html: html }} />
@@ -145,6 +213,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onUpdateColorNote,
   onSelectLayer,
   onSelectLayers,
+  onHighlightLayers,
   onUpdateLayer,
   onAddLayer,
   onDeleteLayer,
@@ -214,6 +283,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [dropHint, setDropHint] = useState<{ id: string; position: 'above' | 'below' | 'into' } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
   const [chipMenu, setChipMenu] = useState<string | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; groupId: string } | null>(null);
   useEffect(() => setChipMenu(null), [contextMenu]);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
@@ -499,6 +569,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           }}
           onDragEnd={clearDrag}
           onClick={() => setCollapsedGroupIds((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setGroupMenu({ x: e.clientX, y: e.clientY, groupId: group.id });
+          }}
           className="relative flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover) text-(--ui-text-2) hover:bg-(--ui-hover) cursor-pointer select-none"
         >
           {hint && hint !== 'into' && (
@@ -1132,6 +1206,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               );
             })()}
             {[
+              {
+                label: '高亮这些图形',
+                icon: Scan,
+                run: () => onHighlightLayers(selectedLayerIds.includes(ctxLayer.id) ? selectedLayerIds : [ctxLayer.id]),
+              },
               { label: '重命名', icon: Edit2, run: () => startRename('layer', ctxLayer.id, ctxLayer.name) },
               { label: '复制纸片', icon: Copy, run: () => onDuplicateLayer(ctxLayer.id) },
               ...(neighbour(ctxLayer.id, 1)
@@ -1201,6 +1280,62 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           </div>
         </div>
       )}
+      {groupMenu && (() => {
+        const g = groups.find((gg) => gg.id === groupMenu.groupId);
+        if (!g) return null;
+        const actions = [
+          { label: '高亮这些图形', icon: Scan, run: () => onHighlightLayers(g.layerIds) },
+          { label: '新建纸片', icon: Plus, run: () => onAddLayer(g.id) },
+          { label: '重命名', icon: Edit2, run: () => startRename('group', g.id, g.name) },
+          { label: g.visible ? '隐藏' : '显示', icon: g.visible ? EyeOff : Eye, run: () => onUpdateGroup(g.id, { visible: !g.visible }) },
+          { label: g.locked ? '解锁' : '锁定', icon: g.locked ? Unlock : Lock, run: () => onUpdateGroup(g.id, { locked: !g.locked }) },
+        ];
+        return (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setGroupMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setGroupMenu(null);
+            }}
+          >
+            <div
+              ref={(el) => {
+                if (el) el.style.top = `${Math.max(8, Math.min(groupMenu.y, window.innerHeight - el.offsetHeight - 8))}px`;
+              }}
+              className="absolute bg-(--ui-raised)/98 border border-(--ui-border-strong) text-(--ui-text) rounded-xl shadow-2xl py-1 w-48 text-xs backdrop-blur-md"
+              style={{ left: Math.max(8, Math.min(groupMenu.x, window.innerWidth - 200)), top: groupMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {actions.map((a) => (
+                <button
+                  key={a.label}
+                  onClick={() => {
+                    a.run();
+                    setGroupMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) flex items-center gap-2"
+                >
+                  <a.icon className="w-3.5 h-3.5 text-(--ui-muted)" />
+                  {a.label}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  playDiscardSwoosh();
+                  onDeleteGroup(g.id);
+                  setGroupMenu(null);
+                }}
+                data-tip="纸片会移到根层级"
+                className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-(--ui-border) mt-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                删除深度层
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </aside>
   );
 };
