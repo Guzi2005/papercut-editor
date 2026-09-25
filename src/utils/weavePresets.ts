@@ -389,6 +389,25 @@ function confetti(count: number, w: number, h: number, seed: number) {
   return out;
 }
 
+/** Thin pointed slit, used for cut feather lines and lace. */
+function slit(cx: number, cy: number, len: number, w: number, angleDeg: number): string {
+  const a = (angleDeg * Math.PI) / 180;
+  const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+  const p1 = pt(cx - (ux * len) / 2, cy - (uy * len) / 2);
+  const p2 = pt(cx + (ux * len) / 2, cy + (uy * len) / 2);
+  return `M ${fmt(p1.x)} ${fmt(p1.y)} Q ${fmt(cx + vx * w)} ${fmt(cy + vy * w)} ${fmt(p2.x)} ${fmt(p2.y)} Q ${fmt(cx - vx * w)} ${fmt(cy - vy * w)} ${fmt(p1.x)} ${fmt(p1.y)} Z`;
+}
+
+/** Five round petals around a centre, cut from one piece of paper. */
+function flower(cx: number, cy: number, r: number): string {
+  return [0, 1, 2, 3, 4]
+    .map((i) => {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      return circle(Math.round((cx + Math.cos(a) * r) * 10) / 10, Math.round((cy + Math.sin(a) * r) * 10) / 10, r * 0.72);
+    })
+    .join(' ');
+}
+
 export function createPolishAngelPreset(): PapercutProject {
   seq = 1000;
   const W = 1000;
@@ -402,14 +421,20 @@ export function createPolishAngelPreset(): PapercutProject {
     red: '#D93A34',
     orange: '#E4572E',
     gold: '#C9A348',
+    goldLight: '#D6B45C',
     silver: '#CDD1D6',
-    newsBlue: '#5A93D6',
+    news: '#8FB6E4',
+    newsInk: '#3E6FB8',
     maroon: '#5B2340',
     skin: '#F3C9B5',
+    flowerBlue: '#2E6BD6',
+    leaf: '#3E9E5A',
   };
 
+  // ---------- 背景 ----------
   add(paper('pl_board', '夜空底板', P.night, rect(0, 0, W, H), { grain: 0.35 }));
 
+  // ---------- 白马 ----------
   add(
     paper(
       'pl_tail',
@@ -419,65 +444,96 @@ export function createPolishAngelPreset(): PapercutProject {
       { grain: 0.7 }
     )
   );
-
   add(
     paper(
       'pl_horse',
-      '白马',
+      '马身',
       P.horse,
       'M 305 312 C 380 296 520 300 600 280 L 690 196 L 704 150 L 718 190 L 732 150 L 742 196 C 770 230 792 270 800 300 Q 802 318 784 322 L 748 322 C 730 322 718 300 704 282 L 650 360 C 640 400 640 440 632 470 L 640 668 L 620 668 L 606 490 L 592 490 L 584 668 L 564 668 L 570 478 C 520 492 440 492 400 482 L 404 668 L 384 668 L 372 494 L 356 490 L 318 660 L 298 660 L 322 452 C 300 420 294 360 305 312 Z',
       {
         grain: 0.3,
-        appliques: [piece('马眼', circle(752, 220, 4.5), P.night), piece('鼻孔', ellipse(788, 306, 3, 2.2), '#8C7F76')],
+        appliques: [
+          piece('左耳心', 'M 706 160 L 712 186 L 702 186 Z', P.kraft),
+          piece('右耳心', 'M 733 160 L 738 190 L 729 188 Z', P.kraft),
+          piece('马眼', circle(752, 220, 4.5), P.night),
+          piece('鼻孔', ellipse(788, 306, 3, 2.2), '#8C7F76'),
+        ],
       }
     )
   );
   add(paper('pl_mane', '马鬃', P.kraft, sawStrip(pt(600, 284), pt(700, 192), 30, 7), { grain: 0.7 }));
+  add(
+    paper('pl_bridle', '红马具', P.red, '', {
+      grain: 0.3,
+      appliques: [
+        piece('缰绳·前', strip(pt(578, 226), pt(786, 300), 6), P.red),
+        piece('缰绳·后', strip(pt(572, 246), pt(780, 314), 6), P.red),
+        piece('鼻革', strip(pt(756, 284), pt(802, 294), 7), P.red),
+        piece('颊革', strip(pt(730, 204), pt(762, 300), 5), P.red),
+        piece('额革', strip(pt(712, 200), pt(744, 194), 5), P.red),
+        piece('胸带', strip(pt(560, 300), pt(652, 354), 8), P.red),
+        ...[0, 1, 2, 3, 4].map((i) => piece(`流苏 ${i + 1}`, strip(pt(612 + i * 10, 330 + i * 5), pt(608 + i * 10, 372 + i * 5), 4), P.red)),
+        ...[0, 1, 2].map((i) => piece(`白缝线 ${i + 1}`, strip(pt(600 + i * 60, 240 + i * 21), pt(630 + i * 60, 251 + i * 21), 2), '#F3F1EC')),
+      ],
+    })
+  );
 
+  // ---------- 天使 ----------
   add(
-    paper(
-      'pl_wing_silver',
-      '银箔翅膀',
-      P.silver,
-      wing(pt(412, 200), pt(240, 102), pt(416, 222), pt(390, 130), pt(320, 96), 5, 14),
-      { grain: 1 }
-    )
+    paper('pl_wing_silver', '银箔翅膀', P.silver, wing(pt(412, 200), pt(240, 102), pt(416, 222), pt(390, 130), pt(320, 96), 5, 14), {
+      grain: 1,
+      holes: [slit(330, 132, 60, 3, 18), slit(370, 150, 50, 3, 28)].map((d, i) => piece(`羽缝 ${i + 1}`, d, P.night, true)),
+    })
   );
   add(
-    paper(
-      'pl_wing_gold',
-      '金箔翅膀',
-      P.gold,
-      wing(pt(424, 214), pt(194, 176), pt(426, 266), pt(380, 168), pt(290, 150), 8, 16),
-      { grain: 1 }
-    )
+    paper('pl_wing_gold', '金箔翅膀', P.gold, wing(pt(424, 214), pt(194, 176), pt(426, 266), pt(380, 168), pt(290, 150), 8, 16), {
+      grain: 1,
+      holes: [slit(270, 196, 70, 3.5, 14), slit(318, 212, 70, 3.5, 20), slit(364, 228, 60, 3.5, 26)].map((d, i) =>
+        piece(`羽缝 ${i + 1}`, d, P.night, true)
+      ),
+    })
   );
   add(
-    paper('pl_halo', '锯齿光环', '#D6B45C', sawCircle(452, 130, 76, 68, 36), {
+    paper('pl_halo', '蕾丝光环', P.goldLight, sawCircle(452, 130, 76, 68, 36), {
       grain: 0.8,
-      holes: [piece('光环内圈', circle(452, 130, 58), P.night, true)],
+      holes: [
+        piece('光环内圈', circle(452, 130, 58), P.night, true),
+        ...Array.from({ length: 24 }, (_, i) => {
+          const a = (i / 24) * Math.PI * 2;
+          return piece(`蕾丝孔 ${i + 1}`, circle(Math.round((452 + Math.cos(a) * 63) * 10) / 10, Math.round((130 + Math.sin(a) * 63) * 10) / 10, 2.2), P.night, true);
+        }),
+      ],
     })
   );
 
   const stripeColors = ['#2E6BD6', '#F2B63A', '#3E9E5A', '#3AB5B5', '#2E58D6', '#E77FA8', '#3E9E5A', '#F2B63A', '#3AB5B5'];
-  const stripes = stripeColors.map((c, i) => {
-    const t = 0.08 + (i / (stripeColors.length - 1)) * 0.84;
-    const top = pt(430 + (532 - 430) * t, 300);
-    const bottom = pt(302 + (570 - 302) * t, 552 - 10 * t);
-    return piece(`彩条 ${i + 1}`, strip(top, bottom, 5, 15), c);
-  });
   add(
     paper('pl_skirt', '彩条长裙', P.orange, 'M 426 292 L 536 292 L 580 548 Q 430 578 290 562 Z', {
       grain: 0.5,
-      appliques: stripes,
+      appliques: stripeColors.map((c, i) => {
+        const t = 0.08 + (i / (stripeColors.length - 1)) * 0.84;
+        return piece(`彩条 ${i + 1}`, strip(pt(430 + (532 - 430) * t, 300), pt(302 + (570 - 302) * t, 552 - 10 * t), 5, 15), c);
+      }),
+    })
+  );
+  const inkLines = Array.from({ length: 9 }, (_, i) => {
+    const y = 196 + i * 8;
+    const x0 = 432 + (i % 3) * 3;
+    const x1 = 500 - ((i * 7) % 11);
+    return piece(`铅字行 ${i + 1}`, rect(x0, y, x1 - x0, 2.6), i % 4 === 3 ? '#FFFFFF' : P.newsInk);
+  });
+  add(
+    paper('pl_torso', '报纸上衣', P.news, 'M 426 186 C 440 176 490 176 506 188 L 520 296 L 422 296 Z', {
+      grain: 0.4,
+      appliques: [...inkLines, piece('束腰', 'M 424 262 H 518 L 522 298 H 420 Z', P.maroon)],
     })
   );
   add(
-    paper('pl_torso', '报纸上衣', P.newsBlue, 'M 426 186 C 440 176 490 176 506 188 L 520 296 L 422 296 Z M 496 198 L 570 214 L 572 236 L 494 232 Z M 492 220 L 566 238 L 566 254 L 490 248 Z', {
+    paper('pl_arms', '手臂', P.news, 'M 496 198 L 570 214 L 572 236 L 494 232 Z M 492 220 L 566 238 L 566 254 L 490 248 Z', {
       grain: 0.4,
-      pattern: { type: 'stripes', color: '#FFFFFF', scale: 7, angle: 80, opacity: 0.35 },
       appliques: [
-        piece('束腰', 'M 424 262 H 518 L 522 298 H 420 Z', P.maroon),
+        piece('袖口·前', strip(pt(560, 212), pt(560, 236), 4), P.newsInk),
+        piece('袖口·后', strip(pt(556, 236), pt(556, 253), 4), P.newsInk),
         piece('前手', circle(578, 226, 9), P.skin),
         piece('后手', circle(572, 246, 8), P.skin),
       ],
@@ -495,26 +551,23 @@ export function createPolishAngelPreset(): PapercutProject {
       '花头巾',
       P.red,
       'M 432 170 C 416 120 440 90 472 96 C 488 98 496 106 498 118 C 480 112 460 120 454 140 C 450 158 452 176 462 192 L 438 200 Z',
-      { grain: 0.4, pattern: { type: 'dots', color: '#3B6EF0', scale: 13, angle: 20, opacity: 0.95 } }
+      {
+        grain: 0.4,
+        appliques: [
+          piece('蓝花 1', flower(452, 112, 6), P.flowerBlue),
+          piece('蓝花 2', flower(438, 146, 5.5), P.flowerBlue),
+          piece('蓝花 3', flower(474, 104, 4.5), P.flowerBlue),
+          piece('花心 1', circle(452, 112, 2.6), '#FFFFFF'),
+          piece('花心 2', circle(438, 146, 2.4), '#FFFFFF'),
+          piece('花心 3', circle(474, 104, 2), '#FFFFFF'),
+          piece('叶 1', slit(446, 176, 16, 4, 60), P.leaf),
+          piece('叶 2', slit(462, 124, 12, 3, -30), P.leaf),
+        ],
+      }
     )
   );
 
-  add(
-    paper('pl_bridle', '红马具', P.red, [
-      strip(pt(578, 226), pt(786, 300), 6),
-      strip(pt(572, 246), pt(780, 314), 6),
-      strip(pt(756, 284), pt(802, 294), 7),
-      strip(pt(730, 204), pt(762, 300), 5),
-      strip(pt(712, 200), pt(744, 194), 5),
-      strip(pt(560, 300), pt(652, 354), 8),
-    ].join(' '), {
-      grain: 0.3,
-      appliques: [0, 1, 2, 3, 4].map((i) =>
-        piece(`流苏 ${i + 1}`, strip(pt(612 + i * 10, 330 + i * 5), pt(608 + i * 10, 372 + i * 5), 4), P.red)
-      ),
-    })
-  );
-
+  // ---------- 前景 ----------
   add(
     paper('pl_waves', '水波', '#1F46A8', waveBand(0, W, 612, 34, 7, 180, 0), {
       grain: 0.4,
@@ -525,7 +578,7 @@ export function createPolishAngelPreset(): PapercutProject {
       ],
     })
   );
-  add(paper('pl_confetti', '金银星点', '#D6B45C', circle(88, 96, 6), { grain: 0.8, appliques: confetti(72, W, H, 7) }));
+  add(paper('pl_confetti', '金银星点', P.goldLight, '', { grain: 0.8, appliques: confetti(72, W, H, 7) }));
 
   const group = (id: string, name: string, layerIds: string[]): LayerGroup => ({
     id,
@@ -536,11 +589,11 @@ export function createPolishAngelPreset(): PapercutProject {
     layerIds,
   });
   const groups = [
-    group('pl_grp_sky', '夜空', ['pl_board']),
-    group('pl_grp_horse_back', '马·后', ['pl_tail']),
-    group('pl_grp_horse', '马身', ['pl_horse', 'pl_mane']),
-    group('pl_grp_wings', '翅膀与光环', ['pl_wing_silver', 'pl_wing_gold', 'pl_halo']),
-    group('pl_grp_rider', '骑手', ['pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf']),
+    group('pl_grp_bg', '背景', ['pl_board']),
+    group('pl_grp_horse_back', '白马·后', ['pl_tail']),
+    group('pl_grp_horse', '白马', ['pl_horse', 'pl_mane']),
+    group('pl_grp_wings', '天使·翅膀', ['pl_wing_silver', 'pl_wing_gold', 'pl_halo']),
+    group('pl_grp_angel', '天使', ['pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf', 'pl_arms']),
     group('pl_grp_tack', '马具', ['pl_bridle']),
     group('pl_grp_fore', '前景', ['pl_waves', 'pl_confetti']),
   ];
@@ -567,7 +620,7 @@ export function createPolishAngelPreset(): PapercutProject {
       {
         id: 'pl_item_angel',
         name: '天使',
-        partIds: ['pl_wing_silver', 'pl_wing_gold', 'pl_halo', 'pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf'],
+        partIds: ['pl_wing_silver', 'pl_wing_gold', 'pl_halo', 'pl_skirt', 'pl_torso', 'pl_face', 'pl_scarf', 'pl_arms'],
         pivot: { x: 470, y: 300 },
         sockets: [{ id: 'pl_s_hands', name: 'hands', x: 576, y: 236 }],
       },
