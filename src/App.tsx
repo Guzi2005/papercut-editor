@@ -61,6 +61,7 @@ import { playHistory, playToolPick } from './utils/soundEffects';
 import { projectShadowOptions } from './utils/layerSvg';
 import { SaveSettings, SaveStatus, loadSaveSettings, storeSaveSettings } from './utils/saveSettings';
 import { SaveBanner } from './components/SaveBanner';
+import { applyPathfinder, PathfinderOp } from './utils/pathfinder';
 
 interface DocumentItem {
   id: string;
@@ -706,6 +707,13 @@ export default function App() {
     [project, pushHistory]
   );
 
+  const handlePathfinder = (sel: BlockSelection, op: PathfinderOp): BlockSelection | null => {
+    const r = applyPathfinder(project, sel, op);
+    if (!r) return null;
+    pushHistory(r.project);
+    return r.selection;
+  };
+
   // ---------- Layer structure ----------
   const handleReorderLayers = (
     sourceId: string,
@@ -1193,6 +1201,7 @@ export default function App() {
             onTransformLayers={handleTransformLayers}
             onTransformBlocks={handleTransformBlocks}
             onDeleteBlocks={handleDeleteBlocks}
+            onPathfinder={handlePathfinder}
             onUpdateItem={handleUpdateItem}
             onDeleteLayers={handleDeleteLayers}
             keymap={keymap}

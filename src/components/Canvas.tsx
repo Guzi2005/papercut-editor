@@ -66,6 +66,8 @@ import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
 import { splitSubpaths } from '../utils/layerSvg';
 import { ShortcutHints } from './ShortcutHints';
+import { PathfinderBar } from './PathfinderBar';
+import type { PathfinderOp } from '../utils/pathfinder';
 import { CanvasBackdrop } from './CanvasBackdrop';
 import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
 
@@ -105,6 +107,8 @@ interface CanvasProps {
   onTransformLayers: (layerIds: string[], m: Transform) => void;
   onTransformBlocks: (sel: BlockSelection, m: Transform) => void;
   onDeleteBlocks: (sel: BlockSelection) => void;
+  /** Shape-builder operation on selected blocks; returns the blocks holding the result. */
+  onPathfinder: (sel: BlockSelection, op: PathfinderOp) => BlockSelection | null;
   onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
   onDeleteLayers: (layerIds: string[]) => void;
   onUndo?: () => void;
@@ -210,6 +214,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onTransformLayers,
   onTransformBlocks,
   onDeleteBlocks,
+  onPathfinder,
   onUpdateItem,
   onDeleteLayers,
   onUndo,
@@ -2262,6 +2267,25 @@ export const Canvas: React.FC<CanvasProps> = ({
       </div>
 
       <ShortcutHints keymap={keymap} currentTool={currentTool} spaceHeld={isSpacePressed} />
+
+      {colorScope && blockCount >= 2 && !isSelectDragging && (
+        <PathfinderBar
+          count={blockCount}
+          onApply={(op) => {
+            const editable = Object.fromEntries(
+              Object.entries(blockSel).filter(([lid]) => {
+                const l = project.layers[lid];
+                return l && !l.locked && !findGroupOfLayer(project, lid)?.locked;
+              })
+            );
+            const next = onPathfinder(editable, op);
+            if (!next) return;
+            setBlockSel(next);
+            onSelectLayers(Object.keys(next), Object.keys(next).pop());
+            playPaperRustle();
+          }}
+        />
+      )}
 
       {/* Floating Check and Cross for Anchor Edit */}
       {currentTool === 'anchor_edit' && onExitAnchorEdit && (

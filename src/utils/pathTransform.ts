@@ -226,9 +226,13 @@ export function transformPathD(d: string, t: Transform): string {
       case 'L':
       case 'T': {
         let x = num(), y = num();
+        const from = tp(cx, cy);
         if (rel) { x += cx; y += cy; }
         const p = tp(x, y);
-        out.push(`${upper} ${f(p.x)} ${f(p.y)}`);
+        // A relative moveto marks an inner ring that belongs to the same filled piece; keep it
+        // relative so it is not split off as a separate shape.
+        if (upper === 'M' && rel && out.length > 0) out.push(`m ${f(p.x - from.x)} ${f(p.y - from.y)}`);
+        else out.push(`${upper} ${f(p.x)} ${f(p.y)}`);
         cx = x; cy = y;
         if (upper === 'M') {
           sx = x; sy = y;
