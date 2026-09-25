@@ -264,6 +264,8 @@ export function createWeaveCharactersPreset(): PapercutProject {
     {
       id: 'wv_item_girl',
       name: '辫子眼镜姑娘',
+      shortName: '姑娘',
+      englishName: 'BraidedGirl',
       partIds: ['wv_girl_hair_back', 'wv_girl_robe', 'wv_girl_scarf', 'wv_girl_face', 'wv_girl_bangs', 'wv_girl_braids', 'wv_girl_glasses'],
       pivot: { x: 300, y: 700 },
       sockets: [
@@ -274,6 +276,8 @@ export function createWeaveCharactersPreset(): PapercutProject {
     {
       id: 'wv_item_boy',
       name: '贝雷帽少年',
+      shortName: '少年',
+      englishName: 'BeretBoy',
       partIds: ['wv_boy_body', 'wv_boy_face', 'wv_boy_hair', 'wv_boy_beret'],
       pivot: { x: 640, y: 700 },
       sockets: [{ id: 'wv_s_boy_hand', name: 'hand_r', x: 713, y: 576 }],
@@ -281,6 +285,8 @@ export function createWeaveCharactersPreset(): PapercutProject {
     {
       id: 'wv_item_counter',
       name: '布料柜台',
+      shortName: '柜台',
+      englishName: 'FabricCounter',
       partIds: ['wv_counter_back', 'wv_counter_front'],
       pivot: { x: 650, y: 720 },
       sockets: [{ id: 'wv_s_counter_top', name: 'counter_top', x: 650, y: 546 }],
@@ -712,6 +718,7 @@ export function createPolishAngelPreset(): PapercutProject {
       {
         id: 'pl_item_horse',
         name: '白马',
+        englishName: 'WhiteHorse',
         partIds: ['pl_tail', 'pl_horse', 'pl_mane', 'pl_bridle'],
         pivot: { x: 470, y: 668 },
         sockets: [
@@ -722,6 +729,7 @@ export function createPolishAngelPreset(): PapercutProject {
       {
         id: 'pl_item_angel',
         name: '天使',
+        englishName: 'Angel',
         partIds: ['pl_wing_silver', 'pl_wing_gold', 'pl_halo', 'pl_skirt', 'pl_torso', 'pl_hair', 'pl_scarf', 'pl_face', 'pl_arms'],
         pivot: { x: 470, y: 300 },
         sockets: [{ id: 'pl_s_hands', name: 'hands', x: 576, y: 236 }],
@@ -768,7 +776,7 @@ export function createDoubleFishPreset(): PapercutProject {
     groups,
     layers,
     rootOrder: groups.map((g) => ({ type: 'group' as const, id: g.id })),
-    items: [{ id: 'cf_item', name: '双鱼窗花', partIds: ['cf_red'], pivot: { x: 500, y: 760 }, sockets: [] }],
+    items: [{ id: 'cf_item', name: '双鱼窗花', englishName: 'DoubleFish', partIds: ['cf_red'], pivot: { x: 500, y: 760 }, sockets: [] }],
     backgroundColor: '#F7F4EB',
     backgroundStyle: 'rice_paper',
     shadowStrength: 0.35,

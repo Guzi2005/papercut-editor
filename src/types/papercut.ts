@@ -149,7 +149,9 @@ export interface ItemSocket {
  */
 export interface PapercutItem {
   id: string;
-  name: string;
+  name: string; // 全名
+  shortName?: string; // 简称：部件图层名的第一段，空时用全名
+  englishName?: string; // 英文名：导出 Godot 时的场景 / 节点名
   partIds: string[];
   pivot: Point;
   sockets: ItemSocket[];

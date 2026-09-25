@@ -199,3 +199,30 @@ export function recolorLayer(layer: Layer, from: string, to: string): Layer {
 export function removeColorBlocks(layer: Layer, color: string): Layer {
   return removeBlocks(layer, blocksOfColor(layer, color).filter((id) => id !== BASE_BLOCK));
 }
+
+export const NAME_SEP = '·';
+
+/** First segment of a part layer's name: the item's short name, falling back to its full name. */
+export const itemPrefix = (item: Pick<PapercutItem, 'name' | 'shortName'>) => item.shortName?.trim() || item.name.trim();
+
+/** A part's name with its first segment set to `prefix`; a bare name gains the prefix. */
+export function prefixedName(name: string, prefix: string, oldPrefixes: string[] = []): string {
+  if (!prefix) return name;
+  const i = name.indexOf(NAME_SEP);
+  if (i >= 0) return `${prefix}${NAME_SEP}${name.slice(i + 1)}`;
+  if (name === prefix || oldPrefixes.includes(name)) return prefix;
+  return `${prefix}${NAME_SEP}${name}`;
+}
+
+/** Renames every part of an item so its first segment follows the item's current prefix. */
+export function renameItemParts(layers: Record<string, Layer>, item: PapercutItem, oldPrefixes: string[] = []): Record<string, Layer> {
+  const prefix = itemPrefix(item);
+  const next = { ...layers };
+  item.partIds.forEach((id) => {
+    const l = next[id];
+    if (!l) return;
+    const name = prefixedName(l.name, prefix, oldPrefixes);
+    if (name !== l.name) next[id] = { ...l, name };
+  });
+  return next;
+}

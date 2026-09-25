@@ -29,6 +29,9 @@ import {
   transformBlocks,
   removeBlocks,
   BlockSelection,
+  itemPrefix,
+  prefixedName,
+  renameItemParts,
 } from './utils/projectOps';
 import {
   loadWorkspace,
@@ -929,9 +932,14 @@ export default function App() {
 
   const handleUpdateItem = useCallback(
     (itemId: string, updates: Partial<PapercutItem>) => {
+      const before = (project.items || []).find((it) => it.id === itemId);
+      if (!before) return;
+      const after = { ...before, ...updates };
+      const renamed = itemPrefix(after) !== itemPrefix(before);
       pushHistory({
         ...project,
-        items: (project.items || []).map((it) => (it.id === itemId ? { ...it, ...updates } : it)),
+        layers: renamed ? renameItemParts(project.layers, after, [itemPrefix(before), before.name]) : project.layers,
+        items: (project.items || []).map((it) => (it.id === itemId ? after : it)),
       });
     },
     [project, pushHistory]
@@ -942,14 +950,20 @@ export default function App() {
   };
 
   const handleAddPartToItem = (itemId: string, layerId: string) => {
-    setItems(
-      items
-        .map((it) => {
-          const without = it.partIds.filter((p) => p !== layerId);
-          return it.id === itemId ? { ...it, partIds: [...without, layerId] } : { ...it, partIds: without };
-        })
-        .filter((it) => it.partIds.length > 0)
-    );
+    const nextItems = items
+      .map((it) => {
+        const without = it.partIds.filter((p) => p !== layerId);
+        return it.id === itemId ? { ...it, partIds: [...without, layerId] } : { ...it, partIds: without };
+      })
+      .filter((it) => it.partIds.length > 0);
+    const target = nextItems.find((it) => it.id === itemId);
+    const layer = project.layers[layerId];
+    const oldItem = items.find((it) => it.id !== itemId && it.partIds.includes(layerId));
+    const layers =
+      target && layer
+        ? { ...project.layers, [layerId]: { ...layer, name: prefixedName(layer.name, itemPrefix(target), oldItem ? [itemPrefix(oldItem)] : []) } }
+        : project.layers;
+    pushHistory({ ...project, layers, items: nextItems });
   };
 
   const handleRemovePartFromItem = (itemId: string, layerId: string) => {

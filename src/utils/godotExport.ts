@@ -202,13 +202,14 @@ export async function buildGodotExport(
   let done = 0;
 
   for (const item of exportItems) {
-    const itemSlug = uniqueName(asciiSlug(item.name, item.id.replace(/[^\w]/g, '_')), usedItemSlugs);
+    const english = item.englishName?.trim();
+    const itemSlug = uniqueName(asciiSlug(english || item.name, item.id.replace(/[^\w]/g, '_')), usedItemSlugs);
     const usedFiles = new Set<string>();
     const usedNodes = new Set<string>();
     const extRes: string[] = [];
     const nodes: string[] = [];
     const manifestParts: unknown[] = [];
-    const rootName = nodeName(item.name, itemSlug);
+    const rootName = nodeName(english || item.name, itemSlug);
 
     for (const [idx, pid] of item.partIds.entries()) {
       const layer = project.layers[pid];
@@ -305,6 +306,8 @@ export async function buildGodotExport(
     manifestItems.push({
       id: item.id,
       name: item.name,
+      short_name: item.shortName || undefined,
+      english_name: english || undefined,
       scene: scenePath,
       pivot: item.pivot,
       sockets: item.sockets.map((so) => ({ name: so.name, x: so.x - item.pivot.x, y: so.y - item.pivot.y })),

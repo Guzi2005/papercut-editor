@@ -113,6 +113,43 @@ const PATTERN_OPTIONS: { id: PatternType | 'none'; label: string }[] = [
   { id: 'argyle', label: '菱格' },
 ];
 
+/** Small labelled input that commits on Enter or blur. */
+const NameField: React.FC<{ label: string; value: string; placeholder?: string; tip: string; onCommit: (v: string) => void }> = ({
+  label,
+  value,
+  placeholder,
+  tip,
+  onCommit,
+}) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    const v = draft.trim();
+    if (v !== value) onCommit(v);
+    else setDraft(value);
+  };
+  return (
+    <label className="flex flex-col gap-0.5 min-w-0" data-tip={tip}>
+      <span className="text-[9px] text-(--ui-faint) px-0.5">{label}</span>
+      <input
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setDraft(value);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="h-6 w-full min-w-0 px-1.5 rounded-md bg-(--ui-input) border border-(--ui-border) text-[11px] text-(--ui-strong) placeholder:text-(--ui-faint) outline-none focus:border-(--ui-accent)"
+      />
+    </label>
+  );
+};
+
 type Box4 = { minX: number; minY: number; width: number; height: number };
 const visibleBoundsCache = new WeakMap<Layer, Box4 | null>();
 
@@ -749,6 +786,23 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             </div>
             {expanded && (
               <div className="p-1.5 space-y-1">
+                <div className="grid grid-cols-3 gap-1 pb-1">
+                  <NameField label="全名" value={item.name} placeholder="物件名" tip="编辑器里显示的完整名字" onCommit={(v) => v && onUpdateItem(item.id, { name: v })} />
+                  <NameField
+                    label="简称"
+                    value={item.shortName ?? ''}
+                    placeholder={item.name}
+                    tip="部件图层名的第一段；留空时用全名"
+                    onCommit={(v) => onUpdateItem(item.id, { shortName: v || undefined })}
+                  />
+                  <NameField
+                    label="英文"
+                    value={item.englishName ?? ''}
+                    placeholder="拼音"
+                    tip="导出 Godot 时的场景与节点名；留空时用全名拼音"
+                    onCommit={(v) => onUpdateItem(item.id, { englishName: v || undefined })}
+                  />
+                </div>
                 {partsByDepth.map((pid) =>
                   renderLayerRow(
                     layers[pid],
