@@ -85,6 +85,8 @@ interface CanvasProps {
   /** Incremented by the host to recentre the canvas after a fit-to-screen. */
   fitSignal?: number;
   keymap: Keymap;
+  /** Right click without dragging: the current tool's quick menu at the pointer. */
+  onOpenToolMenu?: (x: number, y: number) => void;
 }
 
 interface BBox {
@@ -184,7 +186,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   onRedo,
   fitSignal = 0,
   keymap,
+  onOpenToolMenu,
 }) => {
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -871,6 +875,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         return;
       }
     }
+    if (e.button === 2 && e.pointerType !== 'touch') rightDownRef.current = { x: e.clientX, y: e.clientY };
     if (bindingHas(keymap, 'view.panDrag', comboFromPointer(e, isSpacePressed, 'drag'))) {
       setIsPanning(true);
       setPanStart({
@@ -1423,7 +1428,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         moveBrush(0, 0, false);
       }}
       onWheel={handleWheel}
-      onContextMenu={(e) => keymap['view.panDrag'].includes('RightDrag') && e.preventDefault()}
+      onPointerUp={(e) => {
+        const d = rightDownRef.current;
+        rightDownRef.current = null;
+        if (e.button === 2 && d && !isDrawing && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) {
+          onOpenToolMenu?.(e.clientX, e.clientY);
+        }
+      }}
+      onContextMenu={(e) => e.preventDefault()}
       style={{ touchAction: 'none' }}
       className={`flex-1 relative overflow-hidden select-none bg-(--ui-app) ${cursorClass}`}
     >

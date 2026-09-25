@@ -93,6 +93,7 @@ interface ToolbarProps {
   onChangeBrushColor: (hex: string) => void;
   recentBrushColors: string[];
   keymap: Keymap;
+  onOpenToolMenu?: (x: number, y: number) => void;
 }
 
 interface ToolDefinition {
@@ -104,7 +105,7 @@ interface ToolDefinition {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const TOOLS: ToolDefinition[] = [
+export const TOOLS: ToolDefinition[] = [
   {
     id: 'select',
     name: '选择',
@@ -185,6 +186,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onChangeBrushColor,
   recentBrushColors,
   keymap,
+  onOpenToolMenu,
 }) => {
   const keyHint = (action?: ActionId) => {
     const b = action ? keymap[action][0] : undefined;
@@ -229,7 +231,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 if (isActive && tool.id === 'anchor_edit') onSelectTool('select');
                 else onSelectTool(tool.id);
               }}
-              data-tip={`${tool.name}${keyHint(TOOL_ACTIONS[tool.id])} · ${tool.description}`}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSelectTool(tool.id);
+                const r = e.currentTarget.getBoundingClientRect();
+                onOpenToolMenu?.(r.right + 8, r.top);
+              }}
+              data-tip={`${tool.name}${keyHint(TOOL_ACTIONS[tool.id])} · ${tool.description} · 右键选项`}
               data-tip-side="right"
               className={`relative group w-11 h-10 flex items-center justify-center rounded-xl transition-all ${
                 isActive

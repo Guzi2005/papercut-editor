@@ -71,27 +71,27 @@ interface ToolOptionsProps {
   canvasHeight: number;
 }
 
-const Glyph: React.FC<{ d: string; fill?: boolean }> = ({ d, fill }) => (
+export const Glyph: React.FC<{ d: string; fill?: boolean }> = ({ d, fill }) => (
   <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
     <path d={d} />
   </svg>
 );
 
-const KNIFE_TIPS: { id: KnifeTipShape; tip: string; icon: React.ReactNode }[] = [
+export const KNIFE_TIPS: { id: KnifeTipShape; tip: string; icon: React.ReactNode }[] = [
   { id: 'round', tip: '圆刃：等宽圆头', icon: <Glyph d="M8 3a5 5 0 1 1 0 10A5 5 0 0 1 8 3z" fill /> },
   { id: 'flat', tip: '平刃：水平刀口，横细竖粗', icon: <Glyph d="M2 7h12v2H2z" fill /> },
   { id: 'chisel', tip: '斜刃：45° 斜刀口', icon: <Glyph d="M3.5 13.9 2.1 12.5 12.5 2.1l1.4 1.4z" fill /> },
   { id: 'slash', tip: '柳刃：两端收尖', icon: <Glyph d="M3 13Q4 4 13 3Q12 12 3 13z" fill /> },
 ];
 
-const DRAW_BRUSHES: { id: DrawBrushType; tip: string; icon: React.ComponentType<{ className?: string }> }[] = [
+export const DRAW_BRUSHES: { id: DrawBrushType; tip: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'pencil', tip: '铅笔', icon: Pencil },
   { id: 'pen', tip: '钢笔', icon: PenLine },
   { id: 'airbrush', tip: '喷枪', icon: SprayCan },
   { id: 'willow', tip: '柳叶笔：按运笔弧度填出叶形色块', icon: Feather },
 ];
 
-const GEOM_SHAPES: { id: GeomShapeType; tip: string; icon: React.ComponentType<{ className?: string }> }[] = [
+export const GEOM_SHAPES: { id: GeomShapeType; tip: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'rect', tip: '矩形', icon: Square },
   { id: 'circle', tip: '圆形', icon: Circle },
   { id: 'triangle', tip: '三角形', icon: Triangle },

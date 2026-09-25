@@ -47,6 +47,7 @@ import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
 import { GodotExportModal } from './components/GodotExportModal';
 import { KeymapModal } from './components/KeymapModal';
+import { ToolQuickMenu } from './components/ToolQuickMenu';
 import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeymap } from './utils/keymap';
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
 import { playHistory, playToolPick } from './utils/soundEffects';
@@ -93,6 +94,8 @@ export default function App() {
   // Selection (not persisted)
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [selectionScope, setSelectionScope] = useState<SelectionScope>('item');
+  const [toolMenu, setToolMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeToolMenu = useCallback(() => setToolMenu(null), []);
 
   // Tool & Brush Settings
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
@@ -994,6 +997,7 @@ export default function App() {
           onChangeBrushColor={changeBrushColor}
           recentBrushColors={recentBrushColors}
           keymap={keymap}
+          onOpenToolMenu={(x, y) => setToolMenu({ x, y })}
         />
 
         <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
@@ -1023,7 +1027,23 @@ export default function App() {
             onUndo={handleUndo}
             onRedo={handleRedo}
             fitSignal={fitSignal}
+            onOpenToolMenu={(x, y) => setToolMenu({ x, y })}
           />
+          {toolMenu && (
+            <ToolQuickMenu
+              x={toolMenu.x}
+              y={toolMenu.y}
+              currentTool={currentTool}
+              brushSettings={brushSettings}
+              onChangeBrushSettings={(patch) => setBrushSettings((prev) => ({ ...prev, ...patch }))}
+              onSelectTool={setCurrentTool}
+              selectionScope={selectionScope}
+              onChangeSelectionScope={setSelectionScope}
+              selectedCount={selectedLayerIds.length}
+              onCreateItemFromSelection={handleCreateItem}
+              onClose={closeToolMenu}
+            />
+          )}
 
 
         </div>
