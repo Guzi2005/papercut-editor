@@ -4,8 +4,7 @@
  */
 
 import { Layer, LayerGroup, LayerPattern, PapercutItem, PapercutProject, CutoutPath } from '../types/papercut';
-import { Matrix, transformPathD } from './pathTransform';
-import { reflectAcross } from './symmetry';
+import { FISH_CUTS, FISH_PAPER_EDGE } from './doubleFishTrace';
 
 // All helpers emit clockwise subpaths so compound shapes union cleanly under nonzero fill.
 const circle = (cx: number, cy: number, r: number) =>
@@ -736,141 +735,26 @@ export function createPolishAngelPreset(): PapercutProject {
 
 // ---------- 双鱼窗花（对折剪纸） ----------
 
-/** Comb fan: radiating teeth from a hub, the classic 锯齿/梳齿 fin. Positive paper. */
-function combFan(cx: number, cy: number, len: number, a0: number, a1: number, teeth: number): string {
-  const pts: P[] = [pt(cx, cy)];
-  const n = teeth * 2;
-  for (let i = 0; i <= n; i++) {
-    const a = ((a0 + ((a1 - a0) * i) / n) * Math.PI) / 180;
-    const r = i % 2 === 0 ? len : len * 0.62;
-    pts.push(pt(cx + Math.cos(a) * r, cy + Math.sin(a) * r));
-  }
-  return poly(pts);
-}
-
-/** Fan scale: a white dome cut into wedges, leaving red rays like pine needles. Cut away. */
-function fanScale(cx: number, cy: number, r: number): string {
-  const wedges = 7;
-  const gap = 5;
-  const span = (180 - gap * (wedges - 1)) / wedges;
-  const parts: string[] = [];
-  for (let k = 0; k < wedges; k++) {
-    const a0 = 180 + k * (span + gap);
-    const pts: P[] = [];
-    const r0 = r * 0.16;
-    for (let t = 0; t <= 4; t++) {
-      const a = ((a0 + (span * t) / 4) * Math.PI) / 180;
-      pts.push(pt(cx + Math.cos(a) * r, cy + Math.sin(a) * r));
-    }
-    const am = ((a0 + span / 2) * Math.PI) / 180;
-    pts.push(pt(cx + Math.cos(am) * r0, cy + Math.sin(am) * r0));
-    parts.push(poly(pts));
-  }
-  return parts.join(' ');
-}
-
-/** Ring outline cut as arc slits with small paper bridges between them, so the piece holds together. */
-function bridgedRing(cx: number, cy: number, r: number, w: number, arcs: number, bridgeDeg: number, fromDeg = 0, toDeg = 360): string {
-  const parts: string[] = [];
-  const step = (toDeg - fromDeg) / arcs;
-  for (let k = 0; k < arcs; k++) {
-    const a0 = fromDeg + k * step + bridgeDeg / 2;
-    const a1 = fromDeg + (k + 1) * step - bridgeDeg / 2;
-    const outer: P[] = [];
-    const inner: P[] = [];
-    for (let t = 0; t <= 6; t++) {
-      const a = ((a0 + ((a1 - a0) * t) / 6) * Math.PI) / 180;
-      outer.push(pt(cx + Math.cos(a) * (r + w / 2), cy + Math.sin(a) * (r + w / 2)));
-      inner.push(pt(cx + Math.cos(a) * (r - w / 2), cy + Math.sin(a) * (r - w / 2)));
-    }
-    parts.push(poly([...outer, ...inner.reverse()]));
-  }
-  return parts.join(' ');
-}
-
-/** Thin crescent moon opening downward. Cut away. */
-function crescentCut(cx: number, cy: number, w: number, h: number): string {
-  return `M ${fmt(cx - w)} ${fmt(cy)} Q ${fmt(cx)} ${fmt(cy - h * 2)} ${fmt(cx + w)} ${fmt(cy)} Q ${fmt(cx)} ${fmt(cy - h * 0.9)} ${fmt(cx - w)} ${fmt(cy)} Z`;
-}
-
+/**
+ * One sheet of red paper folded down the middle: the traced half is mirrored across the fold, the
+ * paper edge is the outer cut, and every white shape inside is a separate cut-out named by motif.
+ */
 export function createDoubleFishPreset(): PapercutProject {
   seq = 2000;
-  // Designed on the reference's 445 × 344 grid, left fish only; the fold axis is x = 222.5.
-  const AX = 222.5;
-  const S = 2.2;
-  const OX = 10;
-  const OY = 12;
-  const toCanvas: Matrix = [S, 0, 0, S, OX, OY];
-  const fold = (d: string) => `${d} ${transformPathD(d, reflectAcross(90, AX, 0))}`;
-  const out = (d: string) => transformPathD(fold(d), toCanvas);
-
-  const silhouette = [
-    // round scaled body, head band and the small bulging eyes
-    circle(150, 236, 57),
-    ellipse(162, 300, 60, 18),
-    circle(122, 306, 12),
-    circle(180, 301, 12),
-    // body touches the fold through a little lotus bud
-    'M 202 222 C 210 216 218 218 223 224 L 223 252 C 216 254 208 252 200 246 Z',
-    // top cloud fin: scalloped crown, its tip meets the other fish on the fold
-    'M 122 182 C 106 150 92 112 90 86 C 86 62 98 48 112 52 C 116 38 132 30 146 38 C 152 26 168 22 178 30 C 190 24 205 20 223 16 L 223 22 L 174 80 C 162 104 152 136 146 174 Z',
-    // inner leaf fin, tip on the fold: with its mirror it frames the diamond window
-    'M 134 176 C 142 128 184 92 223 78 L 223 94 C 214 128 196 158 168 180 Z',
-    // outer fins: broad leaves up-left and out-left
-    'M 104 200 C 84 170 58 122 36 74 C 66 84 96 108 114 138 C 124 156 130 174 128 190 Z',
-    'M 98 214 C 70 202 34 180 6 146 C 42 146 80 156 104 172 C 116 182 120 196 116 208 Z',
-    // comb fans: large pectoral fan, lower fan by the head, small fan on the fold
-    combFan(96, 244, 50, 150, 236, 7),
-    combFan(112, 298, 42, 140, 222, 6),
-    combFan(223, 170, 24, 205, 270, 4),
-    // heart ring at the bottom centre
-    'M 223 300 C 204 298 188 312 194 326 C 199 338 214 342 223 334 Z',
-  ].join(' ');
-
-  const finSlits = (bx: number, by: number, a0: number, a1: number, n: number, start: number, len: number, w: number) =>
-    Array.from({ length: n }, (_, k) => {
-      const a = a0 + ((a1 - a0) * k) / Math.max(1, n - 1);
-      const r = (a * Math.PI) / 180;
-      const l = len * (1 - Math.abs(k - (n - 1) / 2) / n / 1.6);
-      return slit(bx + Math.cos(r) * (start + l / 2), by + Math.sin(r) * (start + l / 2), l, w, a);
+  const cuts: CutoutPath[] = [];
+  FISH_CUTS.forEach(({ motif, d }) => {
+    d.forEach((piece, i) => {
+      cuts.push({ id: `cf_cut_${cuts.length}`, name: `${motif} ${i + 1}`, type: 'custom_polygon', d: piece, isHole: true, createdAt: cuts.length });
     });
-
-  const scaleRows: [number, number][] = [];
-  [
-    [206, [126, 150, 174]],
-    [226, [114, 138, 162, 186]],
-    [246, [102, 126, 150, 174, 198]],
-    [266, [114, 138, 162, 186]],
-  ].forEach(([y, xs]) => (xs as number[]).forEach((x) => scaleRows.push([x, y as number])));
-
-  const cuts = [
-    ...scaleRows.map(([x, y]) => fanScale(x, y, 12)),
-    bridgedRing(150, 236, 51, 3, 9, 7, 150, 390),
-    // crescent row where the body meets the head
-    crescentCut(128, 286, 11, 4), crescentCut(152, 288, 11, 4), crescentCut(176, 286, 11, 4),
-    // eye rings (pupil stays)
-    circle(122, 306, 8), circle(180, 301, 8),
-    // willow slits radiating from each fin root
-    ...finSlits(124, 176, -118, -52, 7, 22, 74, 2.8),
-    ...finSlits(144, 170, -50, -20, 5, 14, 58, 2.4),
-    ...finSlits(112, 194, -136, -110, 4, 16, 64, 2.4),
-    ...finSlits(104, 206, -164, -140, 4, 14, 64, 2.2),
-    // plum-blossom cuts at the fin roots
-    flower(120, 142, 6.5), flower(86, 182, 6),
-    // heart ring hole
-    'M 223 308 C 210 307 199 316 202 325 C 205 333 215 334 223 328 Z',
-  ].join(' ');
-
-  const pupils = [circle(122, 306, 4), circle(180, 301, 4), circle(120, 142, 2.6), circle(86, 182, 2.4)].join(' ');
+  });
 
   const layers: Record<string, Layer> = {};
   layers['cf_backing'] = paper('cf_backing', '宣纸衬底', '#F7F4EB', rect(0, 0, 1000, 780), { grain: 0.5 });
-  layers['cf_red'] = paper('cf_red', '朱红双鱼', '#D8342A', out(silhouette), {
-    grain: 0.35,
-    holes: [piece('鳞片与刀纹', out(cuts), '#FFFFFF', true)],
-    appliques: [piece('眼珠与花心', out(pupils), '#D8342A')],
-  });
   layers['cf_backing'].locked = true;
+  layers['cf_red'] = paper('cf_red', '朱红双鱼', '#D8342A', FISH_PAPER_EDGE, {
+    grain: 0.35,
+    holes: cuts,
+  });
 
   const groups: LayerGroup[] = [
     { id: 'cf_grp_back', name: '衬底', collapsed: false, visible: true, locked: false, layerIds: ['cf_backing'] },
