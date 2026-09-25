@@ -85,6 +85,8 @@ interface DragState {
   drag: DragKind;
   start: Point;
   moved: boolean;
+  /** Selection to apply if the press ends without dragging (narrowing inside a selection). */
+  clickSelect?: { ids: string[]; active: string };
 }
 
 const MODE_LABELS: Record<string, string> = { cutout: '刻纸', positive: '贴花', erase: '剪除' };
@@ -369,8 +371,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   };
 
   // ---------- Select tool ----------
-  const beginSelectDrag = (drag: DragKind, pt: Point) => {
-    dragRef.current = { drag, start: pt, moved: false };
+  const beginSelectDrag = (drag: DragKind, pt: Point, clickSelect?: DragState['clickSelect']) => {
+    dragRef.current = { drag, start: pt, moved: false, clickSelect };
     setIsSelectDragging(true);
     setPreviewMatrix(IDENTITY);
     setDragPoint(null);
@@ -423,9 +425,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         onSelectLayers(next, hitId);
         return;
       }
-      if (!alreadySelected) onSelectLayers(scoped, hitId);
-      else if (hitId !== activeLayerId) onPickLayer(hitId);
-      beginSelectDrag({ kind: 'move' }, pt);
+      if (!alreadySelected) {
+        onSelectLayers(scoped, hitId);
+        beginSelectDrag({ kind: 'move' }, pt);
+      } else {
+        const narrows = scoped.length < selectedLayerIds.length;
+        beginSelectDrag({ kind: 'move' }, pt, narrows ? { ids: scoped, active: hitId } : undefined);
+        if (!narrows && hitId !== activeLayerId) onPickLayer(hitId);
+      }
       return;
     }
 
@@ -483,6 +490,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       dragRef.current = null;
       setIsSelectDragging(false);
       if (!st || !st.moved) {
+        if (st?.clickSelect) onSelectLayers(st.clickSelect.ids, st.clickSelect.active);
         setPreviewMatrix(IDENTITY);
         setDragPoint(null);
         return;
@@ -515,7 +523,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem]);
+  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem, onSelectLayers]);
 
   // Mouse / Pointer Down handler
   const handleMouseDown = (e: React.PointerEvent) => {
