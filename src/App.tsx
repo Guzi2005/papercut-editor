@@ -377,9 +377,7 @@ export default function App() {
       }
       if (MODES[action]) {
         setBrushSettings((prev) => ({ ...prev, mode: MODES[action]! }));
-        if (currentTool === 'select' || currentTool === 'hand_draw' || currentTool === 'anchor_edit') {
-          setCurrentTool('willow_leaf');
-        }
+        setCurrentTool('willow_leaf');
         return;
       }
       switch (action) {
@@ -516,8 +514,9 @@ export default function App() {
     pushHistory(project);
   };
 
-  const handleRemoveCutout = (cutoutId: string) => {
-    updateActiveLayer((layer) => ({ ...layer, cutouts: layer.cutouts.filter((c) => c.id !== cutoutId) }));
+  const handleRemoveCutouts = (cutoutIds: string[]) => {
+    const drop = new Set(cutoutIds);
+    updateActiveLayer((layer) => ({ ...layer, cutouts: layer.cutouts.filter((c) => !drop.has(c.id)) }));
   };
 
   const handleTransformLayers = useCallback(
@@ -585,9 +584,10 @@ export default function App() {
     pushHistory({ ...project, rootOrder });
   };
 
-  const handleAddLayer = (groupId?: string) => {
+  const handleAddLayer = (groupId?: string, kind: 'paper' | 'doodle' = 'paper') => {
     const newLayerId = newId('layer');
     const defaultColor = FOLK_PALETTE[Object.keys(project.layers).length % FOLK_PALETTE.length].hex;
+    const doodle = kind === 'doodle';
 
     const w = project.width * 0.36;
     const h = project.height * 0.36;
@@ -595,15 +595,16 @@ export default function App() {
     const y = (project.height - h) / 2;
     const newLayer: Layer = {
       id: newLayerId,
-      name: `纸片 ${Object.keys(project.layers).length + 1}`,
-      color: defaultColor,
+      name: `${doodle ? '涂鸦' : '纸片'} ${Object.keys(project.layers).length + 1}`,
+      kind,
+      color: doodle ? brushSettings.brushColor : defaultColor,
       texture: 'xuan',
       opacity: 1,
       blendMode: 'normal',
       visible: true,
       locked: false,
-      grain: 0.35,
-      baseShape: {
+      grain: doodle ? 0 : 0.35,
+      baseShape: doodle ? { type: 'freeform', d: '' } : {
         type: 'rounded_rect',
         d: `M ${x + 12} ${y} H ${x + w - 12} Q ${x + w} ${y} ${x + w} ${y + 12} V ${y + h - 12} Q ${x + w} ${y + h} ${x + w - 12} ${y + h} H ${x + 12} Q ${x} ${y + h} ${x} ${y + h - 12} V ${y + 12} Q ${x} ${y} ${x + 12} ${y} Z`,
       },
@@ -632,6 +633,7 @@ export default function App() {
     pushHistory({ ...project, layers: { ...project.layers, [newLayerId]: newLayer }, groups, rootOrder });
     handleSelectLayer(newLayerId);
     setSelectedLayerIds([newLayerId]);
+    if (doodle) setCurrentTool('hand_draw');
   };
 
   const handleUpdateLayer = (layerId: string, updates: Partial<Layer>) => {
@@ -955,10 +957,10 @@ export default function App() {
           carveMode={brushSettings.mode}
           onChangeCarveMode={(mode) => {
             setBrushSettings((prev) => ({ ...prev, mode }));
-            if (currentTool === 'select' || currentTool === 'hand_draw' || currentTool === 'anchor_edit') {
-              setCurrentTool('willow_leaf');
-            }
+            setCurrentTool('willow_leaf');
           }}
+          eraseMode={brushSettings.eraseMode === 'wipe' ? 'wipe' : 'hole'}
+          onChangeEraseMode={(eraseMode) => setBrushSettings((prev) => ({ ...prev, mode: 'erase', eraseMode }))}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={handleUndo}
@@ -986,7 +988,7 @@ export default function App() {
             zoom={zoom}
             onZoomChange={handleZoomChange}
             onAddCutout={handleAddCutout}
-            onRemoveCutout={handleRemoveCutout}
+            onRemoveCutouts={handleRemoveCutouts}
             onUpdateCutout={handleUpdateCutout}
             onAddDrawingStroke={handleAddDrawingStroke}
             onCommitCutoutEdit={handleCommitCutoutEdit}

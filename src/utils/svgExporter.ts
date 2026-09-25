@@ -4,7 +4,7 @@
  */
 
 import { PapercutProject } from '../types/papercut';
-import { escapeAttr, renderLayerMarkup } from './layerSvg';
+import { escapeAttr, projectShadowOptions, renderLayerMarkup } from './layerSvg';
 import { isLayerRendered } from './projectOps';
 
 interface ExportOptions {
@@ -34,8 +34,7 @@ export function generateSvgMarkup(
   const layerOpts = {
     idPrefix: 'x_',
     grain: includePaperTexture,
-    shadow: includeShadow ? project.shadowStrength ?? 0.5 : 0,
-    paperMode: project.paperMode ?? 'soft',
+    ...projectShadowOptions(project, includeShadow ? project.shadowStrength ?? 0.5 : 0),
   };
 
   const lines: string[] = [];

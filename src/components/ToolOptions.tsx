@@ -30,7 +30,6 @@ import {
   Waves,
   Droplet,
   Sparkles,
-  Eraser,
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -203,17 +202,6 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             <Group className="w-3.5 h-3.5" />
           </IconButton>
         </>
-      )}
-
-      {carving && brushSettings.mode === 'erase' && (
-        <Segmented>
-          <IconButton active={(brushSettings.eraseMode || 'smart') === 'smart'} tip="智能橡皮：轻触即删除整个切口" onClick={() => set({ eraseMode: 'smart' })}>
-            <Eraser className="w-3.5 h-3.5" />
-          </IconButton>
-          <IconButton active={brushSettings.eraseMode === 'willow'} tip="剪纸橡皮：按叶形局部剪除" onClick={() => set({ eraseMode: 'willow' })}>
-            <Feather className="w-3.5 h-3.5" />
-          </IconButton>
-        </Segmented>
       )}
 
       {currentTool === 'willow_leaf' && willowOptions}

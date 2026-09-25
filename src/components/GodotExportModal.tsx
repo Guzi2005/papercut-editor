@@ -130,7 +130,7 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
               </div>
             </div>
             <Toggle k="bakeGrain" label="烘焙颗粒质感" hint="水粉颗粒写进 PNG" />
-            <Toggle k="bakeShadow" label="烘焙纸影" hint="每个部件自带浅投影，纹理四周留 14px 边" />
+            <Toggle k="bakeShadow" label="烘焙投影" hint="每个部件自带投影，纹理四周留 22px 边" />
             <Toggle k="includeLooseLayers" label="导出未归入物件的纸片" hint={`合并为「场景杂项」物件 (${looseCount} 张)`} />
             <Toggle k="includeHidden" label="包含隐藏的纸片" hint="默认只导出可见内容" />
           </div>

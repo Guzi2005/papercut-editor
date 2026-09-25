@@ -18,6 +18,7 @@ import {
   Eraser,
   Keyboard,
   Zap,
+  Slice,
 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { FOLK_PALETTE } from '../utils/presetTemplates';
@@ -78,6 +79,8 @@ interface ToolbarProps {
   onSelectTool: (tool: ToolType) => void;
   carveMode: BrushSettings['mode'];
   onChangeCarveMode: (mode: BrushSettings['mode']) => void;
+  eraseMode: 'hole' | 'wipe';
+  onChangeEraseMode: (mode: 'hole' | 'wipe') => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -139,7 +142,7 @@ const TOOLS: ToolDefinition[] = [
     name: '手绘',
     shortName: '手绘',
     hotkey: 'B',
-    description: '铅笔、钢笔、喷枪，不出纸片边界',
+    description: '不出纸片边界；在涂鸦图层上可自由画',
     icon: Paintbrush,
   },
   {
@@ -152,19 +155,24 @@ const TOOLS: ToolDefinition[] = [
   },
 ];
 
-const CARVE_MODES: { id: BrushSettings['mode']; label: string; hotkey: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'cutout', label: '刻纸', hotkey: 'C', icon: CircleDashed },
-  { id: 'positive', label: '贴花', hotkey: 'P', icon: Layers },
-  { id: 'erase', label: '剪除', hotkey: 'E', icon: Eraser },
+const CARVE_MODES: { id: BrushSettings['mode']; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'cutout', label: '刻纸', hint: '纸上镂空，空白处贴花；跨边时看起笔处', icon: CircleDashed },
+  { id: 'positive', label: '贴花', hint: '添一片纸', icon: Layers },
+  { id: 'erase', label: '剪除', hint: '再点一次选择镂空或一笔擦除', icon: Eraser },
 ];
 
-const CARVING_TOOLS: ToolType[] = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand'];
+const ERASE_MODES: { id: 'hole' | 'wipe'; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'hole', label: '镂空', hint: '按笔迹剪掉纸', icon: Slice },
+  { id: 'wipe', label: '一笔擦除', hint: '笔迹划过的切口和贴花整片删除', icon: Eraser },
+];
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   currentTool,
   onSelectTool,
   carveMode,
   onChangeCarveMode,
+  eraseMode,
+  onChangeEraseMode,
   canUndo = false,
   canRedo = false,
   onUndo,
@@ -182,9 +190,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     const b = action ? keymap[action][0] : undefined;
     return b ? `（${labelForCombo(b)}）` : '';
   };
-  const carving = CARVING_TOOLS.includes(currentTool);
+  const cutting = currentTool === 'willow_leaf';
   const [showColors, setShowColors] = useState(false);
   const colorRef = useRef<HTMLDivElement>(null);
+  const [showErase, setShowErase] = useState(false);
+  const eraseRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showErase) return;
+    const close = (e: PointerEvent) => {
+      if (!eraseRef.current?.contains(e.target as Node)) setShowErase(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [showErase]);
 
   useEffect(() => {
     if (!showColors) return;
@@ -223,27 +242,68 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           );
         })}
 
-        {/* 刻纸 / 贴花 / 剪除：决定剪纸、几何、笔刀的落刀效果 */}
-        <div className="w-full mt-1 pt-1.5 border-t border-(--ui-divider) flex flex-col items-center gap-1" data-tip="落刀模式">
+        {/* 刻纸 / 贴花 / 剪除：只作用于剪纸工具 */}
+        <div className="w-full mt-1 pt-1.5 border-t border-(--ui-divider) flex flex-col items-center gap-1">
           {CARVE_MODES.map((mode) => {
             const isActive = carveMode === mode.id;
-            const Icon = mode.icon;
-            return (
+            const isErase = mode.id === 'erase';
+            const Icon = isErase && eraseMode === 'wipe' ? Eraser : isErase ? Slice : mode.icon;
+            const label = isErase ? `剪除 · ${eraseMode === 'wipe' ? '一笔擦除' : '镂空'}` : mode.label;
+            const button = (
               <button
                 key={mode.id}
-                onClick={() => onChangeCarveMode(mode.id)}
-                data-tip={`${mode.label}${keyHint(MODE_ACTIONS[mode.id])}`}
+                onClick={() => {
+                  if (isErase && isActive && cutting) setShowErase((v) => !v);
+                  onChangeCarveMode(mode.id);
+                }}
+                onContextMenu={(e) => {
+                  if (!isErase) return;
+                  e.preventDefault();
+                  onChangeCarveMode('erase');
+                  setShowErase(true);
+                }}
+                data-tip={`${label}${keyHint(MODE_ACTIONS[mode.id])} · ${mode.hint}${cutting ? '' : '（剪纸工具）'}`}
                 data-tip-side="right"
-                className={`w-11 h-8 flex items-center justify-center rounded-lg text-[10px] transition-all ${
+                className={`relative w-11 h-8 flex items-center justify-center rounded-lg text-[10px] transition-all ${
                   isActive
-                    ? carving
+                    ? cutting
                       ? 'bg-(--ui-accent-2) text-[#1B1626] font-semibold'
-                      : 'bg-(--ui-accent-2)/25 text-(--ui-accent-2) font-semibold'
-                    : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-white'
+                      : 'bg-(--ui-accent-2)/15 text-(--ui-accent-2)/70'
+                    : cutting
+                    ? 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-white'
+                    : 'text-(--ui-faint) hover:bg-(--ui-hover) hover:text-(--ui-muted)'
                 }`}
               >
                 <Icon className="w-4 h-4" />
+                {isErase && <span className="absolute right-1 bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-b-[4px] border-b-current opacity-70" />}
               </button>
+            );
+            if (!isErase) return button;
+            return (
+              <div key={mode.id} className="relative" ref={eraseRef}>
+                {button}
+                {showErase && (
+                  <div className="absolute left-full top-0 ml-3 z-50 p-1 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl flex flex-col gap-0.5 min-w-[120px]">
+                    {ERASE_MODES.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          onChangeEraseMode(m.id);
+                          setShowErase(false);
+                        }}
+                        data-tip={m.hint}
+                        data-tip-side="right"
+                        className={`h-8 px-2 flex items-center gap-2 rounded-lg text-[12px] whitespace-nowrap transition-colors ${
+                          eraseMode === m.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
+                        }`}
+                      >
+                        <m.icon className="w-3.5 h-3.5" />
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

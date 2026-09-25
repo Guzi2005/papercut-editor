@@ -3,13 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Layer, LayerPattern, PaperMode } from '../types/papercut';
+import { CutoutPath, Layer, LayerPattern, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 
 export interface LayerRenderOptions {
   /** Prefix for def ids so several renders can share one DOM without collisions. */
   idPrefix: string;
   /** Paper drop shadow strength 0..1 (0 disables). */
   shadow?: number;
+  /** 0 hard edge .. 1 soft blur. */
+  shadowSoftness?: number;
+  /** How the shadow composites onto the paper beneath it. */
+  shadowBlend?: ShadowBlend;
   /** How the shadow is drawn; 'vector' disables shadow and grain entirely. */
   paperMode?: PaperMode;
   /** Whether to apply the layer's gouache grain filter. */
@@ -22,6 +26,38 @@ export const escapeAttr = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const HUGE = 20000;
+
+export const SHADOW_BLENDS: { id: ShadowBlend; label: string }[] = [
+  { id: 'multiply', label: '正片叠底' },
+  { id: 'color-burn', label: '颜色加深' },
+  { id: 'darken', label: '变暗' },
+  { id: 'soft-light', label: '柔光' },
+  { id: 'overlay', label: '叠加' },
+  { id: 'normal', label: '正常' },
+];
+
+export function projectShadowOptions(project: PapercutProject, strength = project.shadowStrength ?? 0.5) {
+  const mode = project.paperMode ?? 'soft';
+  return {
+    shadow: strength,
+    paperMode: mode,
+    shadowSoftness: project.shadowSoftness ?? (mode === 'hard' ? 0 : 0.5),
+    shadowBlend: project.shadowBlend ?? 'multiply',
+  };
+}
+
+/**
+ * Appliqués and holes in the order they were made: a hole cuts every piece of paper beneath it,
+ * a later appliqué covers earlier holes. Preset pieces carry small sequence numbers, so they
+ * sort ahead of anything drawn by hand.
+ */
+export function paperSequence(layer: Layer): CutoutPath[] {
+  return [...layer.positiveElements, ...layer.cutouts]
+    .filter((c) => c.d)
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => (a.c.createdAt ?? 0) - (b.c.createdAt ?? 0) || a.i - b.i)
+    .map(({ c }) => c);
+}
 
 /**
  * Splits a compound path at each absolute moveto. Mirrored copies wind the opposite way, so
@@ -87,49 +123,64 @@ function darken(hex: string, amount: number): string {
   return `#${[16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Hard-edged offset shadow tinted with a darker shade of the paper itself, like a thick card edge. */
-export function hardShadowFilterMarkup(id: string, strength: number, color: string): string {
-  const d = (2 + strength * 4).toFixed(1);
+/**
+ * The shadow silhouette alone. It is drawn as its own element beneath the paper so it can use a
+ * blend mode against the layers underneath. Soft mode casts a neutral ink shadow; hard mode tints
+ * it with a darker shade of the paper, like the edge of thick card.
+ */
+export function shadowFilterMarkup(id: string, strength: number, softness: number, mode: PaperMode, color: string): string {
+  const hard = mode === 'hard';
+  const dx = hard ? 2 + strength * 4 : 1.2;
+  const dy = hard ? dx : 2.4;
+  const blur = softness * (hard ? 6 : 2 * (1.4 + strength * 1.8));
+  const flood = hard ? darken(color, 0.55) : '#1B1626';
+  const alpha = hard ? 0.55 + strength * 0.4 : strength * 0.42;
   return (
-    `<filter id="${id}" x="-10%" y="-10%" width="125%" height="125%">` +
-    `<feOffset in="SourceAlpha" dx="${d}" dy="${d}" result="off"/>` +
-    `<feFlood flood-color="${darken(color, 0.55)}" flood-opacity="${(0.55 + strength * 0.4).toFixed(2)}"/>` +
-    `<feComposite in2="off" operator="in" result="edge"/>` +
-    `<feMerge><feMergeNode in="edge"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+    `<filter id="${id}" x="-20%" y="-20%" width="140%" height="145%">` +
+    (blur > 0.05 ? `<feGaussianBlur in="SourceAlpha" stdDeviation="${blur.toFixed(2)}" result="b"/>` : '') +
+    `<feOffset in="${blur > 0.05 ? 'b' : 'SourceAlpha'}" dx="${dx.toFixed(1)}" dy="${dy.toFixed(1)}" result="off"/>` +
+    `<feFlood flood-color="${flood}" flood-opacity="${Math.min(1, alpha).toFixed(3)}"/>` +
+    `<feComposite in2="off" operator="in"/>` +
     `</filter>`
   );
 }
 
-export function shadowFilterMarkup(id: string, strength: number): string {
-  return (
-    `<filter id="${id}" x="-15%" y="-15%" width="130%" height="135%">` +
-    `<feDropShadow dx="1.2" dy="2.4" stdDeviation="${(1.4 + strength * 1.8).toFixed(2)}" flood-color="#1B1626" flood-opacity="${(strength * 0.42).toFixed(3)}"/>` +
-    `</filter>`
-  );
-}
+const fillPaths = (d: string, fill: string) =>
+  splitSubpaths(d).map((p) => `<path d="${p}" fill="${fill}"/>`).join('');
 
-/** Self-contained SVG markup (defs + content) for one paper layer. */
+const maskOpen = (id: string) =>
+  `<mask id="${id}" maskUnits="userSpaceOnUse" x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}">`;
+
+/** Self-contained SVG markup (defs + content) for one paper or doodle layer. */
 export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): string {
   const pid = `${opts.idPrefix}${layer.id}`;
   const maskId = `${pid}_mask`;
+  const paperMaskId = `${pid}_paper`;
+  const bodyId = `${pid}_body`;
   const patId = `${pid}_pat`;
   const grainId = `${pid}_grain`;
   const shadowId = `${pid}_shadow`;
 
-  const holes = layer.cutouts.filter((c) => c.isHole && c.d);
-  const positives = layer.positiveElements.concat(layer.cutouts.filter((c) => !c.isHole));
+  const doodle = layer.kind === 'doodle';
+  const seq = doodle ? [] : paperSequence(layer);
+  const holes = seq.filter((c) => c.isHole);
   const mode = opts.paperMode ?? 'soft';
   const useGrain = !!opts.grain && mode !== 'vector' && (layer.grain ?? 0) > 0;
-  const shadow = mode === 'vector' ? 0 : opts.shadow ?? 0;
-  const base = layer.baseShape?.d || '';
+  const shadow = mode === 'vector' || doodle ? 0 : opts.shadow ?? 0;
+  const base = doodle ? '' : layer.baseShape?.d || '';
+  const drawings = layer.drawings || [];
 
   const defs: string[] = [];
-  defs.push(
-    `<mask id="${maskId}" maskUnits="userSpaceOnUse" x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}">` +
-      splitSubpaths(base).map((d) => `<path d="${d}" fill="#fff"/>`).join('') +
-      holes.flatMap((h) => splitSubpaths(h.d)).map((d) => `<path d="${d}" fill="#000"/>`).join('') +
-      `</mask>`
-  );
+  defs.push(maskOpen(maskId) + fillPaths(base, '#fff') + holes.map((h) => fillPaths(h.d, '#000')).join('') + `</mask>`);
+  // Brush strokes stay inside the paper as it currently stands: base and appliqués, minus holes.
+  if (!doodle && (drawings.length > 0 || opts.interactive)) {
+    defs.push(
+      maskOpen(paperMaskId) +
+        fillPaths(base, '#fff') +
+        seq.map((c) => fillPaths(c.d, c.isHole ? '#000' : '#fff')).join('') +
+        `</mask>`
+    );
+  }
   if (layer.pattern) {
     const p = layer.pattern;
     defs.push(
@@ -137,49 +188,51 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
     );
   }
   if (useGrain) defs.push(grainFilterMarkup(grainId, layer.grain ?? 0));
-  if (shadow > 0) {
-    defs.push(mode === 'hard' ? hardShadowFilterMarkup(shadowId, shadow, layer.color) : shadowFilterMarkup(shadowId, shadow));
-  }
+  if (shadow > 0) defs.push(shadowFilterMarkup(shadowId, shadow, opts.shadowSoftness ?? 0.5, mode, layer.color));
 
   const body: string[] = [];
   if (base) {
     body.push(`<g mask="url(#${maskId})">`);
-    const pieces = splitSubpaths(base);
-    pieces.forEach((d) => body.push(`<path d="${d}" fill="${escapeAttr(layer.color)}"/>`));
+    body.push(fillPaths(base, escapeAttr(layer.color)));
     if (layer.pattern) {
-      pieces.forEach((d) => body.push(`<path d="${d}" fill="url(#${patId})" opacity="${layer.pattern!.opacity}"/>`));
+      splitSubpaths(base).forEach((d) => body.push(`<path d="${d}" fill="url(#${patId})" opacity="${layer.pattern!.opacity}"/>`));
     }
-    (layer.drawings || []).forEach((drw) => {
-      if (drw.fill) {
-        const fill = escapeAttr(drw.color);
-        body.push(`<g opacity="${drw.opacity}">${splitSubpaths(drw.d).map((d) => `<path d="${d}" fill="${fill}"/>`).join('')}</g>`);
-        return;
-      }
-      const blur = drw.blur ? ` style="filter: blur(${drw.blur}px)"` : '';
-      body.push(
-        `<path d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`
-      );
-    });
     body.push(`</g>`);
   }
-  positives.forEach((elem) => {
-    const fill = escapeAttr(elem.fillColor || layer.color);
-    const parts = splitSubpaths(elem.d);
-    if (parts.length === 1) {
-      body.push(`<path d="${elem.d}" fill="${fill}" data-element-id="${elem.id}"/>`);
-    } else {
-      body.push(`<g data-element-id="${elem.id}">${parts.map((d) => `<path d="${d}" fill="${fill}"/>`).join('')}</g>`);
+  seq.forEach((elem, i) => {
+    if (elem.isHole) return;
+    const later = seq.slice(i + 1).filter((c) => c.isHole);
+    let mask = '';
+    if (later.length > 0) {
+      const id = `${pid}_pm${i}`;
+      defs.push(
+        maskOpen(id) +
+          `<rect x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}" fill="#fff"/>` +
+          later.map((h) => fillPaths(h.d, '#000')).join('') +
+          `</mask>`
+      );
+      mask = ` mask="url(#${id})"`;
     }
+    body.push(`<g data-element-id="${elem.id}"${mask}>${fillPaths(elem.d, escapeAttr(elem.fillColor || layer.color))}</g>`);
   });
 
-  const attrs = [
-    opts.interactive ? '' : `id="${layer.id}"`,
-    `data-name="${escapeAttr(layer.name)}"`,
-    `opacity="${layer.opacity}"`,
-    layer.blendMode && layer.blendMode !== 'normal' ? `style="mix-blend-mode:${layer.blendMode}"` : '',
-    shadow > 0 ? `filter="url(#${shadowId})"` : '',
-  ].filter(Boolean).join(' ');
+  const strokes = drawings
+    .map((drw) => {
+      if (drw.fill) return `<g opacity="${drw.opacity}">${fillPaths(drw.d, escapeAttr(drw.color))}</g>`;
+      const blur = drw.blur ? ` style="filter: blur(${drw.blur}px)"` : '';
+      return `<path d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`;
+    })
+    .join('');
+  if (strokes) body.push(doodle ? strokes : `<g mask="url(#${paperMaskId})">${strokes}</g>`);
 
+  const outer = [opts.interactive ? '' : `id="${layer.id}"`, `data-name="${escapeAttr(layer.name)}"`].filter(Boolean).join(' ');
+  const blend = layer.blendMode && layer.blendMode !== 'normal' ? ` style="mix-blend-mode:${layer.blendMode}"` : '';
+  const shadowBlend = opts.shadowBlend ?? 'multiply';
+  // The shadow is a clone of the finished paper, so it follows every cut and appliqué.
+  const shadowEl =
+    shadow > 0
+      ? `<use href="#${bodyId}" filter="url(#${shadowId})"${shadowBlend !== 'normal' ? ` style="mix-blend-mode:${shadowBlend}"` : ''}/>`
+      : '';
   const inner = useGrain ? `<g filter="url(#${grainId})">${body.join('')}</g>` : body.join('');
-  return `<defs>${defs.join('')}</defs><g ${attrs}>${inner}</g>`;
+  return `<defs>${defs.join('')}</defs><g ${outer}>${shadowEl}<g id="${bodyId}" opacity="${layer.opacity}"${blend}>${inner}</g></g>`;
 }

@@ -50,9 +50,9 @@ const ModeGlyph: React.FC<{ kind: PaperMode }> = ({ kind }) => (
 );
 
 const PAPER_MODES: { id: PaperMode; tip: string; icon: React.ReactNode }[] = [
-  { id: 'soft', tip: '剪贴模式：柔和纸影', icon: <ModeGlyph kind="soft" /> },
+  { id: 'soft', tip: '剪贴模式：柔和投影', icon: <ModeGlyph kind="soft" /> },
   { id: 'vector', tip: '剪贴模式：平面矢量', icon: <ModeGlyph kind="vector" /> },
-  { id: 'hard', tip: '剪贴模式：硬边加深阴影', icon: <ModeGlyph kind="hard" /> },
+  { id: 'hard', tip: '剪贴模式：硬边加深投影', icon: <ModeGlyph kind="hard" /> },
 ];
 
 const TAB_COLORS = ['#2E58D6', '#D0574B', '#2F9E6A', '#8A62D6', '#D69A2E', '#2FA8B0', '#D66A9E'];

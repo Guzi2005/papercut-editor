@@ -13,7 +13,6 @@ import {
   Point,
   CutoutPath,
   LayerDrawStroke,
-  PaperMode,
 } from '../types/papercut';
 import {
   generateFreehandDrawPath,
@@ -27,7 +26,8 @@ import {
   playDiscardSwoosh,
   playCrispClick,
 } from '../utils/soundEffects';
-import { renderLayerMarkup } from '../utils/layerSvg';
+import { renderLayerMarkup, projectShadowOptions } from '../utils/layerSvg';
+import { classifyCarve, pathContains } from '../utils/paperHit';
 import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
 import { generateWillowShape, pullString, stabilizerRadius } from '../utils/willowShape';
 import {
@@ -58,7 +58,7 @@ interface CanvasProps {
   zoom: number;
   onZoomChange: (newZoom: number) => void;
   onAddCutout: (cutout: CutoutPath) => void;
-  onRemoveCutout: (cutoutId: string) => void;
+  onRemoveCutouts: (cutoutIds: string[]) => void;
   onUpdateCutout: (cutoutId: string, updates: Partial<CutoutPath>) => void;
   onAddDrawingStroke?: (stroke: LayerDrawStroke) => void;
   onCommitCutoutEdit?: () => void;
@@ -102,20 +102,20 @@ interface DragState {
 
 const MODE_LABELS: Record<string, string> = { cutout: '刻纸', positive: '贴花', erase: '剪除' };
 
+type ShadowOptions = ReturnType<typeof projectShadowOptions>;
+
 const LayerMarkup = React.memo(function LayerMarkup({
   layer,
-  shadow,
-  paperMode,
+  shadowOpts,
   transform,
 }: {
   layer: Layer;
-  shadow: number;
-  paperMode: PaperMode;
+  shadowOpts: ShadowOptions;
   transform?: string;
 }) {
   const html = useMemo(
-    () => renderLayerMarkup(layer, { idPrefix: 'cv_', shadow, paperMode, grain: true, interactive: true }),
-    [layer, shadow, paperMode]
+    () => renderLayerMarkup(layer, { idPrefix: 'cv_', ...shadowOpts, grain: true, interactive: true }),
+    [layer, shadowOpts]
   );
   return <g data-layer-id={layer.id} transform={transform} dangerouslySetInnerHTML={{ __html: html }} />;
 });
@@ -142,7 +142,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   zoom,
   onZoomChange,
   onAddCutout,
-  onRemoveCutout,
+  onRemoveCutouts,
   onUpdateCutout,
   onAddDrawingStroke,
   onCommitCutoutEdit,
@@ -231,7 +231,12 @@ export const Canvas: React.FC<CanvasProps> = ({
   const activeItem = activeLayerId ? findItemOfLayer(project, activeLayerId) : null;
   const activeLocked = !!activeLayer && (activeLayer.locked || !!activeGroup?.locked);
   const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
-  const shadow = project.shadowStrength ?? 0.5;
+  const activeDoodle = activeLayer?.kind === 'doodle';
+  const shadowOpts = useMemo(
+    () => projectShadowOptions(project),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.shadowStrength, project.shadowSoftness, project.shadowBlend, project.paperMode]
+  );
 
   // Hold-to-pan key (Space by default, configurable)
   const keymapRef = useRef(keymap);
@@ -528,6 +533,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   // drawn in the same frame as the stroke it leaves.
   const brushCursor: { d: string; cross: boolean } | null = (() => {
     if (activeLocked || activeHidden) return null;
+    if (activeDoodle && currentTool !== 'hand_draw') return null;
     if (currentTool === 'pen_knife' || currentTool === 'freehand') {
       return { d: knifeCursorPath(brushSettings.stampSize || 26, brushSettings.knifeTipShape || 'round'), cross: false };
     }
@@ -553,10 +559,29 @@ export const Canvas: React.FC<CanvasProps> = ({
     g.setAttribute('visibility', 'visible');
   };
 
+  // The brush is drawn in artboard space, so wheel panning/zooming would carry it off with the
+  // paper; re-seat it under the pointer, which has not moved on screen.
+  const hoverRef = useRef<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const c = hoverRef.current;
+    if (!c) return;
+    rectRef.current = null;
+    if (isDrawing) {
+      if (curRef.current) {
+        curRef.current = { ...clientToCanvas(c.x, c.y), pressure: curRef.current.pressure };
+        scheduleFlush();
+      }
+      return;
+    }
+    moveBrush(c.x, c.y, pointerTypeRef.current !== 'touch' && !isSpacePressed && !isPanning);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pan, zoom]);
+
   // Wheel: zoom is exponential in the scroll amount, so trackpad pinches and notched wheels both
   // feel even; refs keep bursts of events within one frame from compounding on stale state.
   const handleWheel = (e: React.WheelEvent) => {
     const combo = comboFromWheel(e);
+    hoverRef.current = { x: e.clientX, y: e.clientY };
     const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     if (bindingHas(keymap, 'view.zoomWheel', combo)) {
       const cur = zoomRef.current;
@@ -863,7 +888,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     // 2. Polyline shape in geom_shape (折线：单击新增锚点，双击终止)
     if (currentTool === 'geom_shape' && brushSettings.geomShapeType === 'polyline') {
-      if (!activeLayer || activeLocked || activeHidden) return;
+      if (!activeLayer || activeLocked || activeHidden || activeDoodle) return;
 
       const now = Date.now();
       const closeNearStart =
@@ -874,9 +899,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (closeNearStart || doubleClick) {
         const finalPts = [...polylinePoints];
         const d = withSymmetry(`M ${finalPts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
-        const isHole =
-          brushSettings.mode === 'cutout' ||
-          (brushSettings.mode === 'erase' && brushSettings.eraseMode === 'willow');
+        const isHole = decideHole(activeLayer, d, finalPts, finalPts[0]);
         const newCutout: CutoutPath = {
           id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           name: `折线切口 ${activeLayer.cutouts.length + 1}`,
@@ -899,6 +922,8 @@ export const Canvas: React.FC<CanvasProps> = ({
       playCrispClick();
       return;
     }
+
+    if (activeDoodle && currentTool !== 'hand_draw') return;
 
     // 3. Normal drawing (Willow Leaf, Geom Shapes, Pen Knife, Hand Draw)
     strokeRef.current = [pt];
@@ -999,6 +1024,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
       const dist = Math.hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y);
       const canEdit = !!activeLayer && !activeLocked && !activeHidden;
+      const canCarve = canEdit && !activeDoodle;
 
       // 1. Hand Draw Tool (手绘：铅笔/钢笔/喷枪，附属于当前图层蒙版)
       if (currentTool === 'hand_draw') {
@@ -1094,61 +1120,33 @@ export const Canvas: React.FC<CanvasProps> = ({
         }
       }
 
-      // Handle Erase mode: deletes touched cutouts (智能橡皮) vs 柳叶笔划痕局部镂空 (柳叶笔橡皮)
-      if (brushSettings.mode === 'erase' && activeLayer && canEdit) {
-        if (brushSettings.eraseMode === 'willow') {
-          if (strokePoints.length >= 2) {
-            const willowD = generateWillowShape(strokePoints, brushSettings.willowMode || 'chord');
-            if (willowD) {
-              const newCutout: CutoutPath = {
-                id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                name: `柳叶橡皮 ${activeLayer.cutouts.length + 1}`,
-                type: 'willow_leaf',
-                d: withSymmetry(willowD),
-                isHole: true,
-                createdAt: Date.now(),
-                points: strokePoints,
-              };
-              onAddCutout(newCutout);
-              playPaperRustle();
-            }
+      if (carveMode === 'erase' && brushSettings.eraseMode === 'wipe' && activeLayer && canCarve) {
+        const raw = strokePoints.length > 1 ? strokePoints : [startPoint, currentPoint];
+        const pts: Point[] = [];
+        raw.forEach((p, i) => {
+          const q = raw[i - 1];
+          const steps = q ? Math.max(1, Math.ceil(Math.hypot(p.x - q.x, p.y - q.y) / 2)) : 1;
+          for (let k = q ? 1 : 0; k <= steps; k++) {
+            pts.push(q ? { x: q.x + ((p.x - q.x) * k) / steps, y: q.y + ((p.y - q.y) * k) / steps } : p);
           }
-        } else {
-          const pts = strokePoints.length > 0 ? strokePoints : [startPoint, currentPoint];
-          const toDeleteIds: string[] = [];
-
-          activeLayer.cutouts.forEach((cutout) => {
-            const anchors =
-              cutout.points && cutout.points.length > 0
-                ? cutout.points
-                : extractAnchorPointsFromD(cutout.d);
-            const isHit = pts.some((p) =>
-              anchors.some((a) => Math.hypot(a.x - p.x, a.y - p.y) < 36)
-            );
-            if (isHit) {
-              toDeleteIds.push(cutout.id);
-            }
-          });
-
-          if (toDeleteIds.length > 0) {
-            toDeleteIds.forEach((id) => onRemoveCutout(id));
-            playDiscardSwoosh();
-          } else if (activeLayer.cutouts.length > 0) {
-            const nearest = activeLayer.cutouts.find((c) => {
-              const anchors = c.points || extractAnchorPointsFromD(c.d);
-              return anchors.some((a) => Math.hypot(a.x - startPoint.x, a.y - startPoint.y) < 40);
-            });
-            if (nearest) {
-              onRemoveCutout(nearest.id);
-              playDiscardSwoosh();
-            }
-          }
+        });
+        const swept = symMats.flatMap((m) => pts.map((p) => applyToPoint(m, p)));
+        const reach = 6 / zoom;
+        const hit = activeLayer.cutouts.filter((c) => {
+          const anchors = c.points && c.points.length > 0 ? c.points : [];
+          return swept.some(
+            (p) => pathContains(c.d, p.x, p.y) || anchors.some((a) => Math.hypot(a.x - p.x, a.y - p.y) < reach)
+          );
+        });
+        if (hit.length > 0) {
+          onRemoveCutouts(hit.map((c) => c.id));
+          playDiscardSwoosh();
         }
-      } else if (baseD && activeLayer && canEdit) {
+      } else if (baseD && activeLayer && canCarve) {
         baseD = withSymmetry(baseD);
-        const isHole = brushSettings.mode === 'cutout';
+        const isHole = decideHole(activeLayer, baseD, cutoutPoints ?? strokePoints, startPoint);
         const toolNames: Record<string, string> = {
-          willow_leaf: '柳叶',
+          willow_leaf: '剪纸',
           geom_shape: '几何',
           pen_knife: '笔刀',
           freehand: '笔刀',
@@ -1156,7 +1154,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
         const newCutout: CutoutPath = {
           id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          name: `${toolNames[currentTool] || '切口'} ${activeLayer.cutouts.length + 1}`,
+          name: `${carveMode === 'erase' ? '剪除' : toolNames[currentTool] || '切口'} ${activeLayer.cutouts.length + 1}`,
           type:
             currentTool === 'willow_leaf'
               ? 'willow_leaf'
@@ -1211,7 +1209,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     strokePoints,
     brushSettings,
     onAddCutout,
-    onRemoveCutout,
+    onRemoveCutouts,
     onAddDrawingStroke,
     zoom,
   ]);
@@ -1222,6 +1220,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     [symmetry, project.width, project.height]
   );
   const withSymmetry = (d: string) => applySymmetry(d, symMats);
+
+  // 刻纸/贴花/剪除 belong to the 剪纸 tool; 几何 and 笔刀 always carve by 刻纸's own judgement.
+  const carveMode = currentTool === 'willow_leaf' ? brushSettings.mode : 'cutout';
+  const decideHole = (layer: Layer, d: string, pts: Point[], start: Point) =>
+    carveMode === 'positive' ? false : carveMode === 'erase' ? true : classifyCarve(layer, d, pts, start) === 'hole';
 
   const [symDragging, setSymDragging] = useState(false);
   const symmetryRef = useRef(symmetry);
@@ -1337,7 +1340,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     ? 'cursor-default'
     : currentTool === 'anchor_edit'
     ? 'cursor-default'
-    : activeLocked || activeHidden
+    : activeLocked || activeHidden || (activeDoodle && currentTool !== 'hand_draw')
     ? 'cursor-not-allowed'
     : brushCursor
     ? 'cursor-none'
@@ -1348,9 +1351,14 @@ export const Canvas: React.FC<CanvasProps> = ({
       ref={containerRef}
       onPointerDown={handleMouseDown}
       onPointerMove={(e) => {
+        hoverRef.current = { x: e.clientX, y: e.clientY };
         if (!isDrawing) moveBrush(e.clientX, e.clientY, e.pointerType !== 'touch' && !isSpacePressed && !isPanning);
       }}
-      onPointerLeave={() => !isDrawing && moveBrush(0, 0, false)}
+      onPointerLeave={() => {
+        if (isDrawing) return;
+        hoverRef.current = null;
+        moveBrush(0, 0, false);
+      }}
       onWheel={handleWheel}
       onContextMenu={(e) => keymap['view.panDrag'].includes('RightDrag') && e.preventDefault()}
       style={{ touchAction: 'none' }}
@@ -1404,8 +1412,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 <LayerMarkup
                   key={layer.id}
                   layer={layer}
-                  shadow={shadow}
-                  paperMode={project.paperMode ?? 'soft'}
+                  shadowOpts={shadowOpts}
                   transform={selectedSet.has(layer.id) ? previewTransform : undefined}
                 />
               ))}
@@ -1471,7 +1478,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {/* Real-time Hand Drawing Stroke Preview (Clipped by active layer mask) */}
             {isDrawing && currentTool === 'hand_draw' && activeLayer && (
-              <g mask={`url(#cv_${activeLayer.id}_mask)`}>
+              <g mask={activeDoodle ? undefined : `url(#cv_${activeLayer.id}_paper)`}>
                 <g
                   ref={previewRef}
                   fill={brushSettings.drawBrushType === 'willow' ? brushSettings.brushColor : 'none'}
@@ -1497,17 +1504,11 @@ export const Canvas: React.FC<CanvasProps> = ({
             {isDrawing && currentTool !== 'hand_draw' && (
               <g
                 ref={previewRef}
-                fill={
-                  brushSettings.mode === 'erase'
-                    ? '#EB8E88'
-                    : brushSettings.mode === 'cutout'
-                    ? '#FAF8F2'
-                    : brushSettings.brushColor
-                }
-                fillOpacity={brushSettings.mode === 'erase' ? 0.3 : 0.88}
-                stroke={brushSettings.mode === 'cutout' ? '#2652D0' : '#EB8E88'}
+                fill={carveMode === 'erase' ? '#EB8E88' : carveMode === 'cutout' ? '#FAF8F2' : brushSettings.brushColor}
+                fillOpacity={carveMode === 'erase' ? 0.3 : carveMode === 'cutout' ? 0.55 : 0.88}
+                stroke={carveMode === 'cutout' ? '#2652D0' : '#EB8E88'}
                 strokeWidth={2 / zoom}
-                strokeDasharray={brushSettings.mode === 'erase' ? '3 3' : brushSettings.mode === 'cutout' ? '4 3' : undefined}
+                strokeDasharray={carveMode === 'erase' ? '3 3' : carveMode === 'cutout' ? '4 3' : undefined}
                 opacity={0.88}
               />
             )}
@@ -1753,10 +1754,25 @@ export const Canvas: React.FC<CanvasProps> = ({
                 {activeItem.name}
               </span>
             )}
-            {currentTool !== 'hand_draw' && currentTool !== 'anchor_edit' && (
-              <span className="px-1.5 py-0.5 rounded-md bg-(--ui-accent)/25 text-(--ui-text-2)">
-                {MODE_LABELS[brushSettings.mode] || '刻纸'}
+            {activeDoodle ? (
+              <span
+                className={`px-1.5 py-0.5 rounded-md ${
+                  currentTool === 'hand_draw' ? 'bg-(--ui-accent)/25 text-(--ui-text-2)' : 'text-(--ui-accent-2)'
+                }`}
+              >
+                {currentTool === 'hand_draw' ? '涂鸦' : '涂鸦图层 · 只能手绘'}
               </span>
+            ) : (
+              currentTool !== 'hand_draw' &&
+              currentTool !== 'anchor_edit' && (
+                <span className="px-1.5 py-0.5 rounded-md bg-(--ui-accent)/25 text-(--ui-text-2)">
+                  {carveMode === 'erase'
+                    ? brushSettings.eraseMode === 'wipe'
+                      ? '剪除 · 一笔擦除'
+                      : '剪除 · 镂空'
+                    : MODE_LABELS[carveMode]}
+                </span>
+              )
             )}
             {activeLocked && (
               <span className="flex items-center gap-1 text-(--ui-accent-2)">

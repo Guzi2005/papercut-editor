@@ -11,10 +11,11 @@ import {
   PapercutItem,
   PapercutProject,
   PatternType,
+  ShadowBlend,
 } from '../types/papercut';
 import { FOLK_PALETTE } from '../utils/presetTemplates';
 import { getPathBoundingBox } from '../utils/bezierMath';
-import { renderLayerMarkup } from '../utils/layerSvg';
+import { renderLayerMarkup, projectShadowOptions, SHADOW_BLENDS } from '../utils/layerSvg';
 import { computeDepthTable, findGroupOfLayer, findItemOfLayer } from '../utils/projectOps';
 import {
   Plus,
@@ -49,6 +50,8 @@ import {
   MoreHorizontal,
   ArrowUp,
   ArrowDown,
+  Brush,
+  CloudFog,
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -61,7 +64,7 @@ interface LayersPanelProps {
   onUpdateColorNote?: (hex: string, note: string) => void;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, updates: Partial<Layer>) => void;
-  onAddLayer: (groupId?: string) => void;
+  onAddLayer: (groupId?: string, kind?: 'paper' | 'doodle') => void;
   onDeleteLayer: (layerId: string) => void;
   onDuplicateLayer: (layerId: string) => void;
   onInvertLayerCutouts?: (layerId: string) => void;
@@ -98,7 +101,13 @@ const LayerThumb = React.memo(function LayerThumb({ layer, w, h }: { layer: Laye
   const { html, viewBox } = useMemo(() => {
     const holes = layer.cutouts.filter((c) => c.isHole).map((c) => c.d);
     const bbox = getPathBoundingBox(
-      [layer.baseShape.d, ...layer.positiveElements.map((e) => e.d), ...layer.cutouts.filter((c) => !c.isHole).map((c) => c.d), ...holes].filter(Boolean),
+      [
+        layer.baseShape.d,
+        ...layer.positiveElements.map((e) => e.d),
+        ...layer.cutouts.filter((c) => !c.isHole).map((c) => c.d),
+        ...holes,
+        ...(layer.kind === 'doodle' ? (layer.drawings || []).map((d) => d.d) : []),
+      ].filter(Boolean),
       w,
       h
     );
@@ -700,9 +709,9 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <WheelNumber
-          tip="纸影强度"
+          tip="投影强度"
           icon={<Sun className="w-3 h-3" />}
           value={Math.round((project.shadowStrength ?? 0.5) * 100)}
           min={0}
@@ -711,6 +720,30 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           format={(v) => `${v}%`}
           onChange={(v) => onUpdateProject({ shadowStrength: v / 100 })}
         />
+        <WheelNumber
+          tip="投影软硬：0 硬边 · 100 柔和"
+          icon={<CloudFog className="w-3 h-3" />}
+          value={Math.round(projectShadowOptions(project).shadowSoftness * 100)}
+          min={0}
+          max={100}
+          step={5}
+          format={(v) => `${v}%`}
+          onChange={(v) => onUpdateProject({ shadowSoftness: v / 100 })}
+        />
+        <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="投影合成模式">
+          <Blend className="w-3 h-3" />
+          <select
+            value={project.shadowBlend ?? 'multiply'}
+            onChange={(e) => onUpdateProject({ shadowBlend: e.target.value as ShadowBlend })}
+            className="bg-transparent text-[11px] text-(--ui-strong) outline-none"
+          >
+            {SHADOW_BLENDS.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           onClick={() => {
             const g = activeLayer?.grain ?? 0.35;
@@ -926,6 +959,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               data-tip="新建深度层 (图层组)"
             >
               <FolderPlus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onAddLayer(undefined, 'doodle')}
+              className="p-1.5 rounded-lg text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)"
+              data-tip="新建涂鸦图层：手绘不受纸片边界裁切"
+            >
+              <Brush className="w-4 h-4" />
             </button>
             <button
               onClick={() => onAddLayer()}

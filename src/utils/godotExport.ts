@@ -5,7 +5,7 @@
 
 import { zipSync, strToU8, Zippable } from 'fflate';
 import { PapercutItem, PapercutProject } from '../types/papercut';
-import { renderLayerMarkup } from './layerSvg';
+import { projectShadowOptions, renderLayerMarkup, shadowFilterMarkup } from './layerSvg';
 import { computeDepthTable, flattenLayerIds, findItemOfLayer } from './projectOps';
 import { rasterizeSvg } from './svgExporter';
 import { serializeProject, PROJECT_FILE_EXT } from './storage';
@@ -130,15 +130,9 @@ function blendBakedMarkup(
       renderLayerMarkup(solid, { idPrefix: 'bkm_', grain: false, shadow: 0 }) +
       `</mask>`
   );
+  const shadowOpts = projectShadowOptions(project, shadow);
   if (shadow > 0) {
-    parts.push(
-      `<filter id="${shadowId}" x="-15%" y="-15%" width="130%" height="135%">` +
-        `<feGaussianBlur in="SourceAlpha" stdDeviation="${(1.4 + shadow * 1.8).toFixed(2)}" result="blur"/>` +
-        `<feOffset in="blur" dx="1.2" dy="2.4" result="off"/>` +
-        `<feFlood flood-color="#1B1626" flood-opacity="${(shadow * 0.42).toFixed(3)}"/>` +
-        `<feComposite in2="off" operator="in"/>` +
-        `</filter>`
-    );
+    parts.push(shadowFilterMarkup(shadowId, shadow, shadowOpts.shadowSoftness, shadowOpts.paperMode, layer.color));
   }
   parts.push('</defs>');
   if (shadow > 0) {
@@ -146,7 +140,7 @@ function blendBakedMarkup(
   }
   parts.push(`<g mask="url(#${clipId})"><g style="isolation:isolate">`);
   belowIds.forEach((bid, i) => {
-    parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, shadow, paperMode: project.paperMode }));
+    parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, ...shadowOpts }));
   });
   parts.push(renderLayerMarkup(layer, { idPrefix: 'gx_', grain, shadow: 0 }));
   parts.push('</g></g>');
@@ -197,7 +191,7 @@ export async function buildGodotExport(
 
   const allParts = exportItems.flatMap((it) => it.partIds);
   const bounds = measureLayers(project, allParts);
-  const pad = options.bakeShadow ? 14 : 2;
+  const pad = options.bakeShadow ? 22 : 2;
   const s = options.textureScale;
   const shadow = options.bakeShadow && project.paperMode !== 'vector' ? project.shadowStrength ?? 0.5 : 0;
 
@@ -241,7 +235,7 @@ export async function buildGodotExport(
       const markup =
         blended && below.length > 0
           ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
-          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, shadow, paperMode: project.paperMode });
+          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, ...projectShadowOptions(project, shadow) });
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w * s}" height="${h * s}">${markup}</svg>`;
       const canvas = await rasterizeSvg(svg, w * s, h * s);
       const png = await canvasToPng(canvas);

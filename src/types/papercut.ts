@@ -55,8 +55,11 @@ export interface BaseShape {
   radius?: number;
 }
 
-/** soft 柔和纸影 · vector 无影平面矢量 · hard 硬边加深色阴影 */
+/** soft 柔和投影 · vector 无影平面矢量 · hard 硬边加深色投影 */
 export type PaperMode = 'soft' | 'vector' | 'hard';
+
+/** 投影合成模式（CSS mix-blend-mode） */
+export type ShadowBlend = 'normal' | 'multiply' | 'color-burn' | 'darken' | 'overlay' | 'soft-light';
 
 export type PaperTextureType = 'xuan' | 'rough' | 'smooth' | 'speckle';
 
@@ -81,6 +84,8 @@ export interface LayerDrawStroke {
 export interface Layer {
   id: string;
   name: string;
+  /** doodle 涂鸦图层：没有纸，只承载手绘笔迹，笔迹不受纸片边界裁切 */
+  kind?: 'paper' | 'doodle';
   color: string; // Hex color code
   texture: PaperTextureType;
   opacity: number; // 0 to 1
@@ -194,8 +199,8 @@ export interface BrushSettings {
   combSpacing: number; // 梳齿间距 (10, 16, 24)
   combToothAngle: number; // 齿角偏度
   stampSize: number; // 笔刀尺寸预设 (16, 26, 40)
-  mode: 'cutout' | 'positive' | 'erase'; // 刻纸 vs 贴花 vs 剪除
-  eraseMode?: 'smart' | 'willow'; // 剪除子模式：智能橡皮 vs 柳叶笔橡皮
+  mode: 'cutout' | 'positive' | 'erase'; // 刻纸(按落笔处自动镂空/贴花) vs 贴花 vs 剪除，仅剪纸工具
+  eraseMode?: 'hole' | 'wipe'; // 剪除子模式：镂空 vs 一笔擦除
 
   // 星型可调属性 (Star Shape Settings)
   starPoints?: number; // 角的个数 (3 ~ 16)
@@ -229,6 +234,8 @@ export interface PapercutProject {
   backgroundStyle: BackgroundStyle;
   items?: PapercutItem[];
   reference?: ReferenceImage;
-  shadowStrength?: number; // 纸影强度 0 ~ 1
+  shadowStrength?: number; // 投影强度 0 ~ 1
+  shadowSoftness?: number; // 投影软硬 0 硬边 ~ 1 柔和
+  shadowBlend?: ShadowBlend; // 投影合成模式
   paperMode?: PaperMode; // 剪贴模式
 }
