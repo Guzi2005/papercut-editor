@@ -43,7 +43,14 @@ function pieces(d: string): Piece[] {
   if (!p) {
     // Each subpath is filled on its own when rendered, so containment is tested per subpath too.
     p = splitSubpaths(d).map((s) => ({ path: new Path2D(s), box: roughBox(s) }));
-    if (cache.size > 4000) cache.clear();
+    if (cache.size >= 1500) {
+      // Maps iterate in insertion order: drop the oldest third rather than everything.
+      let n = 500;
+      for (const k of cache.keys()) {
+        cache.delete(k);
+        if (--n === 0) break;
+      }
+    }
     cache.set(d, p);
   }
   return p;

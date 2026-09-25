@@ -133,7 +133,7 @@ const SKIN_KEY = 'weave-skin';
 
 export function loadSkin(): WorkbenchSkin {
   const saved = localStorage.getItem(SKIN_KEY) as WorkbenchSkin | null;
-  return saved && SKINS.some((s) => s.id === saved) ? saved : 'indigo';
+  return saved && SKINS.some((s) => s.id === saved) ? saved : 'linen';
 }
 
 export function saveSkin(id: WorkbenchSkin) {

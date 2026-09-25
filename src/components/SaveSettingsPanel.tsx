@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { storageStatus } from '../utils/storage';
 import { FileDown } from 'lucide-react';
 import { DELAY_OPTIONS, INTERVAL_OPTIONS, SaveSettings, fileSaveSupported } from '../utils/saveSettings';
 
@@ -49,6 +50,10 @@ export const SaveSettingsPanel: React.FC<{
 }> = ({ settings: s, onChange, onSaveNow, fileName, onPickFile }) => {
   const canFile = fileSaveSupported();
   const fileOn = s.toFile && !!fileName;
+  const [usage, setUsage] = useState<{ usage: number; persisted: boolean } | null>(null);
+  useEffect(() => {
+    storageStatus().then(setUsage);
+  }, []);
   return (
     <div className="absolute left-full top-0 ml-1 w-52 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 flex flex-col gap-1.5 text-xs">
       <Toggle on={s.auto} onChange={(auto) => onChange({ auto })} label="自动保存" tip="切到其他窗口时也会保存" />
@@ -82,9 +87,24 @@ export const SaveSettingsPanel: React.FC<{
       <Toggle on={s.banner} onChange={(banner) => onChange({ banner })} label="保存横幅" />
       <Toggle on={s.warnOnLeave} onChange={(warnOnLeave) => onChange({ warnOnLeave })} label="离开提醒" tip="有未保存修改时关闭页面前提醒" />
 
-      <button onClick={onSaveNow} className="mt-0.5 h-7 rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white text-[11px] font-medium">
+      <button
+        onClick={() => {
+          onSaveNow();
+          window.setTimeout(() => storageStatus().then(setUsage), 400);
+        }}
+        className="mt-0.5 h-7 rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white text-[11px] font-medium"
+      >
         立即保存
       </button>
+      {usage && (
+        <div
+          className="text-[10px] text-(--ui-faint) text-center"
+          data-tip={usage.persisted ? '浏览器已同意持久保存，空间紧张时也不会清掉存档' : '浏览器未授予持久存储，空间紧张时存档可能被清理'}
+        >
+          占用 {usage.usage < 1048576 ? `${Math.max(1, Math.round(usage.usage / 1024))} KB` : `${(usage.usage / 1048576).toFixed(1)} MB`}
+          {usage.persisted ? ' · 已持久化' : ''}
+        </div>
+      )}
     </div>
   );
 };

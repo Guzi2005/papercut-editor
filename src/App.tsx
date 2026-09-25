@@ -36,6 +36,7 @@ import {
 import {
   loadWorkspace,
   saveWorkspace,
+  storageStatus,
   serializeProject,
   parseProjectFile,
   pickFile,
@@ -72,6 +73,8 @@ interface DocumentItem {
 }
 
 const HISTORY_LIMIT = 60;
+/** Undo steps kept for documents in background tabs. */
+const INACTIVE_HISTORY = 20;
 
 function firstLayerId(p: PapercutProject): string {
   const ids = flattenLayerIds(p);
@@ -191,6 +194,7 @@ export default function App() {
         setActiveDocId(docs.some((d) => d.id === snap.activeDocId) ? snap.activeDocId : docs[0].id);
       }
       setHydrated(true);
+      storageStatus();
     });
     return () => {
       cancelled = true;
@@ -246,7 +250,14 @@ export default function App() {
     lastSeen.current = { documents, activeDocId };
     // The restore itself is not an edit; a settings change only reschedules pending work.
     if (!prev) return;
-    if (prev.documents !== documents || prev.activeDocId !== activeDocId) {
+    const changed =
+      prev.activeDocId !== activeDocId ||
+      prev.documents.length !== documents.length ||
+      documents.some((d, i) => {
+        const o = prev.documents[i];
+        return !o || o.id !== d.id || o.project !== d.project || o.name !== d.name || o.zoom !== d.zoom || o.activeLayerId !== d.activeLayerId;
+      });
+    if (changed) {
       dirtyRef.current = true;
       setSaveStatus('dirty');
     }
@@ -308,6 +319,17 @@ export default function App() {
 
   useEffect(() => {
     setSelectedLayerIds([]);
+    // Background tabs keep only their most recent undo steps.
+    setDocuments((prev) => {
+      let changed = false;
+      const next = prev.map((d) => {
+        if (d.id === activeDocId || d.history.length <= INACTIVE_HISTORY) return d;
+        changed = true;
+        const start = Math.max(0, Math.min(d.historyIndex - INACTIVE_HISTORY + 1, d.history.length - INACTIVE_HISTORY));
+        return { ...d, history: d.history.slice(start, start + INACTIVE_HISTORY), historyIndex: d.historyIndex - start };
+      });
+      return changed ? next : prev;
+    });
   }, [activeDocId]);
 
   // Drop selection entries that no longer exist (after undo/delete)
