@@ -1041,6 +1041,7 @@ export default function App() {
     name: d.name,
     width: d.project.width,
     height: d.project.height,
+    project: d.project,
   }));
 
   return (

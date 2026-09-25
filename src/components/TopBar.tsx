@@ -42,6 +42,7 @@ import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { CanvasBackground, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 import { CanvasBgPanel } from './CanvasBgPanel';
+import { DocThumbnail } from './DocThumbnail';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
 import { SaveSettingsPanel } from './SaveSettingsPanel';
@@ -81,6 +82,7 @@ export interface DocumentTabItem {
   name: string;
   width: number;
   height: number;
+  project: PapercutProject;
 }
 
 interface TopBarProps {
@@ -173,6 +175,19 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [settingsFlyout, setSettingsFlyout] = useState<'mode' | 'save' | null>(null);
   const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
+  const [thumb, setThumb] = useState<{ id: string; x: number; y: number } | null>(null);
+  const thumbTimer = useRef<number | undefined>(undefined);
+  const showThumbSoon = (id: string, el: HTMLElement) => {
+    window.clearTimeout(thumbTimer.current);
+    thumbTimer.current = window.setTimeout(() => {
+      const r = el.getBoundingClientRect();
+      setThumb({ id, x: r.left, y: r.bottom + 6 });
+    }, 450);
+  };
+  const hideThumb = () => {
+    window.clearTimeout(thumbTimer.current);
+    setThumb(null);
+  };
   const zoomBoxRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -605,7 +620,12 @@ export const TopBar: React.FC<TopBarProps> = ({
           return (
             <div
               key={doc.id}
-              onClick={() => onSelectDocument(doc.id)}
+              onClick={() => {
+                hideThumb();
+                onSelectDocument(doc.id);
+              }}
+              onPointerEnter={(e) => e.pointerType === 'mouse' && !isEditing && showThumbSoon(doc.id, e.currentTarget)}
+              onPointerLeave={hideThumb}
               style={{ borderTopColor: color, boxShadow: isActive ? `inset 0 2px 0 ${color}` : undefined }}
               className={`h-8.5 px-3 flex items-center gap-1.5 rounded-t-lg cursor-pointer transition-all border-t-2 text-xs shrink-0 select-none group relative ${
                 isActive
@@ -931,6 +951,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
       )}
+      {thumb && (() => {
+        const doc = documents.find((d) => d.id === thumb.id);
+        return doc ? <DocThumbnail project={doc.project} name={doc.name} x={thumb.x} y={thumb.y} /> : null;
+      })()}
     </header>
   );
 };
