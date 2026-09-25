@@ -238,6 +238,13 @@ export default function App() {
   const canUndo = activeDoc.historyIndex > 0;
   const canRedo = activeDoc.historyIndex < activeDoc.history.length - 1;
 
+  const changeBrushColor = (hex: string, commit = true) => {
+    setBrushSettings((prev) => ({ ...prev, brushColor: hex }));
+    if (commit) {
+      setRecentBrushColors((prev) => [hex, ...prev.filter((c) => c.toLowerCase() !== hex.toLowerCase())].slice(0, 12));
+    }
+  };
+
   const handleUndo = useCallback(() => {
     if (canUndo) playHistory(false);
     setDocuments((prevDocs) =>
@@ -978,10 +985,7 @@ export default function App() {
           pressure={brushSettings.pressure}
           onTogglePressure={() => setBrushSettings((prev) => ({ ...prev, pressure: !prev.pressure }))}
           brushColor={brushSettings.brushColor}
-          onChangeBrushColor={(hex) => {
-            setBrushSettings((prev) => ({ ...prev, brushColor: hex }));
-            setRecentBrushColors((prev) => [hex, ...prev.filter((c) => c.toLowerCase() !== hex.toLowerCase())].slice(0, 6));
-          }}
+          onChangeBrushColor={changeBrushColor}
           recentBrushColors={recentBrushColors}
           keymap={keymap}
         />
@@ -1037,6 +1041,9 @@ export default function App() {
           onSelectLayer={handlePanelSelectLayer}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
+          brushColor={brushSettings.brushColor}
+          recentColors={recentBrushColors}
+          onChangeBrushColor={changeBrushColor}
           onDeleteLayer={handleDeleteLayer}
           onDuplicateLayer={handleDuplicateLayer}
           onInvertLayerCutouts={handleInvertLayerCutouts}

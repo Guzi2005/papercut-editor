@@ -13,7 +13,6 @@ import {
   PatternType,
   ShadowBlend,
 } from '../types/papercut';
-import { FOLK_PALETTE } from '../utils/presetTemplates';
 import { getPathBoundingBox } from '../utils/bezierMath';
 import { renderLayerMarkup, projectShadowOptions, SHADOW_BLENDS } from '../utils/layerSvg';
 import { computeDepthTable, findGroupOfLayer, findItemOfLayer } from '../utils/projectOps';
@@ -55,6 +54,8 @@ import {
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
+import { ColorStudio } from './ColorStudio';
+import { isLight, layerColors, normalizeHex, projectColors } from '../utils/color';
 
 interface LayersPanelProps {
   project: PapercutProject;
@@ -84,7 +85,14 @@ interface LayersPanelProps {
   onAddSocket: (itemId: string) => void;
   onUpdateProject: (updates: Partial<PapercutProject>) => void;
   onImportReference: () => void;
+  brushColor: string;
+  recentColors: string[];
+  onChangeBrushColor: (hex: string, commit?: boolean) => void;
 }
+
+const WIDTH_KEY = 'weave.panelWidth';
+const MIN_W = 240;
+const maxWidth = () => Math.max(MIN_W, Math.min(640, Math.round(window.innerWidth * 0.5)));
 
 type PanelTab = 'depth' | 'items' | 'style';
 
@@ -151,7 +159,39 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onAddSocket,
   onUpdateProject,
   onImportReference,
+  brushColor,
+  recentColors,
+  onChangeBrushColor,
 }) => {
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    return saved ? Math.min(maxWidth(), Math.max(MIN_W, saved)) : 288;
+  });
+  const [resizing, setResizing] = useState(false);
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const x0 = e.clientX;
+    const w0 = width;
+    setResizing(true);
+    let w = w0;
+    const move = (ev: PointerEvent) => {
+      w = Math.min(maxWidth(), Math.max(MIN_W, w0 + (x0 - ev.clientX)));
+      setWidth(w);
+    };
+    const up = () => {
+      setResizing(false);
+      localStorage.setItem(WIDTH_KEY, String(w));
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
   const { layers, groups, rootOrder } = project;
   const items = project.items || [];
   const [tab, setTab] = useState<PanelTab>('depth');
@@ -161,8 +201,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [dragging, setDragging] = useState<{ kind: 'layer' | 'root'; id: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; position: 'above' | 'below' | 'into' } | null>(null);
-  const [editingColorHex, setEditingColorHex] = useState<string | null>(null);
-  const [editingColorNote, setEditingColorNote] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
@@ -317,8 +355,23 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               {layer.name}
             </div>
           )}
+          <div className="flex flex-wrap gap-[3px] mt-1">
+            {layerColors(layer).map((c) => (
+              <button
+                key={c}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChangeBrushColor(c);
+                }}
+                data-tip={`${c} · 单击拾色`}
+                className={`w-2.5 h-2.5 rounded-[2px] border hover:scale-125 transition-transform ${isLight(c) ? 'border-black/20' : 'border-white/25'} ${
+                  c === normalizeHex(brushColor) ? 'ring-1 ring-(--ui-accent) ring-offset-1 ring-offset-(--ui-panel)' : ''
+                }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
           <div className="flex items-center gap-1.5 text-[9px] text-(--ui-faint) mt-0.5 whitespace-nowrap overflow-hidden">
-            <span className="w-2 h-2 rounded-sm border border-white/30" style={{ backgroundColor: layer.color }} />
             <span className="font-mono">z {zOf[layer.id] ?? '-'}</span>
             {scope === 'depth' && item && (
               <span className="flex items-center gap-0.5 text-(--ui-accent-2) truncate">
@@ -664,51 +717,22 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   // ---------- Style tab ----------
   const ref = project.reference;
+  const documentColors = useMemo(() => (tab === 'style' ? projectColors(project) : []), [project, tab]);
   const styleTab = (
     <div className="space-y-3">
-      <div>
-        <div className="grid grid-cols-8 gap-1.5" data-tip="单击给当前纸片上色 · 双击改备注">
-          {FOLK_PALETTE.map((c) => {
-            const isCurrent = activeLayer?.color.toLowerCase() === c.hex.toLowerCase();
-            const displayName = colorNotes[c.hex.toLowerCase()] || c.name;
-            const light = parseInt(c.hex.slice(1, 3), 16) * 0.3 + parseInt(c.hex.slice(3, 5), 16) * 0.59 + parseInt(c.hex.slice(5, 7), 16) * 0.11 > 170;
-            return (
-              <div key={c.hex} className="relative">
-                <button
-                  onClick={() => activeLayer && onUpdateLayer(activeLayer.id, { color: c.hex })}
-                  onDoubleClick={() => {
-                    setEditingColorHex(c.hex);
-                    setEditingColorNote(displayName);
-                  }}
-                  data-tip={`${displayName} ${c.hex}`}
-                  className={`w-full aspect-square rounded-full transition-all border ${light ? 'border-black/15' : 'border-white/15'} ${
-                    isCurrent ? 'ring-2 ring-(--ui-accent) scale-105 z-10' : 'hover:scale-110'
-                  }`}
-                  style={{ backgroundColor: c.hex }}
-                />
-                {editingColorHex === c.hex && (
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 bg-(--ui-panel) border border-(--ui-accent) rounded-lg p-1 shadow-2xl flex items-center gap-1 min-w-[130px]">
-                    <input
-                      type="text"
-                      value={editingColorNote}
-                      autoFocus
-                      onChange={(e) => setEditingColorNote(e.target.value)}
-                      onBlur={() => {
-                        if (editingColorNote.trim()) onUpdateColorNote?.(c.hex, editingColorNote.trim());
-                        setEditingColorHex(null);
-                      }}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                      className="px-2 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[10px] rounded outline-none w-full border border-(--ui-border)"
-                    />
-                    <Check className="w-3 h-3 text-(--ui-accent)" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <ColorStudio
+        color={brushColor}
+        onChange={onChangeBrushColor}
+        recent={recentColors}
+        documentColors={documentColors}
+        paperColor={activeLayer?.color}
+        onApplyToPaper={activeLayer && activeLayer.kind !== 'doodle' ? (hex) => onUpdateLayer(activeLayer.id, { color: hex }) : undefined}
+        colorNotes={colorNotes}
+        onUpdateColorNote={onUpdateColorNote}
+        width={width}
+      />
 
+      <div className="pt-2 border-t border-(--ui-divider) text-[10px] text-(--ui-muted)">投影与参考图</div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <WheelNumber
           tip="投影强度"
@@ -932,7 +956,22 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   };
 
   return (
-    <aside className="w-64 xl:w-72 2xl:w-80 h-full flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative">
+    <aside
+      style={{ width }}
+      className="h-full flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative"
+    >
+      <div
+        onPointerDown={startResize}
+        onDoubleClick={() => {
+          setWidth(288);
+          localStorage.setItem(WIDTH_KEY, '288');
+        }}
+        data-tip="拖动调节宽度 · 双击复原"
+        data-tip-side="left"
+        className={`absolute -left-1 top-0 bottom-0 w-2 z-30 cursor-col-resize touch-none transition-colors ${
+          resizing ? 'bg-(--ui-accent)/60' : 'hover:bg-(--ui-accent)/35'
+        }`}
+      />
       <div className="h-11 px-2 border-b border-(--ui-divider) flex items-center gap-1">
         {([
           { id: 'depth', label: '深度', icon: LayersIcon },
@@ -1001,6 +1040,20 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="flex gap-0.5 px-1.5 pt-0.5 pb-1.5 mb-1 border-b border-(--ui-border)">
+              {layerColors(ctxLayer).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    onChangeBrushColor(c);
+                    setContextMenu(null);
+                  }}
+                  data-tip={`${c} · 拾色`}
+                  className={`flex-1 min-w-0 h-6 first:rounded-l-md last:rounded-r-md border ${isLight(c) ? 'border-black/15' : 'border-white/10'} hover:scale-y-125 transition-transform`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
             {[
               { label: '重命名', icon: Edit2, run: () => startRename('layer', ctxLayer.id, ctxLayer.name) },
               { label: '复制纸片', icon: Copy, run: () => onDuplicateLayer(ctxLayer.id) },
