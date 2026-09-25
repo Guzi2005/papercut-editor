@@ -4,7 +4,7 @@
  */
 
 import { Layer, Point } from '../types/papercut';
-import { paperSequence, splitSubpaths } from './layerSvg';
+import { BASE_BLOCK, paperSequence, splitSubpaths } from './layerSvg';
 
 interface Piece {
   path: Path2D;
@@ -121,4 +121,31 @@ export function classifyCarve(layer: Layer, shapeD: string, strokePts: Point[], 
   if (off === 0) return 'hole';
   if (on === 0) return 'applique';
   return paperAt(layer, start.x, start.y) ? 'applique' : 'hole';
+}
+
+function strokeContains(d: string, width: number, x: number, y: number): boolean {
+  const c = context();
+  c.lineWidth = Math.max(1, width);
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  return pieces(d).some(({ path }) => c.isPointInStroke(path, x, y));
+}
+
+/**
+ * The block of a layer that shows at a point: brush strokes on top, then the most recent paper
+ * piece covering it (a hole there means the layer shows nothing), then the base sheet.
+ */
+export function topBlockAt(layer: Layer, x: number, y: number): string | null {
+  const drawings = layer.drawings || [];
+  for (let i = drawings.length - 1; i >= 0; i--) {
+    const d = drawings[i];
+    const hit = d.fill ? pathContains(d.d, x, y) : strokeContains(d.d, d.strokeWidth, x, y);
+    if (hit && (layer.kind === 'doodle' || paperAt(layer, x, y))) return d.id;
+  }
+  if (layer.kind === 'doodle') return null;
+  const seq = paperSequence(layer);
+  for (let i = seq.length - 1; i >= 0; i--) {
+    if (pathContains(seq[i].d, x, y)) return seq[i].isHole ? null : seq[i].id;
+  }
+  return pathContains(layer.baseShape?.d || '', x, y) ? BASE_BLOCK : null;
 }

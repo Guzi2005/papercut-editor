@@ -4,10 +4,11 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { Box, Lasso, PaintBucket, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
+import { Box, Lasso, PaintBucket, Pipette, CircleDashed, Eraser, Group, Layers, Link2, MousePointerClick, Slice, Unlink2 } from 'lucide-react';
 import { BrushSettings, ToolType } from '../types/papercut';
 import { DRAW_BRUSHES, GEOM_SHAPES, Glyph, KNIFE_TIPS } from './ToolOptions';
 import { TOOLS } from './Toolbar';
+import type { PointInfo } from './Canvas';
 import { playCrispClick } from '../utils/soundEffects';
 
 interface Entry {
@@ -33,6 +34,11 @@ interface ToolQuickMenuProps {
   selectedCount: number;
   onCreateItemFromSelection: () => void;
   onClose: () => void;
+  /** Present when summoned on the canvas: pick the colour there or a layer covering the point. */
+  here?: PointInfo;
+  onPickColor?: (hex: string) => void;
+  onPickLayer?: (layerId: string) => void;
+  activeLayerId?: string | null;
 }
 
 const shortLabel = (tip: string) => tip.split(/[：·]/)[0].trim();
@@ -51,6 +57,10 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
   selectedCount,
   onCreateItemFromSelection,
   onClose,
+  here,
+  onPickColor,
+  onPickLayer,
+  activeLayerId,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -176,6 +186,45 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
           </button>
         ))}
       </div>
+      {here && (here.color || here.layers.length > 0) && (
+        <div className="mb-1 pb-1 border-b border-(--ui-divider)">
+          {here.color && (
+            <button
+              onClick={() => {
+                playCrispClick();
+                onPickColor?.(here.color!);
+                onClose();
+              }}
+              className="w-full px-3 h-7 flex items-center gap-2 text-left hover:bg-(--ui-hover) hover:text-(--ui-strong)"
+            >
+              <Pipette className="w-3.5 h-3.5 text-(--ui-muted)" />
+              <span className="flex-1">取色</span>
+              <span className="w-3.5 h-3.5 rounded-[4px] border border-white/30" style={{ backgroundColor: here.color }} />
+              <span className="font-mono text-[10px] text-(--ui-muted)">{here.color.toUpperCase()}</span>
+            </button>
+          )}
+          {here.layers.length > 0 && <div className="px-3 pt-0.5 pb-0.5 text-[10px] text-(--ui-faint)">此处的图层</div>}
+          <div className="max-h-44 overflow-y-auto">
+            {here.layers.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => {
+                  playCrispClick();
+                  onPickLayer?.(l.id);
+                  onClose();
+                }}
+                className={`w-full px-3 h-7 flex items-center gap-2 text-left transition-colors ${
+                  l.id === activeLayerId ? 'text-(--ui-strong) bg-(--ui-accent)/20' : 'hover:bg-(--ui-hover) hover:text-(--ui-strong)'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-[3px] border border-white/30 shrink-0" style={{ backgroundColor: l.color }} />
+                <span className="flex-1 truncate">{l.name}</span>
+                {l.id === activeLayerId && <span className="w-1.5 h-1.5 rounded-full bg-(--ui-accent-2)" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {sections.length === 0 && <div className="px-3 py-1.5 text-[11px] text-(--ui-faint)">这个工具没有可切换的选项</div>}
       {sections.map((sec, i) => (
         <div key={i} className={i > 0 ? 'mt-1 pt-1 border-t border-(--ui-divider)' : ''}>

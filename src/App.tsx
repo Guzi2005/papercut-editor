@@ -45,7 +45,7 @@ import { WorkbenchSkin, skinVariables, loadSkin, saveSkin } from './utils/skins'
 import { useMediaQuery, COMPACT_QUERY } from './hooks/useMediaQuery';
 import { Toolbar } from './components/Toolbar';
 import { ToolOptions } from './components/ToolOptions';
-import { Canvas, SelectionScope } from './components/Canvas';
+import { Canvas, SelectionScope, PointInfo } from './components/Canvas';
 import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
 import { GodotExportModal } from './components/GodotExportModal';
@@ -108,7 +108,7 @@ export default function App() {
   // Selection (not persisted)
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [selectionScope, setSelectionScope] = useState<SelectionScope>('item');
-  const [toolMenu, setToolMenu] = useState<{ x: number; y: number } | null>(null);
+  const [toolMenu, setToolMenu] = useState<{ x: number; y: number; here?: PointInfo } | null>(null);
   const [flashItem, setFlashItem] = useState<{ id: string; key: number } | null>(null);
   const closeToolMenu = useCallback(() => setToolMenu(null), []);
 
@@ -1162,7 +1162,7 @@ export default function App() {
             onUndo={handleUndo}
             onRedo={handleRedo}
             fitSignal={fitSignal}
-            onOpenToolMenu={(x, y) => setToolMenu({ x, y })}
+            onOpenToolMenu={(x, y, here) => setToolMenu({ x, y, here })}
             flashItem={flashItem}
           />
           {toolMenu && (
@@ -1178,6 +1178,10 @@ export default function App() {
               selectedCount={selectedLayerIds.length}
               onCreateItemFromSelection={handleCreateItem}
               onClose={closeToolMenu}
+              here={toolMenu.here}
+              onPickColor={changeBrushColor}
+              onPickLayer={handlePanelSelectLayer}
+              activeLayerId={activeLayerId}
             />
           )}
 

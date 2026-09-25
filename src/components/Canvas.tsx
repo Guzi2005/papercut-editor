@@ -33,7 +33,7 @@ import {
   StrokeSound,
 } from '../utils/soundEffects';
 import { renderLayerMarkup, projectShadowOptions, BASE_BLOCK } from '../utils/layerSvg';
-import { classifyCarve, pathContains, paperAt } from '../utils/paperHit';
+import { classifyCarve, pathContains, paperAt, topBlockAt } from '../utils/paperHit';
 import { generateKnifeCut, knifeCursorPath } from '../utils/knifeBrush';
 import { generateWillowShape, pullString, stabilizerRadius } from '../utils/willowShape';
 import {
@@ -71,6 +71,12 @@ import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath'
 
 export type SelectionScope = 'part' | 'item' | 'color';
 
+/** What lies under a canvas point: the colour showing there and every layer covering it, top first. */
+export interface PointInfo {
+  color: string | null;
+  layers: { id: string; name: string; color: string }[];
+}
+
 interface CanvasProps {
   project: PapercutProject;
   activeLayerId: string | null;
@@ -101,7 +107,7 @@ interface CanvasProps {
   fitSignal?: number;
   keymap: Keymap;
   /** Right click without dragging: the current tool's quick menu at the pointer. */
-  onOpenToolMenu?: (x: number, y: number) => void;
+  onOpenToolMenu?: (x: number, y: number, here?: PointInfo) => void;
   /** Bumped when an item is picked from the items tab: flash it and point at its pivot. */
   flashItem?: { id: string; key: number } | null;
 }
@@ -1631,6 +1637,20 @@ export const Canvas: React.FC<CanvasProps> = ({
     return '';
   };
 
+  const pointInfo = (pt: Point): PointInfo => {
+    const layers: PointInfo['layers'] = [];
+    let color: string | null = null;
+    for (let i = renderLayerOrder.length - 1; i >= 0; i--) {
+      const layer = renderLayerOrder[i];
+      const block = topBlockAt(layer, pt.x, pt.y);
+      if (!block) continue;
+      const c = blockColor(layer, block) ?? layer.color;
+      if (!color) color = c;
+      layers.push({ id: layer.id, name: layer.name, color: c });
+    }
+    return { color, layers };
+  };
+
   const renderLayerOrder: Layer[] = flattenLayerIds(project)
     .filter((id) => isLayerRendered(project, id))
     .map((id) => project.layers[id]);
@@ -1698,7 +1718,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         const d = rightDownRef.current;
         rightDownRef.current = null;
         if (e.button === 2 && d && !isDrawing && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) {
-          onOpenToolMenu?.(e.clientX, e.clientY);
+          onOpenToolMenu?.(e.clientX, e.clientY, pointInfo(clientToCanvas(e.clientX, e.clientY)));
         }
       }}
       onContextMenu={(e) => e.preventDefault()}
