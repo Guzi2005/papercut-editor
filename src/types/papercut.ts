@@ -1,0 +1,180 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export interface Point {
+  x: number;
+  y: number;
+  pressure?: number;
+}
+
+export type CutoutType =
+  | 'willow_leaf'
+  | 'crescent'
+  | 'comb_ribbon'
+  | 'teardrop'
+  | 'diamond'
+  | 'freehand'
+  | 'pen_knife'
+  | 'geom_shape'
+  | 'stamp'
+  | 'custom_polygon';
+
+export interface CutoutPath {
+  id: string;
+  name: string;
+  type: CutoutType;
+  d: string; // SVG path data (e.g. M ... C ... Z)
+  isHole: boolean; // true = 镂空 (cut hole in paper), false = 贴纸 (additive paper applique)
+  strokeWidth?: number;
+  fillColor?: string; // used if positive element
+  createdAt: number;
+  points?: Point[]; // Anchor / vertex points for editing
+  geomType?: GeomShapeType; // If geom_shape: rect, circle, triangle, star, diamond
+}
+
+export type BaseShapeType =
+  | 'full'
+  | 'rect'
+  | 'rounded_rect'
+  | 'circle'
+  | 'arch'
+  | 'polygon'
+  | 'freeform';
+
+export interface BaseShape {
+  type: BaseShapeType;
+  d: string; // SVG path for outer paper boundary
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  radius?: number;
+}
+
+export type PaperTextureType = 'xuan' | 'rough' | 'smooth' | 'speckle';
+
+export type KnifeTipShape = 'round' | 'flat' | 'chisel' | 'slash';
+export type DrawBrushType = 'pencil' | 'pen' | 'airbrush';
+export type PencilHardness = 1 | 2 | 3 | 4 | 5;
+
+export interface LayerDrawStroke {
+  id: string;
+  brushType: DrawBrushType;
+  d: string;
+  color: string;
+  opacity: number;
+  strokeWidth: number;
+  strokeLinecap?: 'round' | 'square' | 'butt';
+  strokeLinejoin?: 'round' | 'miter' | 'bevel';
+  pencilHardness?: PencilHardness;
+  blur?: number; // for airbrush
+}
+
+export interface Layer {
+  id: string;
+  name: string;
+  color: string; // Hex color code
+  texture: PaperTextureType;
+  opacity: number; // 0 to 1
+  blendMode: 'normal' | 'multiply' | 'screen' | 'overlay';
+  visible: boolean;
+  locked: boolean;
+  baseShape: BaseShape;
+  cutouts: CutoutPath[];
+  positiveElements: CutoutPath[];
+  drawings?: LayerDrawStroke[]; // 手绘线条笔迹 (附属于此剪纸图层蒙版)
+}
+
+export interface LayerGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  visible: boolean;
+  locked: boolean;
+  layerIds: string[];
+}
+
+export type RootItem =
+  | { type: 'group'; id: string }
+  | { type: 'layer'; id: string };
+
+export type GeomShapeType =
+  | 'rect'
+  | 'circle'
+  | 'triangle'
+  | 'star'
+  | 'diamond'
+  | 'polyline';
+
+export type ToolType =
+  | 'willow_leaf' // 柳叶笔 (零直径实时流线，HiPaint/画世界)
+  | 'geom_shape' // 基本几何形 (矩形/圆/三角/五角星/菱形)
+  | 'pen_knife' // 笔刀 (原自由手绘刻刀，支持压感、不同笔尖形状选择)
+  | 'freehand' // 别名兼容
+  | 'hand_draw' // 手绘 (铅笔/钢笔/喷枪，附属于剪纸图层蒙版)
+  | 'anchor_edit'; // 锚点调整 (自由拖动顶点变形)
+
+export type SymmetryMode =
+  | 'none'
+  | 'mirror_v' // 左右对折
+  | 'mirror_h' // 上下对折
+  | 'quad' // 四方对折
+  | 'radial_6' // 六折团花
+  | 'radial_8'; // 八折团花
+
+export type ViewMode =
+  | 'realistic' // 赛博剪纸物理质感 (纸层落影、刀痕浮雕、宣纸纹理)
+  | 'vector' // 纯净矢量 (精准1:1平面无光影)
+  | 'backlit'; // 窗花夜透光 (明亮背光透出镂空图案)
+
+export type BackgroundStyle =
+  | 'ebony' // 乌木刻台
+  | 'bamboo_mat' // 传统墨绿刻垫
+  | 'lattice' // 冰裂纹木窗
+  | 'clean_white' // 纯白极简
+  | 'rice_paper'; // 宣纸衬底
+
+export interface BrushSettings {
+  willowMode: 'chord' | 'symmetric'; // 柳叶笔成型：单弧连弦成叶 (画世界/HiPaint) vs 对称双弧
+  stabilizer: number; // 平滑防抖 (0, 0.55, 0.8)
+  simplifyTolerance: number; // 道格拉斯-普克曲线净化 (0, 2.5, 4.5, 7.5)
+  curvature: number; // 弯曲偏度
+  geomShapeType: GeomShapeType; // 选中的基本几何形
+  combSpacing: number; // 梳齿间距 (10, 16, 24)
+  combToothAngle: number; // 齿角偏度
+  stampSize: number; // 笔刀尺寸预设 (16, 26, 40)
+  mode: 'cutout' | 'positive' | 'erase'; // 刻纸 vs 贴花 vs 剪除
+  eraseMode?: 'smart' | 'willow'; // 剪除子模式：智能橡皮 vs 柳叶笔橡皮
+
+  // 星型可调属性 (Star Shape Settings)
+  starPoints?: number; // 角的个数 (3 ~ 16)
+  starRoundness?: number; // 圆角程度 (0 ~ 25)
+  starIrregularity?: number; // 不规则程度 (0 ~ 100)
+
+  // 笔刀 (Pen knife)
+  knifePressure: boolean; // 压感开关
+  knifeTipShape: KnifeTipShape; // 笔尖形状选择: 'round' | 'flat' | 'chisel' | 'slash'
+
+  // 手绘 (Hand draw)
+  drawBrushType: DrawBrushType; // 'pencil' | 'pen' | 'airbrush'
+  drawPressure: boolean; // 压感开关
+  drawOpacity: number; // 不透明度 (0.1 ~ 1.0)
+  drawColor: string; // 颜色
+  drawSize: number; // 笔尖粗细大小
+  pencilHardness: PencilHardness; // 参考 SAI 铅笔软硬五档: 1 极软, 2 软, 3 中, 4 硬, 5 极硬
+  airbrushSoftness: number; // 喷枪晕染度 (5 ~ 30)
+}
+
+export interface PapercutProject {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  groups: LayerGroup[];
+  layers: Record<string, Layer>;
+  rootOrder: RootItem[];
+  backgroundColor: string;
+  backgroundStyle: BackgroundStyle;
+}

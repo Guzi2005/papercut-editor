@@ -1,0 +1,6 @@
+{
+  "name": "赛博剪纸 · 矢量剪纸工坊",
+  "description": "专为民俗与现代剪纸插画打造的Web创作工具，搭载特色柳叶笔与刻刀、实时镂空物理阴影预览、图层组与矢量SVG导出。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
