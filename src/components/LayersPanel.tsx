@@ -37,7 +37,6 @@ import {
   Image as ImageIcon,
   Anchor,
   X,
-  MousePointer2,
   FolderPlus,
   Droplet,
   Blend,
@@ -629,9 +628,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             key={item.id}
             className={`rounded-xl border overflow-hidden ${isSelectedItem ? 'border-(--ui-accent-2)' : 'border-(--ui-border)'} bg-(--ui-raised)`}
           >
-            <div className="flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover)">
+            <div
+              onClick={() => onSelectItem(item.id)}
+              data-tip="单击选中物件并显示锚点"
+              className="flex items-center gap-1.5 px-2 py-1.5 bg-(--ui-hover) cursor-pointer"
+            >
               <button
-                onClick={() => setExpandedItemIds((prev) => ({ ...prev, [item.id]: !expanded }))}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpandedItemIds((prev) => ({ ...prev, [item.id]: !expanded }));
+                }}
                 className="text-(--ui-muted)"
               >
                 {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -643,7 +649,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 ) : (
                   <span
                     className="text-[11px] font-semibold text-(--ui-strong) truncate block"
-                    onDoubleClick={() => startRename('item', item.id, item.name)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      startRename('item', item.id, item.name);
+                    }}
                     data-tip="双击重命名 (即 Godot 场景根节点名)"
                   >
                     {item.name}
@@ -652,14 +661,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               </div>
               <span className="text-[9px] text-(--ui-muted)">{item.partIds.length} 部件</span>
               <button
-                onClick={() => onSelectItem(item.id)}
-                className="p-0.5 rounded hover:bg-(--ui-panel) text-(--ui-muted) hover:text-(--ui-strong)"
-                data-tip="在画布上选中整个物件"
-              >
-                <MousePointer2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => onDeleteItem(item.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteItem(item.id);
+                }}
                 className="p-0.5 rounded hover:bg-red-950/60 text-(--ui-faint) hover:text-red-300"
                 data-tip="解散物件 (纸片保留)"
               >
