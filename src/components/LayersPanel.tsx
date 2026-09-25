@@ -1004,6 +1004,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         brushSettings={brushSettings}
         selectedLayerIds={selectedLayerIds}
         selectedItem={selectedItem}
+        brushColor={brushColor}
       />
 
       {contextMenu && ctxLayer && (
