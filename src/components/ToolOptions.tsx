@@ -30,6 +30,8 @@ import {
   Waves,
   Droplet,
   Sparkles,
+  Link2,
+  Unlink2,
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -200,6 +202,13 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
           </Segmented>
           <IconButton tip="把选中纸片打组为物件" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}>
             <Group className="w-3.5 h-3.5" />
+          </IconButton>
+          <IconButton
+            active={brushSettings.lockAspect ?? true}
+            tip={`${brushSettings.lockAspect ?? true ? '已锁定长宽比' : '长宽比未锁定'} · 按住 Shift 临时切换，按住 Ctrl 拖角/边自由变形`}
+            onClick={() => set({ lockAspect: !(brushSettings.lockAspect ?? true) })}
+          >
+            {brushSettings.lockAspect ?? true ? <Link2 className="w-3.5 h-3.5" /> : <Unlink2 className="w-3.5 h-3.5" />}
           </IconButton>
         </>
       )}

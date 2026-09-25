@@ -11,10 +11,9 @@ import {
   PapercutItem,
   PapercutProject,
   PatternType,
-  ShadowBlend,
 } from '../types/papercut';
 import { getPathBoundingBox } from '../utils/bezierMath';
-import { renderLayerMarkup, projectShadowOptions, SHADOW_BLENDS } from '../utils/layerSvg';
+import { renderLayerMarkup } from '../utils/layerSvg';
 import { computeDepthTable, findGroupOfLayer, findItemOfLayer } from '../utils/projectOps';
 import {
   Plus,
@@ -44,13 +43,11 @@ import {
   Grid3x3,
   RotateCw,
   Maximize,
-  Sun,
   ArrowUpDown,
   MoreHorizontal,
   ArrowUp,
   ArrowDown,
   Brush,
-  CloudFog,
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -732,42 +729,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         width={width}
       />
 
-      <div className="pt-2 border-t border-(--ui-divider) text-[10px] text-(--ui-muted)">投影与参考图</div>
+      <div className="pt-2 border-t border-(--ui-divider) text-[10px] text-(--ui-muted)">颗粒与参考图</div>
       <div className="flex items-center gap-1.5 flex-wrap">
-        <WheelNumber
-          tip="投影强度"
-          icon={<Sun className="w-3 h-3" />}
-          value={Math.round((project.shadowStrength ?? 0.5) * 100)}
-          min={0}
-          max={100}
-          step={5}
-          format={(v) => `${v}%`}
-          onChange={(v) => onUpdateProject({ shadowStrength: v / 100 })}
-        />
-        <WheelNumber
-          tip="投影软硬：0 硬边 · 100 柔和"
-          icon={<CloudFog className="w-3 h-3" />}
-          value={Math.round(projectShadowOptions(project).shadowSoftness * 100)}
-          min={0}
-          max={100}
-          step={5}
-          format={(v) => `${v}%`}
-          onChange={(v) => onUpdateProject({ shadowSoftness: v / 100 })}
-        />
-        <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="投影合成模式">
-          <Blend className="w-3 h-3" />
-          <select
-            value={project.shadowBlend ?? 'multiply'}
-            onChange={(e) => onUpdateProject({ shadowBlend: e.target.value as ShadowBlend })}
-            className="bg-transparent text-[11px] text-(--ui-strong) outline-none"
-          >
-            {SHADOW_BLENDS.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <button
           onClick={() => {
             const g = activeLayer?.grain ?? 0.35;

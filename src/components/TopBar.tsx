@@ -31,10 +31,16 @@ import {
   Layers as LayersGlyph,
   Volume2,
   VolumeX,
+  SlidersHorizontal,
+  Sun,
+  CloudFog,
+  Blend,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
-import { PaperMode } from '../types/papercut';
+import { PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
+import { SHADOW_BLENDS } from '../utils/layerSvg';
+import { WheelNumber } from './WheelNumber';
 import { ZOOM_STEP, WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
 
@@ -86,6 +92,8 @@ interface TopBarProps {
   onOpenGodotExport: () => void;
   paperMode: PaperMode;
   onChangePaperMode: (mode: PaperMode) => void;
+  shadow: { strength: number; softness: number; blend: ShadowBlend };
+  onChangeShadow: (patch: Partial<Pick<PapercutProject, 'shadowStrength' | 'shadowSoftness' | 'shadowBlend'>>) => void;
   compact: boolean;
   onOpenKeymap: () => void;
   panelOpen: boolean;
@@ -119,6 +127,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenGodotExport,
   paperMode,
   onChangePaperMode,
+  shadow,
+  onChangeShadow,
   compact,
   onOpenKeymap,
   panelOpen,
@@ -142,7 +152,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [settingsFlyout, setSettingsFlyout] = useState<'skin' | 'mode' | null>(null);
+  const [settingsFlyout, setSettingsFlyout] = useState<'mode' | null>(null);
   const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
   const zoomBoxRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
@@ -410,66 +420,101 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
 
           {showSettingsMenu && (
-            <div className="absolute left-0 top-full mt-1 w-44 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
-              {(
-                [
-                  { id: 'skin', label: '皮肤', icon: <Palette className="w-3.5 h-3.5 text-(--ui-accent-2)" /> },
-                  { id: 'mode', label: '剪贴模式', icon: <LayersGlyph className="w-3.5 h-3.5 text-(--ui-accent)" /> },
-                ] as const
-              ).map((entry) => (
-                <div
-                  key={entry.id}
-                  className="relative"
-                  onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout(entry.id)}
-                >
+            <div className="absolute left-0 top-full mt-1 w-52 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
+              <div className="px-3 pt-1.5 pb-2">
+                <div className="flex items-center gap-2 mb-1.5 text-(--ui-muted)">
+                  <Palette className="w-3.5 h-3.5 text-(--ui-accent-2)" />
+                  <span>皮肤</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {SKINS.map((sk) => {
+                    const c = sk.colors;
+                    return (
+                      <button
+                        key={sk.id}
+                        onClick={() => onSelectSkin?.(sk.id)}
+                        data-tip={sk.name}
+                        className={`w-7 h-7 rounded-full p-0.5 border-2 transition-colors ${
+                          currentSkin === sk.id ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
+                        }`}
+                      >
+                        <span className="block w-full h-full rounded-full" style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="relative px-3 pt-1 pb-2">
+                <div className="flex items-center gap-2 mb-1.5 text-(--ui-muted)">
+                  <LayersGlyph className="w-3.5 h-3.5 text-(--ui-accent)" />
+                  <span>剪贴模式</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {PAPER_MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => onChangePaperMode(m.id)}
+                      data-tip={m.tip}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
+                        paperMode === m.id ? 'border-(--ui-accent) bg-(--ui-hover)' : 'border-transparent hover:bg-(--ui-hover)'
+                      }`}
+                    >
+                      {m.icon}
+                    </button>
+                  ))}
                   <button
-                    onClick={() => setSettingsFlyout((v) => (v === entry.id ? null : entry.id))}
-                    className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
-                      settingsFlyout === entry.id ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-text-2) hover:bg-(--ui-hover)'
+                    onClick={() => setSettingsFlyout((v) => (v === 'mode' ? null : 'mode'))}
+                    onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('mode')}
+                    disabled={paperMode === 'vector'}
+                    data-tip={paperMode === 'vector' ? '平面矢量没有投影' : '投影参数'}
+                    className={`ml-auto h-8 px-1.5 rounded-lg flex items-center gap-0.5 transition-colors disabled:opacity-30 ${
+                      settingsFlyout === 'mode' ? 'bg-(--ui-hover) text-(--ui-strong)' : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
                     }`}
                   >
-                    {entry.icon}
-                    <span className="flex-1">{entry.label}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-(--ui-muted)" />
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <ChevronRight className="w-3 h-3" />
                   </button>
-                  {settingsFlyout === entry.id && (
-                    <div className="absolute left-full top-0 ml-1 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 flex gap-1.5">
-                      {entry.id === 'skin'
-                        ? SKINS.map((sk) => {
-                            const c = sk.colors;
-                            const isActive = currentSkin === sk.id;
-                            return (
-                              <button
-                                key={sk.id}
-                                onClick={() => onSelectSkin?.(sk.id)}
-                                data-tip={sk.name}
-                                className={`w-8 h-8 rounded-full p-0.5 border-2 transition-colors ${
-                                  isActive ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
-                                }`}
-                              >
-                                <span
-                                  className="block w-full h-full rounded-full"
-                                  style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }}
-                                />
-                              </button>
-                            );
-                          })
-                        : PAPER_MODES.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => onChangePaperMode(m.id)}
-                              data-tip={m.tip}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-colors ${
-                                paperMode === m.id ? 'border-(--ui-accent) bg-(--ui-hover)' : 'border-transparent hover:bg-(--ui-hover)'
-                              }`}
-                            >
-                              {m.icon}
-                            </button>
-                          ))}
-                    </div>
-                  )}
                 </div>
-              ))}
+                {settingsFlyout === 'mode' && paperMode !== 'vector' && (
+                  <div className="absolute left-full top-0 ml-1 w-44 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2 flex flex-col gap-1.5">
+                    <div className="text-[10px] text-(--ui-muted)">投影</div>
+                    <WheelNumber
+                      tip="投影强度"
+                      icon={<Sun className="w-3 h-3" />}
+                      value={Math.round(shadow.strength * 100)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      format={(v) => `${v}%`}
+                      onChange={(v) => onChangeShadow({ shadowStrength: v / 100 })}
+                    />
+                    <WheelNumber
+                      tip="投影软硬：0 硬边 · 100 柔和"
+                      icon={<CloudFog className="w-3 h-3" />}
+                      value={Math.round(shadow.softness * 100)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      format={(v) => `${v}%`}
+                      onChange={(v) => onChangeShadow({ shadowSoftness: v / 100 })}
+                    />
+                    <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="投影合成模式">
+                      <Blend className="w-3 h-3" />
+                      <select
+                        value={shadow.blend}
+                        onChange={(e) => onChangeShadow({ shadowBlend: e.target.value as ShadowBlend })}
+                        className="flex-1 bg-transparent text-[11px] text-(--ui-strong) outline-none"
+                      >
+                        {SHADOW_BLENDS.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </div>
               <div className="h-px bg-(--ui-divider) my-1" />
               <button
                 onPointerEnter={() => setSettingsFlyout(null)}

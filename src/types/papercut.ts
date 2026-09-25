@@ -208,6 +208,7 @@ export interface BrushSettings {
   starIrregularity?: number; // 不规则程度 (0 ~ 100)
 
   symmetry?: SymmetrySettings; // 对称：轴对称 / 中心对称
+  lockAspect?: boolean; // 选择工具缩放时锁定长宽比（默认锁定，Shift 临时切换）
   pressure: boolean; // 全局压感：笔刀切口宽度与手绘笔触粗细
   brushColor: string; // 全局画笔颜色：手绘笔触与贴花纸片
 

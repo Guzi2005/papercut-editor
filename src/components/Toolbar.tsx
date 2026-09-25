@@ -264,7 +264,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 }}
                 data-tip={`${label}${keyHint(MODE_ACTIONS[mode.id])} · ${mode.hint}${cutting ? '' : '（剪纸工具）'}`}
                 data-tip-side="right"
-                className={`relative w-11 h-8 flex items-center justify-center rounded-lg text-[10px] transition-all ${
+                className={`relative w-11 flex flex-col items-center justify-center gap-0.5 rounded-lg text-[10px] leading-none transition-all ${
+                  isActive ? 'h-12' : 'h-8'
+                } ${
                   isActive
                     ? cutting
                       ? 'bg-(--ui-accent-2) text-[#1B1626] font-semibold'
@@ -275,6 +277,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 }`}
               >
                 <Icon className="w-4 h-4" />
+                {isActive && <span className="font-semibold tracking-wide">{mode.label}</span>}
+                {isActive && isErase && <span className="text-[8px] opacity-75 -mt-px">{eraseMode === 'wipe' ? '一笔擦除' : '镂空'}</span>}
                 {isErase && <span className="absolute right-1 bottom-1 w-0 h-0 border-l-[4px] border-l-transparent border-b-[4px] border-b-current opacity-70" />}
               </button>
             );

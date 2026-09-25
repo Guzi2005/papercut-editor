@@ -39,18 +39,22 @@ import {
   Matrix,
   IDENTITY,
   translate,
-  scaleAbout,
   rotateAbout,
   matrixToSvg,
+  Transform,
+  isWarp,
+  applyTransform,
+  cornersTransform,
   applyToPoint,
 } from '../utils/pathTransform';
-import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds } from '../utils/projectOps';
+import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds, transformLayer } from '../utils/projectOps';
 import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
 import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
 import { splitSubpaths } from '../utils/layerSvg';
+import { ShortcutHints } from './ShortcutHints';
 
 export type SelectionScope = 'part' | 'item';
 
@@ -73,7 +77,7 @@ interface CanvasProps {
   selectedItem: PapercutItem | null;
   onSelectLayers: (layerIds: string[], activeLayerId?: string) => void;
   onPickLayer: (layerId: string) => void;
-  onTransformLayers: (layerIds: string[], m: Matrix) => void;
+  onTransformLayers: (layerIds: string[], m: Transform) => void;
   onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
   onDeleteLayers: (layerIds: string[]) => void;
   onUndo?: () => void;
@@ -90,9 +94,25 @@ interface BBox {
   height: number;
 }
 
+type Corner = 'nw' | 'ne' | 'se' | 'sw';
+type Side = 'n' | 'e' | 's' | 'w';
+const CORNERS: Corner[] = ['nw', 'ne', 'se', 'sw'];
+
+/** Box corners clockwise from top-left, matching CORNERS. */
+const boxCorners = (b: BBox): Point[] => [
+  { x: b.x, y: b.y },
+  { x: b.x + b.width, y: b.y },
+  { x: b.x + b.width, y: b.y + b.height },
+  { x: b.x, y: b.y + b.height },
+];
+
+const nonZero = (v: number) => (Math.abs(v) < 0.02 ? (v < 0 ? -0.02 : 0.02) : v);
+const scaleAboutXY = (sx: number, sy: number, ax: number, ay: number): Matrix => [sx, 0, 0, sy, ax - sx * ax, ay - sy * ay];
+
 type DragKind =
   | { kind: 'move' }
-  | { kind: 'scale'; anchor: Point; startDist: number }
+  | { kind: 'scale'; corner: Corner; box: BBox }
+  | { kind: 'edge'; side: Side; box: BBox }
   | { kind: 'rotate'; center: Point; startAngle: number }
   | { kind: 'pivot' }
   | { kind: 'socket'; socketId: string };
@@ -225,10 +245,11 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Select tool state: live preview matrix + pivot/socket drag positions
   const dragRef = useRef<DragState | null>(null);
-  const [previewMatrix, setPreviewMatrix] = useState<Matrix>(IDENTITY);
+  const [preview, setPreview] = useState<Transform>(IDENTITY);
   const [dragPoint, setDragPoint] = useState<Point | null>(null);
   const [isSelectDragging, setIsSelectDragging] = useState(false);
   const [selectionBBox, setSelectionBBox] = useState<BBox | null>(null);
+  const lockAspect = brushSettings.lockAspect ?? true;
   const [activeBBox, setActiveBBox] = useState<BBox | null>(null);
 
   const activeLayer = activeLayerId ? project.layers[activeLayerId] : null;
@@ -419,7 +440,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     setStartPoint(null);
     dragRef.current = null;
     setIsSelectDragging(false);
-    setPreviewMatrix(IDENTITY);
+    setPreview(IDENTITY);
     setDragPoint(null);
     setIsPanning(false);
     setActiveAnchorIndex(null);
@@ -653,7 +674,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const beginSelectDrag = (drag: DragKind, pt: Point, clickSelect?: DragState['clickSelect']) => {
     dragRef.current = { drag, start: pt, moved: false, clickSelect };
     setIsSelectDragging(true);
-    setPreviewMatrix(IDENTITY);
+    setPreview(IDENTITY);
     setDragPoint(null);
   };
 
@@ -663,15 +684,11 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     if (handle && box) {
       if (handle.startsWith('scale-')) {
-        const corner = handle.slice(6);
-        const anchor = {
-          x: corner.includes('w') ? box.x + box.width : box.x,
-          y: corner.includes('n') ? box.y + box.height : box.y,
-        };
-        beginSelectDrag(
-          { kind: 'scale', anchor, startDist: Math.max(1, Math.hypot(pt.x - anchor.x, pt.y - anchor.y)) },
-          pt
-        );
+        beginSelectDrag({ kind: 'scale', corner: handle.slice(6) as Corner, box }, pt);
+        return;
+      }
+      if (handle.startsWith('edge-')) {
+        beginSelectDrag({ kind: 'edge', side: handle.slice(5) as Side, box }, pt);
         return;
       }
       if (handle === 'rotate') {
@@ -728,25 +745,57 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   useEffect(() => {
     if (!isSelectDragging) return;
-    const computeMatrix = (st: DragState, pt: Point, shift: boolean): Matrix => {
+    // Corners and edges scale with the aspect ratio locked by default (Shift flips the lock);
+    // holding Ctrl frees them: a corner drags on its own (perspective), an edge slides whole.
+    const computeTransform = (st: DragState, pt: Point, shift: boolean, ctrl: boolean): Transform => {
       const d = st.drag;
+      const dx = pt.x - st.start.x;
+      const dy = pt.y - st.start.y;
       if (d.kind === 'move') {
-        let dx = pt.x - st.start.x;
-        let dy = pt.y - st.start.y;
-        if (shift) {
-          if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-          else dx = 0;
-        }
+        if (shift) return Math.abs(dx) > Math.abs(dy) ? translate(dx, 0) : translate(0, dy);
         return translate(dx, dy);
-      }
-      if (d.kind === 'scale') {
-        const s = Math.max(0.05, Math.hypot(pt.x - d.anchor.x, pt.y - d.anchor.y) / d.startDist);
-        return scaleAbout(s, d.anchor.x, d.anchor.y);
       }
       if (d.kind === 'rotate') {
         let a = Math.atan2(pt.y - d.center.y, pt.x - d.center.x) - d.startAngle;
         if (shift) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
         return rotateAbout(a, d.center.x, d.center.y);
+      }
+      const lock = lockAspect !== shift;
+      if (d.kind === 'scale') {
+        const src = boxCorners(d.box);
+        const i = CORNERS.indexOf(d.corner);
+        const c = src[i];
+        const anchor = src[(i + 2) % 4];
+        if (ctrl) {
+          const dst = src.map((p, k) => (k === i ? { x: p.x + dx, y: p.y + dy } : p));
+          return cornersTransform(src, dst) ?? IDENTITY;
+        }
+        const vx = c.x - anchor.x, vy = c.y - anchor.y;
+        if (lock) {
+          const t = nonZero(((pt.x - anchor.x) * vx + (pt.y - anchor.y) * vy) / Math.max(1e-6, vx * vx + vy * vy));
+          return scaleAboutXY(t, t, anchor.x, anchor.y);
+        }
+        return scaleAboutXY(nonZero((pt.x - anchor.x) / (vx || 1)), nonZero((pt.y - anchor.y) / (vy || 1)), anchor.x, anchor.y);
+      }
+      if (d.kind === 'edge') {
+        const src = boxCorners(d.box);
+        const moving = { n: [0, 1], e: [1, 2], s: [2, 3], w: [3, 0] }[d.side];
+        if (ctrl) {
+          const dst = src.map((p, k) => (moving.includes(k) ? { x: p.x + dx, y: p.y + dy } : p));
+          return cornersTransform(src, dst) ?? IDENTITY;
+        }
+        const b = d.box;
+        const vertical = d.side === 'n' || d.side === 's';
+        if (vertical) {
+          const edgeY = d.side === 'n' ? b.y : b.y + b.height;
+          const oppY = d.side === 'n' ? b.y + b.height : b.y;
+          const sy = nonZero((pt.y - oppY) / (edgeY - oppY || 1));
+          return scaleAboutXY(lock ? Math.abs(sy) : 1, sy, b.x + b.width / 2, oppY);
+        }
+        const edgeX = d.side === 'w' ? b.x : b.x + b.width;
+        const oppX = d.side === 'w' ? b.x + b.width : b.x;
+        const sx = nonZero((pt.x - oppX) / (edgeX - oppX || 1));
+        return scaleAboutXY(sx, lock ? Math.abs(sx) : 1, oppX, b.y + b.height / 2);
       }
       return IDENTITY;
     };
@@ -760,7 +809,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (st.drag.kind === 'pivot' || st.drag.kind === 'socket') {
         setDragPoint({ x: Math.round(pt.x), y: Math.round(pt.y) });
       } else {
-        setPreviewMatrix(computeMatrix(st, pt, e.shiftKey));
+        setPreview(computeTransform(st, pt, e.shiftKey, e.ctrlKey || e.metaKey));
       }
     };
 
@@ -770,7 +819,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       setIsSelectDragging(false);
       if (!st || !st.moved) {
         if (st?.clickSelect) onSelectLayers(st.clickSelect.ids, st.clickSelect.active);
-        setPreviewMatrix(IDENTITY);
+        setPreview(IDENTITY);
         setDragPoint(null);
         return;
       }
@@ -785,14 +834,14 @@ export const Canvas: React.FC<CanvasProps> = ({
           ),
         });
       } else {
-        const m = computeMatrix(st, pt, e.shiftKey);
+        const m = computeTransform(st, pt, e.shiftKey, e.ctrlKey || e.metaKey);
         const movable = selectedLayerIds.filter((id) => {
           const l = project.layers[id];
           return l && !l.locked && !findGroupOfLayer(project, id)?.locked;
         });
         if (movable.length > 0) onTransformLayers(movable, m);
       }
-      setPreviewMatrix(IDENTITY);
+      setPreview(IDENTITY);
       setDragPoint(null);
     };
 
@@ -802,7 +851,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem, onSelectLayers]);
+  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem, onSelectLayers, lockAspect]);
 
   // Mouse / Pointer Down handler
   const handleMouseDown = (e: React.PointerEvent) => {
@@ -1319,19 +1368,9 @@ export const Canvas: React.FC<CanvasProps> = ({
     .map((id) => project.layers[id]);
 
   const selectedSet = new Set(selectedLayerIds);
-  const previewTransform = previewMatrix === IDENTITY ? undefined : matrixToSvg(previewMatrix);
-  const liveBox = (() => {
-    if (!selectionBBox) return null;
-    if (previewMatrix === IDENTITY) return selectionBBox;
-    const b = selectionBBox;
-    const corners = [
-      { x: b.x, y: b.y },
-      { x: b.x + b.width, y: b.y },
-      { x: b.x, y: b.y + b.height },
-      { x: b.x + b.width, y: b.y + b.height },
-    ].map((p) => applyToPoint(previewMatrix, p));
-    return unionBBox(corners.map((p) => ({ x: p.x, y: p.y, width: 0, height: 0 })));
-  })();
+  const previewTransform = preview === IDENTITY || isWarp(preview) ? undefined : matrixToSvg(preview);
+  const liveCorners = selectionBBox && preview !== IDENTITY ? boxCorners(selectionBBox).map((p) => applyTransform(preview, p)) : null;
+  const liveBox = liveCorners ? unionBBox(liveCorners.map((p) => ({ x: p.x, y: p.y, width: 0, height: 0 }))) : selectionBBox;
 
   const ref = project.reference;
   const referenceNode =
@@ -1354,7 +1393,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     selectedItem &&
     (dragRef.current?.drag.kind === 'pivot' && dragPoint
       ? dragPoint
-      : applyToPoint(previewMatrix, selectedItem.pivot));
+      : applyTransform(preview, selectedItem.pivot));
 
   const cursorClass = isDraggingAnchor
     ? 'cursor-grabbing'
@@ -1435,7 +1474,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               {renderLayerOrder.map((layer) => (
                 <LayerMarkup
                   key={layer.id}
-                  layer={layer}
+                  layer={isWarp(preview) && selectedSet.has(layer.id) ? transformLayer(layer, preview) : layer}
                   shadowOpts={shadowOpts}
                   transform={selectedSet.has(layer.id) ? previewTransform : undefined}
                 />
@@ -1552,17 +1591,27 @@ export const Canvas: React.FC<CanvasProps> = ({
             {/* Select tool: bounding box + scale/rotate handles */}
             {currentTool === 'select' && liveBox && (
               <g>
-                <rect
-                  x={liveBox.x}
-                  y={liveBox.y}
-                  width={liveBox.width}
-                  height={liveBox.height}
-                  fill="none"
-                  stroke="#2652D0"
-                  strokeWidth={1.5 * hh}
-                  strokeDasharray={selectedItem ? undefined : `${6 * hh} ${4 * hh}`}
-                  pointerEvents="none"
-                />
+                {liveCorners ? (
+                  <polygon
+                    points={liveCorners.map((p) => `${p.x},${p.y}`).join(' ')}
+                    fill="none"
+                    stroke="#2652D0"
+                    strokeWidth={1.5 * hh}
+                    pointerEvents="none"
+                  />
+                ) : (
+                  <rect
+                    x={liveBox.x}
+                    y={liveBox.y}
+                    width={liveBox.width}
+                    height={liveBox.height}
+                    fill="none"
+                    stroke="#2652D0"
+                    strokeWidth={1.5 * hh}
+                    strokeDasharray={selectedItem ? undefined : `${6 * hh} ${4 * hh}`}
+                    pointerEvents="none"
+                  />
+                )}
                 {!isSelectDragging && (
                   <>
                     <line
@@ -1585,6 +1634,34 @@ export const Canvas: React.FC<CanvasProps> = ({
                       strokeWidth={2 * hh}
                       className="cursor-grab"
                     />
+                    {(['n', 's', 'e', 'w'] as const).map((side) => {
+                      const b = liveBox;
+                      const horiz = side === 'n' || side === 's';
+                      const x = side === 'e' ? b.x + b.width : b.x;
+                      const y = side === 's' ? b.y + b.height : b.y;
+                      const t = 8 * hh;
+                      return (
+                        <g key={side} data-handle={`edge-${side}`} pointerEvents="all" className={horiz ? 'cursor-ns-resize' : 'cursor-ew-resize'}>
+                          <rect
+                            x={horiz ? b.x : x - t / 2}
+                            y={horiz ? y - t / 2 : b.y}
+                            width={horiz ? b.width : t}
+                            height={horiz ? t : b.height}
+                            fill="transparent"
+                          />
+                          <rect
+                            x={horiz ? b.x + b.width / 2 - 7 * hh : x - 2.5 * hh}
+                            y={horiz ? y - 2.5 * hh : b.y + b.height / 2 - 7 * hh}
+                            width={(horiz ? 14 : 5) * hh}
+                            height={(horiz ? 5 : 14) * hh}
+                            rx={2.5 * hh}
+                            fill="#FBFBFC"
+                            stroke="#2652D0"
+                            strokeWidth={1.5 * hh}
+                          />
+                        </g>
+                      );
+                    })}
                     {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
                       <rect
                         key={corner}
@@ -1614,7 +1691,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     (dragRef.current.drag as { socketId: string }).socketId === s.id &&
                     dragPoint
                       ? dragPoint
-                      : applyToPoint(previewMatrix, s);
+                      : applyTransform(preview, s);
                   return (
                     <g key={s.id} data-handle={`socket:${s.id}`} pointerEvents="all" className="cursor-move">
                       <path
@@ -1749,6 +1826,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           </svg>
         </div>
       </div>
+
+      <ShortcutHints keymap={keymap} currentTool={currentTool} spaceHeld={isSpacePressed} />
 
       {/* HUD: 当前图层 / 物件 / 模式，永远知道笔落在哪 */}
       <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1.5 max-w-[60%]">

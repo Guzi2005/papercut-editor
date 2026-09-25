@@ -18,7 +18,7 @@ import {
 import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas } from './utils/presetTemplates';
 import { createBaseShapePath } from './utils/bezierMath';
 import { generateSvgMarkup, downloadFile, exportToPng } from './utils/svgExporter';
-import { Matrix, applyToPoint } from './utils/pathTransform';
+import { Transform, applyTransform } from './utils/pathTransform';
 import {
   newId,
   transformLayer,
@@ -50,6 +50,7 @@ import { KeymapModal } from './components/KeymapModal';
 import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeymap } from './utils/keymap';
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
 import { playHistory, playToolPick } from './utils/soundEffects';
+import { projectShadowOptions } from './utils/layerSvg';
 
 interface DocumentItem {
   id: string;
@@ -535,7 +536,7 @@ export default function App() {
   };
 
   const handleTransformLayers = useCallback(
-    (layerIds: string[], m: Matrix) => {
+    (layerIds: string[], m: Transform) => {
       const layers = { ...project.layers };
       layerIds.forEach((id) => {
         if (layers[id]) layers[id] = transformLayer(layers[id], m);
@@ -545,8 +546,8 @@ export default function App() {
         it.partIds.every((pid) => idSet.has(pid))
           ? {
               ...it,
-              pivot: applyToPoint(m, it.pivot),
-              sockets: it.sockets.map((s) => ({ ...s, ...applyToPoint(m, s) })),
+              pivot: applyTransform(m, it.pivot),
+              sockets: it.sockets.map((s) => ({ ...s, ...applyTransform(m, s) })),
             }
           : it
       );
@@ -947,6 +948,11 @@ export default function App() {
         panelOpen={panelOpen}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onChangePaperMode={(mode) => handleUpdateProject({ paperMode: mode })}
+        shadow={(() => {
+          const o = projectShadowOptions(project);
+          return { strength: o.shadow, softness: o.shadowSoftness, blend: o.shadowBlend };
+        })()}
+        onChangeShadow={handleUpdateProject}
         onQuickCopySvg={handleQuickCopySvg}
         onQuickDownloadSvg={handleQuickDownloadSvg}
         onQuickDownloadPng={handleQuickDownloadPng}

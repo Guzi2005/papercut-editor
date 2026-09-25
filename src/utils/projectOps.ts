@@ -4,19 +4,19 @@
  */
 
 import { Layer, PapercutItem, PapercutProject } from '../types/papercut';
-import { Matrix, applyToPoint, matrixScale, transformPathD } from './pathTransform';
+import { Transform, applyTransform, linearPart, matrixScale, transformPathD } from './pathTransform';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** Bakes an affine transform into every path of a layer. */
-export function transformLayer(layer: Layer, m: Matrix): Layer {
-  const s = matrixScale(m);
+/** Bakes an affine transform or warp into every path of a layer. */
+export function transformLayer(layer: Layer, m: Transform): Layer {
+  const s = matrixScale(linearPart(m));
   const tc = <T extends { d: string; points?: { x: number; y: number }[] }>(c: T): T => ({
     ...c,
     d: transformPathD(c.d, m),
-    points: c.points?.map((p) => applyToPoint(m, p)),
+    points: c.points?.map((p) => applyTransform(m, p)),
   });
   return {
     ...layer,
