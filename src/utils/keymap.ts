@@ -99,8 +99,8 @@ export const DEFAULT_KEYMAP: Keymap = {
   'file.save': ['Ctrl+S'],
   'file.open': ['Ctrl+O'],
   'file.new': ['Alt+N'],
-  'view.zoomIn': ['=', '+'],
-  'view.zoomOut': ['-'],
+  'view.zoomIn': ['Ctrl+=', 'Ctrl++', '=', '+'],
+  'view.zoomOut': ['Ctrl+-', '-'],
   'view.zoom100': ['0'],
   'view.fit': ['Shift+1', 'Ctrl+0'],
   'view.panHold': ['Space'],
@@ -113,10 +113,22 @@ export const DEFAULT_KEYMAP: Keymap = {
 
 const STORAGE_KEY = 'weave-keymap';
 
+/** Bindings added after keymaps could be saved; merged into saved maps unless already taken. */
+const LATER_DEFAULTS: [ActionId, string][] = [
+  ['view.zoomIn', 'Ctrl+='],
+  ['view.zoomIn', 'Ctrl++'],
+  ['view.zoomOut', 'Ctrl+-'],
+];
+
 export function loadKeymap(): Keymap {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as Partial<Keymap>;
-    return { ...DEFAULT_KEYMAP, ...saved };
+    const map: Keymap = { ...DEFAULT_KEYMAP, ...saved };
+    LATER_DEFAULTS.forEach(([action, combo]) => {
+      const taken = Object.values(map).some((list) => list.includes(combo));
+      if (!taken) map[action] = [combo, ...map[action]];
+    });
+    return map;
   } catch {
     return { ...DEFAULT_KEYMAP };
   }
