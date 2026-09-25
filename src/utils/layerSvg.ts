@@ -278,9 +278,19 @@ function strokeMarkup(layer: Layer, pid: string, bodyId: string, defs: string[])
     : `filterUnits="userSpaceOnUse" x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}"`;
   const grow = s.position === 'outside' ? w : s.position === 'center' ? w / 2 : 0;
   const shrink = s.position === 'inside' ? w : s.position === 'center' ? w / 2 : 0;
+  // Grow / shrink by blurring the alpha and re-thresholding it: unlike feMorphology's square
+  // kernel this keeps curves round. With σ = r/2 a straight edge crosses 2.3% alpha at distance r.
+  const offsetEdge = (r: number, out: boolean, result: string) => {
+    const t = out ? 0.023 : 0.977;
+    const k = 40;
+    return (
+      `<feGaussianBlur in="SourceAlpha" stdDeviation="${(r / 2).toFixed(2)}"/>` +
+      `<feComponentTransfer result="${result}"><feFuncA type="linear" slope="${k}" intercept="${(0.5 - k * t).toFixed(3)}"/></feComponentTransfer>`
+    );
+  };
   const band =
-    (grow > 0 ? `<feMorphology in="SourceAlpha" operator="dilate" radius="${grow}" result="o"/>` : '') +
-    (shrink > 0 ? `<feMorphology in="SourceAlpha" operator="erode" radius="${shrink}" result="i"/>` : '') +
+    (grow > 0 ? offsetEdge(grow, true, 'o') : '') +
+    (shrink > 0 ? offsetEdge(shrink, false, 'i') : '') +
     `<feComposite in="${grow > 0 ? 'o' : 'SourceAlpha'}" in2="${shrink > 0 ? 'i' : 'SourceAlpha'}" operator="out" result="band"/>`;
   const rad = (s.angle * Math.PI) / 180;
   const dx = +(Math.cos(rad) * s.offset).toFixed(2);
