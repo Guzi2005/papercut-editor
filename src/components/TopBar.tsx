@@ -21,6 +21,10 @@ import {
   ChevronRight,
   Sparkles,
   Palette,
+  FolderOpen,
+  Save,
+  Gamepad2,
+  CloudCheck,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 
@@ -85,6 +89,10 @@ interface TopBarProps {
   onCloseDocument: (docId: string) => void;
   onRenameDocument: (docId: string, newName: string) => void;
   onOpenPreset: (presetId: string) => void;
+  onOpenProjectFile: () => void;
+  onSaveProjectFile: () => void;
+  saveStatus: 'idle' | 'saving' | 'saved';
+  onOpenGodotExport: () => void;
   currentWidth: number;
   currentHeight: number;
   onUpdateCanvasSize: (w: number, h: number) => void;
@@ -108,6 +116,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   onCloseDocument,
   onRenameDocument,
   onOpenPreset,
+  onOpenProjectFile,
+  onSaveProjectFile,
+  saveStatus,
+  onOpenGodotExport,
   currentWidth,
   currentHeight,
   onUpdateCanvasSize,
@@ -207,7 +219,14 @@ export const TopBar: React.FC<TopBarProps> = ({
             ❖
           </div>
           <span className="text-sm font-bold tracking-tight text-[#FBFBFC] hidden md:inline">
-            针脚与远方
+            Weave 剪纸工坊
+          </span>
+          <span
+            className={`hidden lg:flex items-center gap-1 text-[10px] ${saveStatus === 'saving' ? 'text-[#7E8FB8]' : 'text-[#438B6E]'}`}
+            title="作品自动保存在本浏览器中；Ctrl+S 另存为 .weave.json 文件"
+          >
+            <CloudCheck className="w-3 h-3" />
+            {saveStatus === 'saving' ? '保存中' : '已自动保存'}
           </span>
         </div>
 
@@ -243,8 +262,47 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <FilePlus className="w-3.5 h-3.5 text-[#2652D0]" />
                 <div className="flex-1 flex items-center justify-between">
                   <span className="font-medium">新建剪纸文件...</span>
-                  <span className="text-[10px] text-[#7E8FB8]">Ctrl+N</span>
+                  <span className="text-[10px] text-[#7E8FB8]">Alt+N</span>
                 </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowFileMenu(false);
+                  onOpenProjectFile();
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-[#232D42] text-[#FBFBFC] flex items-center gap-2 transition-colors"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-[#8E9FCA]" />
+                <div className="flex-1 flex items-center justify-between">
+                  <span>打开项目 (.weave.json)...</span>
+                  <span className="text-[10px] text-[#7E8FB8]">Ctrl+O</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowFileMenu(false);
+                  onSaveProjectFile();
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-[#232D42] text-[#FBFBFC] flex items-center gap-2 transition-colors"
+              >
+                <Save className="w-3.5 h-3.5 text-[#8E9FCA]" />
+                <div className="flex-1 flex items-center justify-between">
+                  <span>保存项目到本地文件</span>
+                  <span className="text-[10px] text-[#7E8FB8]">Ctrl+S</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowFileMenu(false);
+                  onOpenGodotExport();
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-[#232D42] text-[#FBFBFC] flex items-center gap-2 transition-colors"
+              >
+                <Gamepad2 className="w-3.5 h-3.5 text-[#438B6E]" />
+                <span>导出到 Godot...</span>
               </button>
 
               <div className="border-t border-[#263147] my-1" />
@@ -670,6 +728,20 @@ export const TopBar: React.FC<TopBarProps> = ({
                   </div>
                 </button>
               )}
+
+              <button
+                onClick={() => {
+                  onOpenGodotExport();
+                  setShowExportMenu(false);
+                }}
+                className="w-full px-3.5 py-2.5 text-left hover:bg-[#232D42] text-[#BAC5EB] hover:text-[#FBFBFC] flex items-center gap-2.5 transition-colors group border-t border-[#2B364D]"
+              >
+                <Gamepad2 className="w-4 h-4 text-[#438B6E] group-hover:scale-110 transition-transform" />
+                <div>
+                  <div className="font-medium text-[#FBFBFC] text-[11px]">导出到 Godot 4</div>
+                  <div className="text-[10px] text-[#7E8FB8]">每个物件一个 .tscn · 部件 PNG · 深度 z_index</div>
+                </div>
+              </button>
 
               {/* Option 4: 更多导出选项与设置 */}
               <div className="border-t border-[#2B364D] mt-1 pt-1">

@@ -3,24 +3,47 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PapercutProject,
+  PapercutItem,
   Layer,
+  LayerGroup,
   ToolType,
   BrushSettings,
   CutoutPath,
   LayerDrawStroke,
+  ReferenceImage,
 } from './types/papercut';
 import { PRESET_PROJECTS, FOLK_PALETTE } from './utils/presetTemplates';
 import { createBaseShapePath } from './utils/bezierMath';
 import { generateSvgMarkup, downloadFile, exportToPng } from './utils/svgExporter';
+import { Matrix, applyToPoint } from './utils/pathTransform';
+import {
+  newId,
+  transformLayer,
+  normalizeProject,
+  findGroupOfLayer,
+  findItemOfLayer,
+  flattenLayerIds,
+} from './utils/projectOps';
+import {
+  loadWorkspace,
+  saveWorkspace,
+  serializeProject,
+  parseProjectFile,
+  pickFile,
+  readFileAsDataUrl,
+  PROJECT_FILE_EXT,
+} from './utils/storage';
 import { TopBar, DocumentTabItem, WorkbenchSkin } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
 import { ToolOptions } from './components/ToolOptions';
-import { Canvas } from './components/Canvas';
+import { Canvas, SelectionScope } from './components/Canvas';
 import { LayersPanel } from './components/LayersPanel';
 import { ExportModal } from './components/ExportModal';
+import { GodotExportModal } from './components/GodotExportModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { RecentColorsBar } from './components/RecentColorsBar';
 
 interface DocumentItem {
@@ -33,48 +56,40 @@ interface DocumentItem {
   zoom: number;
 }
 
+const HISTORY_LIMIT = 60;
+
+function firstLayerId(p: PapercutProject): string {
+  const ids = flattenLayerIds(p);
+  return ids[ids.length - 1] || '';
+}
+
+function makeDocument(id: string, name: string, project: PapercutProject, zoom = 0.9): DocumentItem {
+  const p = normalizeProject(project);
+  return { id, name, project: p, history: [p], historyIndex: 0, activeLayerId: firstLayerId(p), zoom };
+}
+
+function initialDocuments(): DocumentItem[] {
+  const find = (id: string) => PRESET_PROJECTS.find((p) => p.id === id)!;
+  const chars = find('weave_characters');
+  const workshop = find('folk_workshop');
+  return [
+    makeDocument('doc_characters', chars.name, chars.factory(), 0.85),
+    makeDocument('doc_workshop', workshop.name, workshop.factory(), 0.85),
+  ];
+}
+
 export default function App() {
-  // Built-in initial open documents
-  const [documents, setDocuments] = useState<DocumentItem[]>(() => {
-    const p1 = PRESET_PROJECTS[0].factory();
-    const p2 = PRESET_PROJECTS[2].factory();
-    const p3 = PRESET_PROJECTS[3].factory();
+  const [documents, setDocuments] = useState<DocumentItem[]>(initialDocuments);
+  const [activeDocId, setActiveDocId] = useState<string>(() => documents[0].id);
+  const [hydrated, setHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-    return [
-      {
-        id: 'doc_workshop',
-        name: '针脚与远方·民俗工坊',
-        project: p1,
-        history: [p1],
-        historyIndex: 0,
-        activeLayerId: p1.groups[0]?.layerIds[0] || Object.keys(p1.layers)[0] || '',
-        zoom: 0.9,
-      },
-      {
-        id: 'doc_rosette',
-        name: '吉庆连年·八折团花',
-        project: p2,
-        history: [p2],
-        historyIndex: 0,
-        activeLayerId: p2.groups[0]?.layerIds[0] || Object.keys(p2.layers)[0] || '',
-        zoom: 0.95,
-      },
-      {
-        id: 'doc_blank',
-        name: '新建剪纸 1',
-        project: p3,
-        history: [p3],
-        historyIndex: 0,
-        activeLayerId: p3.groups[0]?.layerIds[0] || Object.keys(p3.layers)[0] || '',
-        zoom: 0.9,
-      },
-    ];
-  });
-
-  const [activeDocId, setActiveDocId] = useState<string>('doc_workshop');
+  // Selection (not persisted)
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  const [selectionScope, setSelectionScope] = useState<SelectionScope>('item');
 
   // Tool & Brush Settings
-  const [currentTool, setCurrentTool] = useState<ToolType>('willow_leaf');
+  const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const [brushSettings, setBrushSettings] = useState<BrushSettings>({
     willowMode: 'chord',
     stabilizer: 0.55,
@@ -85,10 +100,8 @@ export default function App() {
     combToothAngle: 65,
     stampSize: 26,
     mode: 'cutout',
-    // 笔刀 (Pen knife)
     knifePressure: false,
     knifeTipShape: 'round',
-    // 手绘 (Hand draw)
     drawBrushType: 'pencil',
     drawPressure: true,
     drawOpacity: 0.85,
@@ -98,55 +111,72 @@ export default function App() {
     airbrushSoftness: 12,
   });
 
-  // Workbench Skin (编辑器皮肤选择)
   const [skin, setSkin] = useState<WorkbenchSkin>('indigo');
-
-  // Export Modal
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isGodotModalOpen, setIsGodotModalOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
-  // Color Notes (色卡备注，支持双击编辑)
-  const [colorNotes, setColorNotes] = useState<Record<string, string>>({
-    '#2652d0': '扎染靛蓝',
-    '#3b6ef0': '青花瓷蓝',
-    '#bac5eb': '紫藤浅蓝',
-    '#482a45': '深绛紫茄',
-    '#1b523d': '松针墨绿',
-    '#438b6e': '湖水青绿',
-    '#eb8e88': '珊瑚胭脂',
-    '#e8dec8': '麦芒亚麻',
-    '#1e2538': '苍石墨青',
-    '#fbfbfc': '宣纸净白',
-    '#e59824': '蜜蜡明黄',
-    '#d23838': '朱砂印红',
-    '#9daee3': '丁香粉藕',
-    '#15171f': '玄墨沉黑',
-    '#f3efe6': '素练暖白',
-  });
+  const [colorNotes, setColorNotes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(FOLK_PALETTE.map((c) => [c.hex.toLowerCase(), c.name]))
+  );
 
   const handleUpdateColorNote = (hex: string, note: string) => {
     setColorNotes((prev) => ({ ...prev, [hex.toLowerCase()]: note }));
   };
 
-  // Recent Colors (近期用色，方块书签式交互，选中时伸出)
-  const [recentColors, setRecentColors] = useState<string[]>([
-    '#2652D0',
-    '#BAC5EB',
-    '#482A45',
-    '#1B523D',
-    '#EB8E88',
-    '#FBFBFC',
-    '#3B6EF0',
-    '#D23838',
-  ]);
+  const [recentColors, setRecentColors] = useState<string[]>(() =>
+    FOLK_PALETTE.slice(0, 8).map((c) => c.hex)
+  );
 
   const pushRecentColor = (hex: string) => {
     setRecentColors((prev) => {
-      const filtered = prev.filter(
-        (c) => c.toLowerCase() !== hex.toLowerCase()
-      );
+      const filtered = prev.filter((c) => c.toLowerCase() !== hex.toLowerCase());
       return [hex, ...filtered].slice(0, 9);
     });
   };
+
+  // ---------- Persistence: restore on boot, autosave after edits ----------
+  useEffect(() => {
+    let cancelled = false;
+    loadWorkspace().then((snap) => {
+      if (cancelled) return;
+      if (snap) {
+        const docs = snap.documents.map((d) => ({
+          ...d,
+          history: [d.project],
+          historyIndex: 0,
+        }));
+        setDocuments(docs);
+        setActiveDocId(docs.some((d) => d.id === snap.activeDocId) ? snap.activeDocId : docs[0].id);
+      }
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!hydrated) return;
+    setSaveStatus('saving');
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveWorkspace({
+        documents: documents.map(({ id, name, project, activeLayerId, zoom }) => ({
+          id,
+          name,
+          project,
+          activeLayerId,
+          zoom,
+        })),
+        activeDocId,
+        savedAt: Date.now(),
+      })
+        .then(() => setSaveStatus('saved'))
+        .catch(() => setSaveStatus('idle'));
+    }, 600);
+  }, [documents, activeDocId, hydrated]);
 
   // Current active document object
   const activeDoc = documents.find((d) => d.id === activeDocId) || documents[0];
@@ -154,7 +184,18 @@ export default function App() {
   const activeLayerId = activeDoc.activeLayerId;
   const zoom = activeDoc.zoom;
 
-  // History push for active document
+  useEffect(() => {
+    setSelectedLayerIds([]);
+  }, [activeDocId]);
+
+  // Drop selection entries that no longer exist (after undo/delete)
+  useEffect(() => {
+    setSelectedLayerIds((prev) => {
+      const next = prev.filter((id) => project.layers[id]);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [project]);
+
   const pushHistory = useCallback(
     (newProject: PapercutProject) => {
       setDocuments((prevDocs) =>
@@ -162,12 +203,12 @@ export default function App() {
           if (doc.id !== activeDocId) return doc;
           const nextHistory = doc.history.slice(0, doc.historyIndex + 1);
           nextHistory.push(newProject);
-          if (nextHistory.length > 30) nextHistory.shift();
+          if (nextHistory.length > HISTORY_LIMIT) nextHistory.shift();
           return {
             ...doc,
             project: newProject,
             history: nextHistory,
-            historyIndex: Math.min(doc.historyIndex + 1, 29),
+            historyIndex: nextHistory.length - 1,
           };
         })
       );
@@ -183,11 +224,7 @@ export default function App() {
       prevDocs.map((doc) => {
         if (doc.id !== activeDocId || doc.historyIndex <= 0) return doc;
         const newIdx = doc.historyIndex - 1;
-        return {
-          ...doc,
-          historyIndex: newIdx,
-          project: doc.history[newIdx],
-        };
+        return { ...doc, historyIndex: newIdx, project: doc.history[newIdx] };
       })
     );
   }, [activeDocId]);
@@ -195,93 +232,62 @@ export default function App() {
   const handleRedo = useCallback(() => {
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => {
-        if (doc.id !== activeDocId || doc.historyIndex >= doc.history.length - 1)
-          return doc;
+        if (doc.id !== activeDocId || doc.historyIndex >= doc.history.length - 1) return doc;
         const newIdx = doc.historyIndex + 1;
-        return {
-          ...doc,
-          historyIndex: newIdx,
-          project: doc.history[newIdx],
-        };
+        return { ...doc, historyIndex: newIdx, project: doc.history[newIdx] };
       })
     );
   }, [activeDocId]);
 
-  // Zoom handler
   const handleZoomChange = (newZoom: number) => {
-    setDocuments((prev) =>
-      prev.map((d) => (d.id === activeDocId ? { ...d, zoom: newZoom } : d))
-    );
+    setDocuments((prev) => prev.map((d) => (d.id === activeDocId ? { ...d, zoom: newZoom } : d)));
   };
 
-  // Layer selection
-  const handleSelectLayer = (layerId: string) => {
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === activeDocId ? { ...d, activeLayerId: layerId } : d
-      )
-    );
+  const handleSelectLayer = useCallback(
+    (layerId: string) => {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === activeDocId ? { ...d, activeLayerId: layerId } : d))
+      );
+    },
+    [activeDocId]
+  );
+
+  const handleSelectLayers = useCallback(
+    (ids: string[], active?: string) => {
+      setSelectedLayerIds(ids);
+      if (active) handleSelectLayer(active);
+    },
+    [handleSelectLayer]
+  );
+
+  const handlePanelSelectLayer = (layerId: string) => {
+    handleSelectLayer(layerId);
+    setSelectedLayerIds([layerId]);
   };
 
-  // Document Management Operations
-  const handleSelectDocument = (docId: string) => {
-    setActiveDocId(docId);
+  // ---------- Documents ----------
+  const openProjectAsDocument = (proj: PapercutProject, name?: string) => {
+    const doc = makeDocument(`doc_${Date.now()}`, name || proj.name, proj);
+    setDocuments((prev) => [...prev, doc]);
+    setActiveDocId(doc.id);
   };
 
-  const handleNewDocument = (
-    name?: string,
-    width = 800,
-    height = 800
-  ) => {
-    const newId = `doc_${Date.now()}`;
+  const handleNewDocument = (name?: string, width = 800, height = 800) => {
     const docName = name || `新建剪纸 ${documents.length + 1}`;
-    const blankProj = PRESET_PROJECTS[3].factory();
+    const blankProj = PRESET_PROJECTS.find((p) => p.id === 'blank')!.factory();
     blankProj.name = docName;
     blankProj.width = width;
     blankProj.height = height;
-
-    if (blankProj.layers['layer_main']) {
-      blankProj.layers['layer_main'].baseShape.d = createBaseShapePath(
-        'rect',
-        width,
-        height
-      );
-    }
-
-    const newDoc: DocumentItem = {
-      id: newId,
-      name: docName,
-      project: blankProj,
-      history: [blankProj],
-      historyIndex: 0,
-      activeLayerId: 'layer_main',
-      zoom: 0.9,
-    };
-
-    setDocuments((prev) => [...prev, newDoc]);
-    setActiveDocId(newId);
+    Object.values(blankProj.layers).forEach((l) => {
+      l.baseShape.d = createBaseShapePath('rounded_rect', width, height, Math.min(width, height) * 0.12);
+    });
+    openProjectAsDocument(blankProj, docName);
   };
 
   const handleOpenPreset = (presetId: string) => {
     const preset = PRESET_PROJECTS.find((p) => p.id === presetId);
     if (!preset) return;
-    const newProj = preset.factory();
-    const newId = `doc_${Date.now()}`;
-    const firstLayerId =
-      newProj.groups[0]?.layerIds[0] || Object.keys(newProj.layers)[0] || '';
-
-    const newDoc: DocumentItem = {
-      id: newId,
-      name: preset.name,
-      project: newProj,
-      history: [newProj],
-      historyIndex: 0,
-      activeLayerId: firstLayerId,
-      zoom: 0.9,
-    };
-
-    setDocuments((prev) => [...prev, newDoc]);
-    setActiveDocId(newId);
+    openProjectAsDocument(preset.factory(), preset.name);
   };
 
   const handleCloseDocument = (docId: string) => {
@@ -298,68 +304,109 @@ export default function App() {
   const handleRenameDocument = (docId: string, newName: string) => {
     setDocuments((prev) =>
       prev.map((d) =>
-        d.id === docId
-          ? {
-              ...d,
-              name: newName,
-              project: { ...d.project, name: newName },
-            }
-          : d
+        d.id === docId ? { ...d, name: newName, project: { ...d.project, name: newName } } : d
       )
     );
   };
 
   const handleUpdateCanvasSize = (w: number, h: number) => {
-    const updatedProject: PapercutProject = {
-      ...project,
-      width: w,
-      height: h,
-    };
-    pushHistory(updatedProject);
+    pushHistory({ ...project, width: w, height: h });
   };
 
-  // Keyboard Shortcuts
+  const handleSaveProjectFile = useCallback(() => {
+    const filename = `${(project.name || 'papercut').replace(/[\\/:*?"<>|\s]+/g, '_')}${PROJECT_FILE_EXT}`;
+    downloadFile(serializeProject(project), filename, 'application/json');
+  }, [project]);
+
+  const handleOpenProjectFile = useCallback(async () => {
+    const file = await pickFile('.json,.weave.json,application/json');
+    if (!file) return;
+    try {
+      const proj = parseProjectFile(await file.text());
+      openProjectAsDocument(proj, proj.name || file.name.replace(/\.weave\.json$|\.json$/i, ''));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- Keyboard Shortcuts ----------
   useEffect(() => {
+    const TOOL_KEYS: Record<string, ToolType> = {
+      v: 'select',
+      l: 'willow_leaf',
+      g: 'geom_shape',
+      k: 'pen_knife',
+      b: 'hand_draw',
+      a: 'anchor_edit',
+      '1': 'willow_leaf',
+      '2': 'geom_shape',
+      '3': 'pen_knife',
+      '4': 'hand_draw',
+      '5': 'anchor_edit',
+    };
+    const MODE_KEYS: Record<string, BrushSettings['mode']> = { c: 'cutout', p: 'positive', e: 'erase' };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
-      ) {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
         return;
       }
-
-      // Undo / Redo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      if (mod && key === 'y') {
         e.preventDefault();
         handleRedo();
+        return;
       }
-
-      // New Document: Ctrl+N
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+      if (mod && key === 's') {
+        e.preventDefault();
+        handleSaveProjectFile();
+        return;
+      }
+      if (mod && key === 'o') {
+        e.preventDefault();
+        handleOpenProjectFile();
+        return;
+      }
+      if (e.altKey && key === 'n') {
         e.preventDefault();
         handleNewDocument();
+        return;
       }
+      if (mod || e.altKey) return;
 
-      // Tool hotkeys: 1-5
-      if (e.key === '1') setCurrentTool('willow_leaf');
-      if (e.key === '2') setCurrentTool('geom_shape');
-      if (e.key === '3') setCurrentTool('pen_knife');
-      if (e.key === '4') setCurrentTool('hand_draw');
-      if (e.key === '5') setCurrentTool('anchor_edit');
-
-      // Escape to exit anchor_edit
-      if (e.key === 'Escape' && currentTool === 'anchor_edit') {
-        setCurrentTool('pen_knife');
+      if (e.key === '?') {
+        setIsShortcutsOpen((v) => !v);
+        return;
       }
-
-      // Zoom hotkeys (+, -)
+      if (TOOL_KEYS[key]) {
+        setCurrentTool(TOOL_KEYS[key]);
+        return;
+      }
+      if (MODE_KEYS[key]) {
+        setBrushSettings((prev) => ({ ...prev, mode: MODE_KEYS[key] }));
+        if (currentTool === 'select' || currentTool === 'hand_draw' || currentTool === 'anchor_edit') {
+          setCurrentTool('willow_leaf');
+        }
+        return;
+      }
+      if (key === 'tab' && currentTool === 'select') {
+        e.preventDefault();
+        setSelectionScope((s) => (s === 'item' ? 'part' : 'item'));
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (currentTool === 'anchor_edit') setCurrentTool('pen_knife');
+        else setSelectedLayerIds([]);
+        setIsShortcutsOpen(false);
+        return;
+      }
       if (e.key === '=' || e.key === '+') {
         handleZoomChange(Math.min(zoom + 0.15, 3.5));
       } else if (e.key === '-' || e.key === '_') {
@@ -371,88 +418,47 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, zoom, currentTool]);
+  });
 
-  // Fit to screen zoom
   const handleFitZoom = () => {
-    const availWidth = window.innerWidth - 380;
-    const availHeight = window.innerHeight - 120;
+    const availWidth = window.innerWidth - 420;
+    const availHeight = window.innerHeight - 170;
     if (availWidth > 0 && availHeight > 0) {
-      const fitRatio = Math.min(
-        availWidth / project.width,
-        availHeight / project.height
-      );
-      handleZoomChange(Math.max(Math.min(fitRatio * 0.9, 2.0), 0.3));
+      const fitRatio = Math.min(availWidth / project.width, availHeight / project.height);
+      handleZoomChange(Math.max(Math.min(fitRatio * 0.95, 2.0), 0.25));
     }
   };
 
-  // Add Cutout to active layer
+  // ---------- Layer content edits ----------
+  const updateActiveLayer = (fn: (layer: Layer) => Layer) => {
+    if (!activeLayerId || !project.layers[activeLayerId]) return;
+    const layer = project.layers[activeLayerId];
+    pushHistory({ ...project, layers: { ...project.layers, [activeLayerId]: fn(layer) } });
+  };
+
   const handleAddCutout = (cutout: CutoutPath) => {
-    if (!activeLayerId || !project.layers[activeLayerId]) return;
-    const layer = project.layers[activeLayerId];
-    if (layer.locked || !layer.visible) return;
-
-    const updatedLayer: Layer = {
-      ...layer,
-      cutouts: [...layer.cutouts, cutout],
-    };
-
-    const newProject: PapercutProject = {
-      ...project,
-      layers: {
-        ...project.layers,
-        [activeLayerId]: updatedLayer,
-      },
-    };
-    pushHistory(newProject);
+    updateActiveLayer((layer) => ({ ...layer, cutouts: [...layer.cutouts, cutout] }));
   };
 
-  // Add Hand Drawing Stroke to active layer (附属于剪纸图层蒙版)
   const handleAddDrawingStroke = (stroke: LayerDrawStroke) => {
-    if (!activeLayerId || !project.layers[activeLayerId]) return;
-    const layer = project.layers[activeLayerId];
-    if (layer.locked || !layer.visible) return;
-
-    const currentDrawings = layer.drawings || [];
-    const updatedLayer: Layer = {
-      ...layer,
-      drawings: [...currentDrawings, stroke],
-    };
-
-    const newProject: PapercutProject = {
-      ...project,
-      layers: {
-        ...project.layers,
-        [activeLayerId]: updatedLayer,
-      },
-    };
-    pushHistory(newProject);
+    updateActiveLayer((layer) => ({ ...layer, drawings: [...(layer.drawings || []), stroke] }));
   };
 
-  // Update Cutout
   const handleUpdateCutout = (cutoutId: string, updates: Partial<CutoutPath>) => {
     if (!activeLayerId || !project.layers[activeLayerId]) return;
     const layer = project.layers[activeLayerId];
-
-    const updatedCutouts = layer.cutouts.map((c) =>
-      c.id === cutoutId ? { ...c, ...updates } : c
-    );
-
     const newProject: PapercutProject = {
       ...project,
       layers: {
         ...project.layers,
         [activeLayerId]: {
           ...layer,
-          cutouts: updatedCutouts,
+          cutouts: layer.cutouts.map((c) => (c.id === cutoutId ? { ...c, ...updates } : c)),
         },
       },
     };
-
     setDocuments((prevDocs) =>
-      prevDocs.map((doc) =>
-        doc.id === activeDocId ? { ...doc, project: newProject } : doc
-      )
+      prevDocs.map((doc) => (doc.id === activeDocId ? { ...doc, project: newProject } : doc))
     );
   };
 
@@ -461,260 +467,357 @@ export default function App() {
   };
 
   const handleRemoveCutout = (cutoutId: string) => {
-    if (!activeLayerId || !project.layers[activeLayerId]) return;
-    const layer = project.layers[activeLayerId];
-
-    const updatedLayer: Layer = {
-      ...layer,
-      cutouts: layer.cutouts.filter((c) => c.id !== cutoutId),
-    };
-
-    const newProject: PapercutProject = {
-      ...project,
-      layers: {
-        ...project.layers,
-        [activeLayerId]: updatedLayer,
-      },
-    };
-    pushHistory(newProject);
+    updateActiveLayer((layer) => ({ ...layer, cutouts: layer.cutouts.filter((c) => c.id !== cutoutId) }));
   };
 
-  // Reorder Layers (拖拽排序图层)
+  const handleTransformLayers = useCallback(
+    (layerIds: string[], m: Matrix) => {
+      const layers = { ...project.layers };
+      layerIds.forEach((id) => {
+        if (layers[id]) layers[id] = transformLayer(layers[id], m);
+      });
+      const idSet = new Set(layerIds);
+      const items = (project.items || []).map((it) =>
+        it.partIds.every((pid) => idSet.has(pid))
+          ? {
+              ...it,
+              pivot: applyToPoint(m, it.pivot),
+              sockets: it.sockets.map((s) => ({ ...s, ...applyToPoint(m, s) })),
+            }
+          : it
+      );
+      pushHistory({ ...project, layers, items });
+    },
+    [project, pushHistory]
+  );
+
+  // ---------- Layer structure ----------
   const handleReorderLayers = (
     sourceId: string,
     targetId: string,
     position: 'above' | 'below' = 'above'
   ) => {
     if (sourceId === targetId) return;
-
-    let newRootOrder = [...project.rootOrder];
-    let newGroups = project.groups.map((g) => ({
+    const rootOrder = project.rootOrder.filter((r) => !(r.type === 'layer' && r.id === sourceId));
+    const groups = project.groups.map((g) => ({
       ...g,
-      layerIds: [...g.layerIds],
+      layerIds: g.layerIds.filter((id) => id !== sourceId),
     }));
 
-    const sIdx = newRootOrder.findIndex(
-      (item) => item.type === 'layer' && item.id === sourceId
-    );
-    const sourceGroup = newGroups.find((g) => g.layerIds.includes(sourceId));
-    const targetGroup = newGroups.find((g) => g.layerIds.includes(targetId));
-
-    if (sIdx !== -1) {
-      const [moved] = newRootOrder.splice(sIdx, 1);
-      const afterTargetIdx = newRootOrder.findIndex(
-        (item) => item.type === 'layer' && item.id === targetId
-      );
-      if (afterTargetIdx !== -1) {
-        // UI list is rendered in reverse (index 0 is bottom, last is top).
-        // Visually 'above' in UI means higher z-index (after target in rootOrder).
-        // Visually 'below' in UI means lower z-index (before target in rootOrder).
-        const insertIdx = position === 'above' ? afterTargetIdx + 1 : afterTargetIdx;
-        newRootOrder.splice(Math.max(0, insertIdx), 0, moved);
-      } else if (targetGroup) {
-        const gtIdx = targetGroup.layerIds.indexOf(targetId);
-        const insertIdx = position === 'above' ? gtIdx + 1 : gtIdx;
-        targetGroup.layerIds.splice(Math.max(0, insertIdx), 0, sourceId);
-      } else {
-        newRootOrder.push(moved);
-      }
-    } else if (sourceGroup && targetGroup && sourceGroup.id === targetGroup.id) {
-      const gsIdx = sourceGroup.layerIds.indexOf(sourceId);
-      sourceGroup.layerIds.splice(gsIdx, 1);
-      const gtIdx = sourceGroup.layerIds.indexOf(targetId);
-      const insertIdx = position === 'above' ? gtIdx + 1 : gtIdx;
-      sourceGroup.layerIds.splice(Math.max(0, insertIdx), 0, sourceId);
-    } else if (sourceGroup) {
-      sourceGroup.layerIds = sourceGroup.layerIds.filter((id) => id !== sourceId);
-      const afterTargetIdx = newRootOrder.findIndex(
-        (item) => item.type === 'layer' && item.id === targetId
-      );
-      if (afterTargetIdx !== -1) {
-        const insertIdx = position === 'above' ? afterTargetIdx + 1 : afterTargetIdx;
-        newRootOrder.splice(Math.max(0, insertIdx), 0, { type: 'layer', id: sourceId });
-      } else {
-        newRootOrder.push({ type: 'layer', id: sourceId });
-      }
+    const targetGroup = groups.find((g) => g.layerIds.includes(targetId));
+    if (targetGroup) {
+      const idx = targetGroup.layerIds.indexOf(targetId);
+      targetGroup.layerIds.splice(position === 'above' ? idx + 1 : idx, 0, sourceId);
+    } else {
+      const idx = rootOrder.findIndex((r) => r.type === 'layer' && r.id === targetId);
+      if (idx === -1) rootOrder.push({ type: 'layer', id: sourceId });
+      else rootOrder.splice(position === 'above' ? idx + 1 : idx, 0, { type: 'layer', id: sourceId });
     }
-
-    const newProject: PapercutProject = {
-      ...project,
-      rootOrder: newRootOrder,
-      groups: newGroups,
-    };
-    pushHistory(newProject);
+    pushHistory({ ...project, rootOrder, groups });
   };
 
-  // Layer Operations
-  const handleAddLayer = (groupId?: string) => {
-    const newId = `layer_${Date.now()}`;
-    const defaultColor =
-      FOLK_PALETTE[Object.keys(project.layers).length % FOLK_PALETTE.length].hex;
+  const handleMoveLayerToGroup = (layerId: string, groupId: string) => {
+    const rootOrder = project.rootOrder.filter((r) => !(r.type === 'layer' && r.id === layerId));
+    const groups = project.groups.map((g) => {
+      const without = g.layerIds.filter((id) => id !== layerId);
+      return g.id === groupId ? { ...g, layerIds: [...without, layerId] } : { ...g, layerIds: without };
+    });
+    pushHistory({ ...project, rootOrder, groups });
+  };
 
+  const handleReorderRoot = (sourceRootId: string, targetRootId: string, position: 'above' | 'below') => {
+    if (sourceRootId === targetRootId) return;
+    const moving = project.rootOrder.find((r) => r.id === sourceRootId);
+    if (!moving) return;
+    const rootOrder = project.rootOrder.filter((r) => r.id !== sourceRootId);
+    const idx = rootOrder.findIndex((r) => r.id === targetRootId);
+    rootOrder.splice(position === 'above' ? idx + 1 : idx, 0, moving);
+    pushHistory({ ...project, rootOrder });
+  };
+
+  const handleAddLayer = (groupId?: string) => {
+    const newLayerId = newId('layer');
+    const defaultColor = FOLK_PALETTE[Object.keys(project.layers).length % FOLK_PALETTE.length].hex;
     pushRecentColor(defaultColor);
 
+    const w = project.width * 0.36;
+    const h = project.height * 0.36;
+    const x = (project.width - w) / 2;
+    const y = (project.height - h) / 2;
     const newLayer: Layer = {
-      id: newId,
-      name: `剪纸图层 ${Object.keys(project.layers).length + 1}`,
+      id: newLayerId,
+      name: `纸片 ${Object.keys(project.layers).length + 1}`,
       color: defaultColor,
       texture: 'xuan',
       opacity: 1,
       blendMode: 'normal',
       visible: true,
       locked: false,
+      grain: 0.35,
       baseShape: {
         type: 'rounded_rect',
-        d: createBaseShapePath('rounded_rect', project.width, project.height, 100),
+        d: `M ${x + 12} ${y} H ${x + w - 12} Q ${x + w} ${y} ${x + w} ${y + 12} V ${y + h - 12} Q ${x + w} ${y + h} ${x + w - 12} ${y + h} H ${x + 12} Q ${x} ${y + h} ${x} ${y + h - 12} V ${y + 12} Q ${x} ${y} ${x + 12} ${y} Z`,
       },
       cutouts: [],
       positiveElements: [],
       drawings: [],
     };
 
-    let newGroups = [...project.groups];
-    let newRootOrder = [...project.rootOrder];
+    let groups = project.groups;
+    let rootOrder = project.rootOrder;
+    const targetGroupId = groupId ?? (activeLayerId ? findGroupOfLayer(project, activeLayerId)?.id : undefined);
 
-    if (groupId) {
-      newGroups = newGroups.map((g) => {
-        if (g.id === groupId) {
-          return { ...g, layerIds: [...g.layerIds, newId] };
-        }
-        return g;
+    if (targetGroupId) {
+      groups = groups.map((g) => {
+        if (g.id !== targetGroupId) return g;
+        const ids = [...g.layerIds];
+        const at = activeLayerId ? ids.indexOf(activeLayerId) : -1;
+        if (!groupId && at !== -1) ids.splice(at + 1, 0, newLayerId);
+        else ids.push(newLayerId);
+        return { ...g, layerIds: ids };
       });
     } else {
-      newRootOrder.push({ type: 'layer', id: newId });
+      rootOrder = [...rootOrder, { type: 'layer', id: newLayerId }];
     }
 
-    const newProject: PapercutProject = {
-      ...project,
-      layers: {
-        ...project.layers,
-        [newId]: newLayer,
-      },
-      groups: newGroups,
-      rootOrder: newRootOrder,
-    };
-
-    handleSelectLayer(newId);
-    pushHistory(newProject);
+    pushHistory({ ...project, layers: { ...project.layers, [newLayerId]: newLayer }, groups, rootOrder });
+    handleSelectLayer(newLayerId);
+    setSelectedLayerIds([newLayerId]);
   };
 
   const handleUpdateLayer = (layerId: string, updates: Partial<Layer>) => {
     if (!project.layers[layerId]) return;
-    if (updates.color) {
-      pushRecentColor(updates.color);
-    }
-    const newProject: PapercutProject = {
+    if (updates.color) pushRecentColor(updates.color);
+    pushHistory({
       ...project,
-      layers: {
-        ...project.layers,
-        [layerId]: {
-          ...project.layers[layerId],
-          ...updates,
-        },
-      },
-    };
-    pushHistory(newProject);
+      layers: { ...project.layers, [layerId]: { ...project.layers[layerId], ...updates } },
+    });
   };
 
   const handleSelectRecentColor = (hex: string) => {
-    if (activeLayerId) {
-      handleUpdateLayer(activeLayerId, { color: hex });
-    }
+    if (activeLayerId) handleUpdateLayer(activeLayerId, { color: hex });
   };
 
-  const handleDeleteLayer = (layerId: string) => {
-    const newLayers = { ...project.layers };
-    delete newLayers[layerId];
+  const handleDeleteLayers = useCallback(
+    (layerIds: string[]) => {
+      if (layerIds.length === 0) return;
+      const del = new Set(layerIds);
+      const layers = { ...project.layers };
+      layerIds.forEach((id) => delete layers[id]);
+      const next = normalizeProject({ ...project, layers });
+      pushHistory(next);
+      setSelectedLayerIds([]);
+      if (activeLayerId && del.has(activeLayerId)) {
+        handleSelectLayer(firstLayerId(next));
+      }
+    },
+    [project, pushHistory, activeLayerId, handleSelectLayer]
+  );
 
-    const newGroups = project.groups.map((g) => ({
-      ...g,
-      layerIds: g.layerIds.filter((id) => id !== layerId),
-    }));
-
-    const newRootOrder = project.rootOrder.filter(
-      (item) => !(item.type === 'layer' && item.id === layerId)
-    );
-
-    const remainingLayerIds = Object.keys(newLayers);
-    if (activeLayerId === layerId) {
-      handleSelectLayer(remainingLayerIds[0] || '');
-    }
-
-    const newProject: PapercutProject = {
-      ...project,
-      layers: newLayers,
-      groups: newGroups,
-      rootOrder: newRootOrder,
-    };
-    pushHistory(newProject);
-  };
+  const handleDeleteLayer = (layerId: string) => handleDeleteLayers([layerId]);
 
   const handleDuplicateLayer = (layerId: string) => {
     const source = project.layers[layerId];
     if (!source) return;
-
-    const newId = `layer_${Date.now()}`;
+    const dupId = newId('layer');
+    const reId = <T extends { id: string }>(c: T): T => ({ ...c, id: newId('cut') });
     const duplicated: Layer = {
       ...source,
-      id: newId,
+      id: dupId,
       name: `${source.name} 副本`,
-      cutouts: source.cutouts.map((c) => ({
-        ...c,
-        id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      })),
-      drawings: source.drawings ? [...source.drawings] : [],
+      cutouts: source.cutouts.map(reId),
+      positiveElements: source.positiveElements.map(reId),
+      drawings: (source.drawings || []).map((d) => ({ ...d, id: newId('drw') })),
     };
 
-    let newRootOrder = [...project.rootOrder];
-    const rootIdx = newRootOrder.findIndex(
-      (item) => item.type === 'layer' && item.id === layerId
-    );
-    if (rootIdx !== -1) {
-      newRootOrder.splice(rootIdx + 1, 0, { type: 'layer', id: newId });
-    } else {
-      newRootOrder.push({ type: 'layer', id: newId });
-    }
+    const rootOrder = [...project.rootOrder];
+    const groups = project.groups.map((g) => {
+      const at = g.layerIds.indexOf(layerId);
+      if (at === -1) return g;
+      const ids = [...g.layerIds];
+      ids.splice(at + 1, 0, dupId);
+      return { ...g, layerIds: ids };
+    });
+    const rootIdx = rootOrder.findIndex((r) => r.type === 'layer' && r.id === layerId);
+    if (rootIdx !== -1) rootOrder.splice(rootIdx + 1, 0, { type: 'layer', id: dupId });
 
-    const newProject: PapercutProject = {
-      ...project,
-      layers: {
-        ...project.layers,
-        [newId]: duplicated,
-      },
-      rootOrder: newRootOrder,
-    };
-
-    handleSelectLayer(newId);
-    pushHistory(newProject);
+    pushHistory({ ...project, layers: { ...project.layers, [dupId]: duplicated }, rootOrder, groups });
+    handleSelectLayer(dupId);
+    setSelectedLayerIds([dupId]);
   };
 
   const handleInvertLayerCutouts = (layerId: string) => {
     const layer = project.layers[layerId];
     if (!layer) return;
-
-    const invertedCutouts = layer.cutouts.map((c) => ({
-      ...c,
-      isHole: !c.isHole,
-      fillColor: c.isHole ? layer.color : undefined,
-    }));
-
-    handleUpdateLayer(layerId, { cutouts: invertedCutouts });
+    handleUpdateLayer(layerId, {
+      cutouts: layer.cutouts.map((c) => ({
+        ...c,
+        isHole: !c.isHole,
+        fillColor: c.isHole ? layer.color : undefined,
+      })),
+    });
   };
 
   const handleClearLayerCutouts = (layerId: string) => {
     handleUpdateLayer(layerId, { cutouts: [], positiveElements: [] });
   };
 
-  // Quick export helpers
+  // ---------- Depth groups ----------
+  const handleAddGroup = () => {
+    const gid = newId('grp');
+    const group: LayerGroup = {
+      id: gid,
+      name: `深度层 ${project.groups.length + 1}`,
+      collapsed: false,
+      visible: true,
+      locked: false,
+      layerIds: [],
+    };
+    pushHistory({ ...project, groups: [...project.groups, group], rootOrder: [...project.rootOrder, { type: 'group', id: gid }] });
+  };
+
+  const handleUpdateGroup = (groupId: string, updates: Partial<LayerGroup>) => {
+    pushHistory({
+      ...project,
+      groups: project.groups.map((g) => (g.id === groupId ? { ...g, ...updates } : g)),
+    });
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    const grp = project.groups.find((g) => g.id === groupId);
+    if (!grp) return;
+    const idx = project.rootOrder.findIndex((r) => r.type === 'group' && r.id === groupId);
+    const rootOrder = [...project.rootOrder];
+    rootOrder.splice(idx, 1, ...grp.layerIds.map((id) => ({ type: 'layer' as const, id })));
+    pushHistory({ ...project, groups: project.groups.filter((g) => g.id !== groupId), rootOrder });
+  };
+
+  // ---------- Items (物件) ----------
+  const items = project.items || [];
+
+  const setItems = (next: PapercutItem[]) => pushHistory({ ...project, items: next });
+
+  const handleCreateItem = () => {
+    const ids = selectedLayerIds.length > 0 ? selectedLayerIds : activeLayerId ? [activeLayerId] : [];
+    if (ids.length === 0) return;
+    let pivot = { x: project.width / 2, y: project.height / 2 };
+    const boxes = ids
+      .map((id) => (document.querySelector(`g[data-layer-id="${id}"]`) as SVGGElement | null)?.getBBox())
+      .filter((b): b is DOMRect => !!b && b.width > 0);
+    if (boxes.length > 0) {
+      const minX = Math.min(...boxes.map((b) => b.x));
+      const maxX = Math.max(...boxes.map((b) => b.x + b.width));
+      const maxY = Math.max(...boxes.map((b) => b.y + b.height));
+      pivot = { x: Math.round((minX + maxX) / 2), y: Math.round(maxY) };
+    }
+    const idSet = new Set(ids);
+    const stripped = items
+      .map((it) => ({ ...it, partIds: it.partIds.filter((p) => !idSet.has(p)) }))
+      .filter((it) => it.partIds.length > 0);
+    const orderedIds = flattenLayerIds(project).filter((id) => idSet.has(id));
+    const item: PapercutItem = {
+      id: newId('item'),
+      name: `物件 ${items.length + 1}`,
+      partIds: orderedIds,
+      pivot,
+      sockets: [],
+    };
+    setItems([...stripped, item]);
+    setSelectedLayerIds(orderedIds);
+    setSelectionScope('item');
+  };
+
+  const handleSelectItem = (itemId: string) => {
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return;
+    setSelectedLayerIds([...item.partIds]);
+    setSelectionScope('item');
+    setCurrentTool('select');
+    if (!item.partIds.includes(activeLayerId)) handleSelectLayer(item.partIds[item.partIds.length - 1]);
+  };
+
+  const handleUpdateItem = useCallback(
+    (itemId: string, updates: Partial<PapercutItem>) => {
+      pushHistory({
+        ...project,
+        items: (project.items || []).map((it) => (it.id === itemId ? { ...it, ...updates } : it)),
+      });
+    },
+    [project, pushHistory]
+  );
+
+  const handleDeleteItem = (itemId: string) => {
+    setItems(items.filter((it) => it.id !== itemId));
+  };
+
+  const handleAddPartToItem = (itemId: string, layerId: string) => {
+    setItems(
+      items
+        .map((it) => {
+          const without = it.partIds.filter((p) => p !== layerId);
+          return it.id === itemId ? { ...it, partIds: [...without, layerId] } : { ...it, partIds: without };
+        })
+        .filter((it) => it.partIds.length > 0)
+    );
+  };
+
+  const handleRemovePartFromItem = (itemId: string, layerId: string) => {
+    setItems(
+      items
+        .map((it) => (it.id === itemId ? { ...it, partIds: it.partIds.filter((p) => p !== layerId) } : it))
+        .filter((it) => it.partIds.length > 0)
+    );
+  };
+
+  const handleAddSocket = (itemId: string) => {
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return;
+    const n = item.sockets.length + 1;
+    handleUpdateItem(itemId, {
+      sockets: [
+        ...item.sockets,
+        { id: newId('sock'), name: `socket_${n}`, x: item.pivot.x + 30 * n, y: item.pivot.y - 60 },
+      ],
+    });
+  };
+
+  // ---------- Project style / reference ----------
+  const handleUpdateProject = (updates: Partial<PapercutProject>) => {
+    pushHistory({ ...project, ...updates });
+  };
+
+  const handleImportReference = async () => {
+    const file = await pickFile('image/*');
+    if (!file) return;
+    const src = await readFileAsDataUrl(file);
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(project.width / img.width, project.height / img.height);
+      const width = img.width * ratio;
+      const height = img.height * ratio;
+      const reference: ReferenceImage = {
+        src,
+        opacity: 0.45,
+        visible: true,
+        onTop: true,
+        x: (project.width - width) / 2,
+        y: (project.height - height) / 2,
+        width,
+        height,
+      };
+      handleUpdateProject({ reference });
+    };
+    img.src = src;
+  };
+
+  // ---------- Quick export ----------
   const handleQuickCopySvg = () => {
-    const markup = generateSvgMarkup(project, { includeBackground: false });
-    navigator.clipboard.writeText(markup);
+    navigator.clipboard.writeText(generateSvgMarkup(project, { includeBackground: false }));
   };
 
   const handleQuickDownloadSvg = () => {
-    const markup = generateSvgMarkup(project, { includeBackground: false });
     downloadFile(
-      markup,
+      generateSvgMarkup(project, { includeBackground: false }),
       `${project.name || 'cyber_papercut'}.svg`,
       'image/svg+xml;charset=utf-8'
     );
@@ -733,6 +836,14 @@ export default function App() {
   };
 
   const activeLayer = activeLayerId ? project.layers[activeLayerId] : null;
+
+  const selectedItem = (() => {
+    if (selectedLayerIds.length === 0) return null;
+    const item = findItemOfLayer(project, selectedLayerIds[0]);
+    if (!item) return null;
+    const sel = new Set(selectedLayerIds);
+    return item.partIds.length === sel.size && item.partIds.every((p) => sel.has(p)) ? item : null;
+  })();
 
   const documentTabItems: DocumentTabItem[] = documents.map((d) => ({
     id: d.id,
@@ -755,15 +866,17 @@ export default function App() {
         SKIN_BACKGROUNDS[skin] || 'bg-[#111520]'
       } text-[#CAD0DB] overflow-hidden font-sans transition-colors duration-200`}
     >
-      {/* Top Bar (文件-设置皮肤、SAI风格多标签页切换、无重复撤销重做按钮) */}
       <TopBar
         documents={documentTabItems}
         activeDocId={activeDocId}
-        onSelectDocument={handleSelectDocument}
+        onSelectDocument={setActiveDocId}
         onNewDocument={handleNewDocument}
         onCloseDocument={handleCloseDocument}
         onRenameDocument={handleRenameDocument}
         onOpenPreset={handleOpenPreset}
+        onOpenProjectFile={handleOpenProjectFile}
+        onSaveProjectFile={handleSaveProjectFile}
+        saveStatus={saveStatus}
         currentWidth={project.width}
         currentHeight={project.height}
         onUpdateCanvasSize={handleUpdateCanvasSize}
@@ -774,44 +887,49 @@ export default function App() {
         onResetZoom={() => handleZoomChange(1)}
         onFitZoom={handleFitZoom}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenGodotExport={() => setIsGodotModalOpen(true)}
         onQuickCopySvg={handleQuickCopySvg}
         onQuickDownloadSvg={handleQuickDownloadSvg}
         onQuickDownloadPng={handleQuickDownloadPng}
       />
 
-      {/* Tool Options Strip - 压感开关、笔尖形状选择、手绘五档铅笔等 */}
       <ToolOptions
         currentTool={currentTool}
         brushSettings={brushSettings}
-        onChangeBrushSettings={(settings) =>
-          setBrushSettings((prev) => ({ ...prev, ...settings }))
-        }
+        onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
         onSelectTool={setCurrentTool}
+        selectionScope={selectionScope}
+        onChangeSelectionScope={setSelectionScope}
+        selectedCount={selectedLayerIds.length}
+        onCreateItemFromSelection={handleCreateItem}
       />
 
-      {/* Main Workspace Body */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Toolbar (柳叶、几何、笔刀、手绘、锚点微调) */}
         <Toolbar
           currentTool={currentTool}
           onSelectTool={setCurrentTool}
+          carveMode={brushSettings.mode}
+          onChangeCarveMode={(mode) => {
+            setBrushSettings((prev) => ({ ...prev, mode }));
+            if (currentTool === 'select' || currentTool === 'hand_draw' || currentTool === 'anchor_edit') {
+              setCurrentTool('willow_leaf');
+            }
+          }}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onFitZoom={handleFitZoom}
+          onShowShortcuts={() => setIsShortcutsOpen(true)}
         />
 
-        {/* Center Interactive Canvas */}
         <div className="flex-1 flex flex-col relative overflow-hidden">
           <Canvas
             project={project}
             activeLayerId={activeLayerId}
             currentTool={currentTool}
             brushSettings={brushSettings}
-            onChangeBrushSettings={(settings) =>
-              setBrushSettings((prev) => ({ ...prev, ...settings }))
-            }
+            onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
             zoom={zoom}
             onZoomChange={handleZoomChange}
             onAddCutout={handleAddCutout}
@@ -820,9 +938,16 @@ export default function App() {
             onAddDrawingStroke={handleAddDrawingStroke}
             onCommitCutoutEdit={handleCommitCutoutEdit}
             onExitAnchorEdit={() => setCurrentTool('pen_knife')}
+            selectedLayerIds={selectedLayerIds}
+            selectionScope={selectionScope}
+            selectedItem={selectedItem}
+            onSelectLayers={handleSelectLayers}
+            onPickLayer={handlePanelSelectLayer}
+            onTransformLayers={handleTransformLayers}
+            onUpdateItem={handleUpdateItem}
+            onDeleteLayers={handleDeleteLayers}
           />
 
-          {/* 近期用色：纯方块书签无黑底，hover浮现备注，选中伸出 */}
           <RecentColorsBar
             recentColors={recentColors}
             activeColor={activeLayer?.color || ''}
@@ -831,17 +956,13 @@ export default function App() {
           />
         </div>
 
-        {/* Right Layers Panel (支持拖拽排序图层) */}
         <LayersPanel
-          layers={project.layers}
-          groups={project.groups}
-          rootOrder={project.rootOrder}
+          project={project}
           activeLayerId={activeLayerId}
-          canvasWidth={project.width}
-          canvasHeight={project.height}
+          selectedLayerIds={selectedLayerIds}
           colorNotes={colorNotes}
           onUpdateColorNote={handleUpdateColorNote}
-          onSelectLayer={handleSelectLayer}
+          onSelectLayer={handlePanelSelectLayer}
           onUpdateLayer={handleUpdateLayer}
           onAddLayer={handleAddLayer}
           onDeleteLayer={handleDeleteLayer}
@@ -849,16 +970,30 @@ export default function App() {
           onInvertLayerCutouts={handleInvertLayerCutouts}
           onClearLayerCutouts={handleClearLayerCutouts}
           onReorderLayers={handleReorderLayers}
+          onReorderRoot={handleReorderRoot}
+          onMoveLayerToGroup={handleMoveLayerToGroup}
+          onAddGroup={handleAddGroup}
+          onUpdateGroup={handleUpdateGroup}
+          onDeleteGroup={handleDeleteGroup}
+          onCreateItem={handleCreateItem}
+          onSelectItem={handleSelectItem}
+          onUpdateItem={handleUpdateItem}
+          onDeleteItem={handleDeleteItem}
+          onAddPartToItem={handleAddPartToItem}
+          onRemovePartFromItem={handleRemovePartFromItem}
+          onAddSocket={handleAddSocket}
+          onUpdateProject={handleUpdateProject}
+          onImportReference={handleImportReference}
         />
       </div>
 
-      {/* SVG / PNG Export Modal */}
       {isExportModalOpen && (
-        <ExportModal
-          project={project}
-          onClose={() => setIsExportModalOpen(false)}
-        />
+        <ExportModal project={project} onClose={() => setIsExportModalOpen(false)} />
       )}
+      {isGodotModalOpen && (
+        <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />
+      )}
+      {isShortcutsOpen && <ShortcutsModal onClose={() => setIsShortcutsOpen(false)} />}
     </div>
   );
 }

@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import {
   PapercutProject,
+  PapercutItem,
   Layer,
   ToolType,
   BrushSettings,
@@ -27,7 +28,20 @@ import {
   playDiscardSwoosh,
   playCrispClick,
 } from '../utils/soundEffects';
-import { Check, X } from 'lucide-react';
+import { renderLayerMarkup } from '../utils/layerSvg';
+import {
+  Matrix,
+  IDENTITY,
+  translate,
+  scaleAbout,
+  rotateAbout,
+  matrixToSvg,
+  applyToPoint,
+} from '../utils/pathTransform';
+import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds } from '../utils/projectOps';
+import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
+
+export type SelectionScope = 'part' | 'item';
 
 interface CanvasProps {
   project: PapercutProject;
@@ -43,6 +57,65 @@ interface CanvasProps {
   onAddDrawingStroke?: (stroke: LayerDrawStroke) => void;
   onCommitCutoutEdit?: () => void;
   onExitAnchorEdit?: () => void;
+  selectedLayerIds: string[];
+  selectionScope: SelectionScope;
+  selectedItem: PapercutItem | null;
+  onSelectLayers: (layerIds: string[], activeLayerId?: string) => void;
+  onPickLayer: (layerId: string) => void;
+  onTransformLayers: (layerIds: string[], m: Matrix) => void;
+  onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
+  onDeleteLayers: (layerIds: string[]) => void;
+}
+
+interface BBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type DragKind =
+  | { kind: 'move' }
+  | { kind: 'scale'; anchor: Point; startDist: number }
+  | { kind: 'rotate'; center: Point; startAngle: number }
+  | { kind: 'pivot' }
+  | { kind: 'socket'; socketId: string };
+
+interface DragState {
+  drag: DragKind;
+  start: Point;
+  moved: boolean;
+}
+
+const MODE_LABELS: Record<string, string> = { cutout: '刻纸', positive: '贴花', erase: '剪除' };
+
+const LayerMarkup = React.memo(function LayerMarkup({
+  layer,
+  shadow,
+  transform,
+}: {
+  layer: Layer;
+  shadow: number;
+  transform?: string;
+}) {
+  const html = useMemo(
+    () => renderLayerMarkup(layer, { idPrefix: 'cv_', shadow, grain: true, interactive: true }),
+    [layer, shadow]
+  );
+  return <g data-layer-id={layer.id} transform={transform} dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
+function unionBBox(boxes: BBox[]): BBox | null {
+  if (boxes.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  boxes.forEach((b) => {
+    minX = Math.min(minX, b.x);
+    minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x + b.width);
+    maxY = Math.max(maxY, b.y + b.height);
+  });
+  if (!isFinite(minX)) return null;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -58,6 +131,14 @@ export const Canvas: React.FC<CanvasProps> = ({
   onAddDrawingStroke,
   onCommitCutoutEdit,
   onExitAnchorEdit,
+  selectedLayerIds,
+  selectionScope,
+  selectedItem,
+  onSelectLayers,
+  onPickLayer,
+  onTransformLayers,
+  onUpdateItem,
+  onDeleteLayers,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -78,7 +159,6 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Polyline shape drawing state (单击新增锚点，双击终止)
   const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
-  const [hoverCanvasPoint, setHoverCanvasPoint] = useState<Point | null>(null);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
 
   // Anchor Edit Tool State
@@ -88,8 +168,20 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [hasDraggedAnchor, setHasDraggedAnchor] = useState(false);
   const [isDraggingAnchor, setIsDraggingAnchor] = useState(false);
 
-  // Active layer
+  // Select tool state: live preview matrix + pivot/socket drag positions
+  const dragRef = useRef<DragState | null>(null);
+  const [previewMatrix, setPreviewMatrix] = useState<Matrix>(IDENTITY);
+  const [dragPoint, setDragPoint] = useState<Point | null>(null);
+  const [isSelectDragging, setIsSelectDragging] = useState(false);
+  const [selectionBBox, setSelectionBBox] = useState<BBox | null>(null);
+  const [activeBBox, setActiveBBox] = useState<BBox | null>(null);
+
   const activeLayer = activeLayerId ? project.layers[activeLayerId] : null;
+  const activeGroup = activeLayerId ? findGroupOfLayer(project, activeLayerId) : null;
+  const activeItem = activeLayerId ? findItemOfLayer(project, activeLayerId) : null;
+  const activeLocked = !!activeLayer && (activeLayer.locked || !!activeGroup?.locked);
+  const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
+  const shadow = project.shadowStrength ?? 0.5;
 
   // Spacebar listener for canvas hand tool
   useEffect(() => {
@@ -101,6 +193,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         return;
       }
       if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
         setIsSpacePressed(true);
       }
     };
@@ -119,6 +212,33 @@ export const Canvas: React.FC<CanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Arrow-key nudge and delete for the select tool
+  useEffect(() => {
+    if (currentTool !== 'select') return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (selectedLayerIds.length === 0) return;
+      const step = e.shiftKey ? 10 : 1;
+      const moves: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      };
+      if (moves[e.key]) {
+        e.preventDefault();
+        onTransformLayers(selectedLayerIds, translate(...moves[e.key]));
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        onDeleteLayers(selectedLayerIds);
+        playDiscardSwoosh();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentTool, selectedLayerIds, onTransformLayers, onDeleteLayers]);
 
   // When switching to/from anchor_edit, auto-select latest cutout if none selected
   useEffect(() => {
@@ -153,6 +273,29 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
   }, [activeLayer, selectedCutoutId, currentTool]);
 
+  // Measure selection / active layer bounds from the rendered geometry
+  const measureLayers = useCallback((ids: string[]): BBox | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const boxes: BBox[] = [];
+    ids.forEach((id) => {
+      const el = svg.querySelector(`[data-layer-id="${id}"]`) as SVGGElement | null;
+      if (!el) return;
+      try {
+        const b = el.getBBox();
+        if (b.width > 0 || b.height > 0) boxes.push({ x: b.x, y: b.y, width: b.width, height: b.height });
+      } catch {
+        /* element not rendered */
+      }
+    });
+    return unionBBox(boxes);
+  }, []);
+
+  useLayoutEffect(() => {
+    setSelectionBBox(measureLayers(selectedLayerIds));
+    setActiveBBox(activeLayerId ? measureLayers([activeLayerId]) : null);
+  }, [project, selectedLayerIds, activeLayerId, measureLayers]);
+
   // Transform client screen coordinates to Canvas coordinate system
   const clientToCanvas = useCallback(
     (clientX: number, clientY: number): Point => {
@@ -171,15 +314,14 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Wheel zoom around cursor
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
     if (e.ctrlKey || e.metaKey || isSpacePressed) {
       const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
       const newZoom = Math.min(Math.max(zoom * zoomFactor, 0.25), 3.5);
 
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        const mouseX = e.clientX - rect.left - rect.width / 2;
+        const mouseY = e.clientY - rect.top - rect.height / 2;
 
         const newPanX = mouseX - (mouseX - pan.x) * (newZoom / zoom);
         const newPanY = mouseY - (mouseY - pan.y) * (newZoom / zoom);
@@ -195,6 +337,15 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
+  // Ctrl+wheel must be cancelled with a non-passive listener or the browser zooms the page.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const stop = (e: WheelEvent) => e.preventDefault();
+    el.addEventListener('wheel', stop, { passive: false });
+    return () => el.removeEventListener('wheel', stop);
+  }, []);
+
   const getEventPressure = (
     e: React.MouseEvent | MouseEvent | React.PointerEvent | PointerEvent
   ): number => {
@@ -204,8 +355,170 @@ export const Canvas: React.FC<CanvasProps> = ({
     return 0.5;
   };
 
+  const layerIdFromTarget = (target: EventTarget | null): string | null => {
+    const el = (target as Element | null)?.closest?.('[data-layer-id]');
+    return el ? el.getAttribute('data-layer-id') : null;
+  };
+
+  const expandToScope = (layerId: string): string[] => {
+    if (selectionScope === 'item') {
+      const item = findItemOfLayer(project, layerId);
+      if (item) return [...item.partIds];
+    }
+    return [layerId];
+  };
+
+  // ---------- Select tool ----------
+  const beginSelectDrag = (drag: DragKind, pt: Point) => {
+    dragRef.current = { drag, start: pt, moved: false };
+    setIsSelectDragging(true);
+    setPreviewMatrix(IDENTITY);
+    setDragPoint(null);
+  };
+
+  const handleSelectDown = (e: React.PointerEvent, pt: Point) => {
+    const handle = (e.target as Element).closest?.('[data-handle]')?.getAttribute('data-handle');
+    const box = selectionBBox;
+
+    if (handle && box) {
+      if (handle.startsWith('scale-')) {
+        const corner = handle.slice(6);
+        const anchor = {
+          x: corner.includes('w') ? box.x + box.width : box.x,
+          y: corner.includes('n') ? box.y + box.height : box.y,
+        };
+        beginSelectDrag(
+          { kind: 'scale', anchor, startDist: Math.max(1, Math.hypot(pt.x - anchor.x, pt.y - anchor.y)) },
+          pt
+        );
+        return;
+      }
+      if (handle === 'rotate') {
+        const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        beginSelectDrag({ kind: 'rotate', center, startAngle: Math.atan2(pt.y - center.y, pt.x - center.x) }, pt);
+        return;
+      }
+    }
+    if (handle === 'pivot' && selectedItem) {
+      beginSelectDrag({ kind: 'pivot' }, pt);
+      setDragPoint(selectedItem.pivot);
+      return;
+    }
+    if (handle?.startsWith('socket:') && selectedItem) {
+      const socketId = handle.slice(7);
+      const socket = selectedItem.sockets.find((s) => s.id === socketId);
+      beginSelectDrag({ kind: 'socket', socketId }, pt);
+      if (socket) setDragPoint({ x: socket.x, y: socket.y });
+      return;
+    }
+
+    const hitId = layerIdFromTarget(e.target);
+    if (hitId) {
+      const scoped = expandToScope(hitId);
+      const alreadySelected = scoped.every((id) => selectedLayerIds.includes(id));
+      if (e.shiftKey) {
+        const next = alreadySelected
+          ? selectedLayerIds.filter((id) => !scoped.includes(id))
+          : Array.from(new Set([...selectedLayerIds, ...scoped]));
+        onSelectLayers(next, hitId);
+        return;
+      }
+      if (!alreadySelected) onSelectLayers(scoped, hitId);
+      else if (hitId !== activeLayerId) onPickLayer(hitId);
+      beginSelectDrag({ kind: 'move' }, pt);
+      return;
+    }
+
+    if (
+      box &&
+      pt.x >= box.x && pt.x <= box.x + box.width &&
+      pt.y >= box.y && pt.y <= box.y + box.height
+    ) {
+      beginSelectDrag({ kind: 'move' }, pt);
+      return;
+    }
+    onSelectLayers([]);
+  };
+
+  useEffect(() => {
+    if (!isSelectDragging) return;
+    const computeMatrix = (st: DragState, pt: Point, shift: boolean): Matrix => {
+      const d = st.drag;
+      if (d.kind === 'move') {
+        let dx = pt.x - st.start.x;
+        let dy = pt.y - st.start.y;
+        if (shift) {
+          if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+          else dx = 0;
+        }
+        return translate(dx, dy);
+      }
+      if (d.kind === 'scale') {
+        const s = Math.max(0.05, Math.hypot(pt.x - d.anchor.x, pt.y - d.anchor.y) / d.startDist);
+        return scaleAbout(s, d.anchor.x, d.anchor.y);
+      }
+      if (d.kind === 'rotate') {
+        let a = Math.atan2(pt.y - d.center.y, pt.x - d.center.x) - d.startAngle;
+        if (shift) a = Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
+        return rotateAbout(a, d.center.x, d.center.y);
+      }
+      return IDENTITY;
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const st = dragRef.current;
+      if (!st) return;
+      const pt = clientToCanvas(e.clientX, e.clientY);
+      if (!st.moved && Math.hypot(pt.x - st.start.x, pt.y - st.start.y) * zoom < 2) return;
+      st.moved = true;
+      if (st.drag.kind === 'pivot' || st.drag.kind === 'socket') {
+        setDragPoint({ x: Math.round(pt.x), y: Math.round(pt.y) });
+      } else {
+        setPreviewMatrix(computeMatrix(st, pt, e.shiftKey));
+      }
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const st = dragRef.current;
+      dragRef.current = null;
+      setIsSelectDragging(false);
+      if (!st || !st.moved) {
+        setPreviewMatrix(IDENTITY);
+        setDragPoint(null);
+        return;
+      }
+      const pt = clientToCanvas(e.clientX, e.clientY);
+      if (st.drag.kind === 'pivot' && selectedItem) {
+        onUpdateItem(selectedItem.id, { pivot: { x: Math.round(pt.x), y: Math.round(pt.y) } });
+      } else if (st.drag.kind === 'socket' && selectedItem) {
+        const sid = st.drag.socketId;
+        onUpdateItem(selectedItem.id, {
+          sockets: selectedItem.sockets.map((s) =>
+            s.id === sid ? { ...s, x: Math.round(pt.x), y: Math.round(pt.y) } : s
+          ),
+        });
+      } else {
+        const m = computeMatrix(st, pt, e.shiftKey);
+        const movable = selectedLayerIds.filter((id) => {
+          const l = project.layers[id];
+          return l && !l.locked && !findGroupOfLayer(project, id)?.locked;
+        });
+        if (movable.length > 0) onTransformLayers(movable, m);
+      }
+      setPreviewMatrix(IDENTITY);
+      setDragPoint(null);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [isSelectDragging, clientToCanvas, zoom, selectedItem, selectedLayerIds, project, onTransformLayers, onUpdateItem]);
+
   // Mouse / Pointer Down handler
-  const handleMouseDown = (e: React.MouseEvent | React.PointerEvent) => {
+  const handleMouseDown = (e: React.PointerEvent) => {
     if (e.button === 1 || isSpacePressed) {
       setIsPanning(true);
       setPanStart({
@@ -218,6 +531,21 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (e.button !== 0) return;
     const pt = clientToCanvas(e.clientX, e.clientY);
     pt.pressure = getEventPressure(e);
+
+    // Alt + 点击：拾取画布上的图层，任何工具下可用
+    if (e.altKey) {
+      const hitId = layerIdFromTarget(e.target);
+      if (hitId) {
+        onPickLayer(hitId);
+        playCrispClick();
+      }
+      return;
+    }
+
+    if (currentTool === 'select') {
+      handleSelectDown(e, pt);
+      return;
+    }
 
     // 1. Anchor Edit Tool
     if (currentTool === 'anchor_edit') {
@@ -257,36 +585,15 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     // 2. Polyline shape in geom_shape (折线：单击新增锚点，双击终止)
     if (currentTool === 'geom_shape' && brushSettings.geomShapeType === 'polyline') {
-      if (!activeLayer || activeLayer.locked || !activeLayer.visible) return;
+      if (!activeLayer || activeLocked || activeHidden) return;
 
       const now = Date.now();
-      // If clicking near first point or rapid double click
-      if (
+      const closeNearStart =
         polylinePoints.length >= 3 &&
-        Math.hypot(pt.x - polylinePoints[0].x, pt.y - polylinePoints[0].y) < 20 / zoom
-      ) {
-        const d = `M ${polylinePoints.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`;
-        const isHole =
-          brushSettings.mode === 'cutout' ||
-          (brushSettings.mode === 'erase' && brushSettings.eraseMode === 'willow');
-        const newCutout: CutoutPath = {
-          id: `cut_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          name: `折线切口 ${activeLayer.cutouts.length + 1}`,
-          type: 'geom_shape',
-          geomType: 'polyline',
-          d,
-          isHole,
-          fillColor: isHole ? undefined : activeLayer.color,
-          createdAt: Date.now(),
-          points: polylinePoints,
-        };
-        onAddCutout(newCutout);
-        playPaperRustle();
-        setPolylinePoints([]);
-        return;
-      }
+        Math.hypot(pt.x - polylinePoints[0].x, pt.y - polylinePoints[0].y) < 20 / zoom;
+      const doubleClick = now - lastClickTime < 320 && polylinePoints.length >= 2;
 
-      if (now - lastClickTime < 320 && polylinePoints.length >= 2) {
+      if (closeNearStart || doubleClick) {
         const finalPts = [...polylinePoints];
         const d = `M ${finalPts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`;
         const isHole =
@@ -322,11 +629,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     setStrokePoints([pt]);
   };
 
-  // Global mouse move & up listeners
+  // Global pointer move & up listeners for drawing / panning / anchor editing
   useEffect(() => {
     if (!isDrawing && !isPanning && activeAnchorIndex === null) return;
 
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const handleWindowMouseMove = (e: PointerEvent) => {
       if (isPanning) {
         setPan({
           x: e.clientX - panStart.x,
@@ -390,10 +697,11 @@ export const Canvas: React.FC<CanvasProps> = ({
       }
 
       const dist = Math.hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y);
+      const canEdit = !!activeLayer && !activeLocked && !activeHidden;
 
       // 1. Hand Draw Tool (手绘：铅笔/钢笔/喷枪，附属于当前图层蒙版)
       if (currentTool === 'hand_draw') {
-        if (activeLayer && !activeLayer.locked && activeLayer.visible && strokePoints.length >= 2) {
+        if (activeLayer && canEdit && strokePoints.length >= 2) {
           const drawD = generateFreehandDrawPath(strokePoints);
           if (drawD) {
             const brushType = brushSettings.drawBrushType || 'pencil';
@@ -478,9 +786,8 @@ export const Canvas: React.FC<CanvasProps> = ({
       }
 
       // Handle Erase mode: deletes touched cutouts (智能橡皮) vs 柳叶笔划痕局部镂空 (柳叶笔橡皮)
-      if (brushSettings.mode === 'erase' && activeLayer && !activeLayer.locked && activeLayer.visible) {
+      if (brushSettings.mode === 'erase' && activeLayer && canEdit) {
         if (brushSettings.eraseMode === 'willow') {
-          // 柳叶笔橡皮：以柳叶笔划痕作为镂空割除
           if (strokePoints.length >= 2) {
             const willowD = generateRealtimeWillowLeaf(
               strokePoints,
@@ -503,7 +810,6 @@ export const Canvas: React.FC<CanvasProps> = ({
             }
           }
         } else {
-          // 智能橡皮：触碰切口直接消除
           const pts = strokePoints.length > 0 ? strokePoints : [startPoint, currentPoint];
           const toDeleteIds: string[] = [];
 
@@ -534,7 +840,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             }
           }
         }
-      } else if (baseD && activeLayer && !activeLayer.locked && activeLayer.visible) {
+      } else if (baseD && activeLayer && canEdit) {
         const isHole = brushSettings.mode === 'cutout';
         const toolNames: Record<string, string> = {
           willow_leaf: '柳叶',
@@ -573,13 +879,9 @@ export const Canvas: React.FC<CanvasProps> = ({
       setStrokePoints([]);
     };
 
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', handleWindowMouseUp);
     window.addEventListener('pointermove', handleWindowMouseMove);
     window.addEventListener('pointerup', handleWindowMouseUp);
     return () => {
-      window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mouseup', handleWindowMouseUp);
       window.removeEventListener('pointermove', handleWindowMouseMove);
       window.removeEventListener('pointerup', handleWindowMouseUp);
     };
@@ -593,7 +895,10 @@ export const Canvas: React.FC<CanvasProps> = ({
     selectedCutoutId,
     editableAnchors,
     hasDraggedAnchor,
+    isDraggingAnchor,
     activeLayer,
+    activeLocked,
+    activeHidden,
     onUpdateCutout,
     onCommitCutoutEdit,
     startPoint,
@@ -621,7 +926,11 @@ export const Canvas: React.FC<CanvasProps> = ({
       const dist = Math.hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y);
       const p1 = dist < 8 ? { x: startPoint.x - 40, y: startPoint.y - 40 } : startPoint;
       const p2 = dist < 8 ? { x: startPoint.x + 40, y: startPoint.y + 40 } : currentPoint;
-      const geom = generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2);
+      const geom = generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2, {
+        starPoints: brushSettings.starPoints ?? 5,
+        starRoundness: brushSettings.starRoundness ?? 0,
+        starIrregularity: brushSettings.starIrregularity ?? 0,
+      });
       return geom.d;
     } else if (currentTool === 'pen_knife' || currentTool === 'freehand') {
       if (strokePoints.length >= 2) {
@@ -642,39 +951,66 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const previewD = getLivePreviewPath();
 
-  // Compile layers in drawing order (bottom to top)
-  const renderLayerOrder: Layer[] = [];
-  project.rootOrder.forEach((item) => {
-    if (item.type === 'group') {
-      const grp = project.groups.find((g) => g.id === item.id);
-      if (grp && grp.visible) {
-        grp.layerIds.forEach((lid) => {
-          const lyr = project.layers[lid];
-          if (lyr && lyr.visible) renderLayerOrder.push(lyr);
-        });
-      }
-    } else {
-      const lyr = project.layers[item.id];
-      if (lyr && lyr.visible) renderLayerOrder.push(lyr);
-    }
-  });
+  const renderLayerOrder: Layer[] = flattenLayerIds(project)
+    .filter((id) => isLayerRendered(project, id))
+    .map((id) => project.layers[id]);
+
+  const selectedSet = new Set(selectedLayerIds);
+  const previewTransform = previewMatrix === IDENTITY ? undefined : matrixToSvg(previewMatrix);
+  const liveBox = (() => {
+    if (!selectionBBox) return null;
+    if (previewMatrix === IDENTITY) return selectionBBox;
+    const b = selectionBBox;
+    const corners = [
+      { x: b.x, y: b.y },
+      { x: b.x + b.width, y: b.y },
+      { x: b.x, y: b.y + b.height },
+      { x: b.x + b.width, y: b.y + b.height },
+    ].map((p) => applyToPoint(previewMatrix, p));
+    return unionBBox(corners.map((p) => ({ x: p.x, y: p.y, width: 0, height: 0 })));
+  })();
+
+  const ref = project.reference;
+  const referenceNode =
+    ref && ref.visible ? (
+      <image
+        href={ref.src}
+        x={ref.x}
+        y={ref.y}
+        width={ref.width}
+        height={ref.height}
+        opacity={ref.opacity}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ pointerEvents: 'none' }}
+      />
+    ) : null;
+
+  const hs = 1 / zoom;
+  const itemPivot =
+    selectedItem &&
+    (dragRef.current?.drag.kind === 'pivot' && dragPoint
+      ? dragPoint
+      : applyToPoint(previewMatrix, selectedItem.pivot));
+
+  const cursorClass = isDraggingAnchor
+    ? 'cursor-grabbing'
+    : isSpacePressed || isPanning
+    ? 'cursor-grab'
+    : currentTool === 'select'
+    ? 'cursor-default'
+    : currentTool === 'anchor_edit'
+    ? 'cursor-default'
+    : activeLocked || activeHidden
+    ? 'cursor-not-allowed'
+    : 'cursor-crosshair';
 
   return (
     <div
       ref={containerRef}
-      onMouseDown={handleMouseDown}
       onPointerDown={handleMouseDown}
       onWheel={handleWheel}
       style={{ touchAction: 'none' }}
-      className={`flex-1 relative overflow-hidden select-none bg-[#111520] cursor-${
-        isDraggingAnchor
-          ? 'grabbing'
-          : isSpacePressed || isPanning
-          ? 'grab'
-          : currentTool === 'anchor_edit'
-          ? 'default'
-          : 'crosshair'
-      }`}
+      className={`flex-1 relative overflow-hidden select-none bg-[#111520] ${cursorClass}`}
     >
       {/* Outer Studio Workbench Grid Texture */}
       <div
@@ -686,7 +1022,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         }}
       />
 
-      {/* SVG Canvas Container with craft framing */}
+      {/* SVG Canvas Container */}
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
         style={{
@@ -708,150 +1044,80 @@ export const Canvas: React.FC<CanvasProps> = ({
             className="rounded-xl overflow-visible w-full h-full"
           >
             <defs>
-              {/* Paper Drop Shadow for authentic layered craft relief */}
-              <filter id="paper-drop-shadow" x="-10%" y="-10%" width="130%" height="130%">
-                <feDropShadow
-                  dx="2"
-                  dy="3.5"
-                  stdDeviation="3"
-                  floodColor="#0E1320"
-                  floodOpacity="0.35"
-                />
-              </filter>
-
-              {/* Grid pattern for the craft tablet inside */}
               <pattern id="craft-grid" width="24" height="24" patternUnits="userSpaceOnUse">
                 <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#E2E7F3" strokeWidth="0.8" />
               </pattern>
-
-              {/* Clipping Masks for Each Layer (绘制内容附属于目前的剪纸图层，不会画到剪纸图层外面，镂空处亦受剪纸保护) */}
-              {renderLayerOrder.map((layer) => {
-                const holePaths = layer.cutouts.filter((c) => c.isHole).map((c) => c.d);
-                const compoundD = [layer.baseShape?.d, ...holePaths].filter(Boolean).join(' ');
-                return (
-                  <clipPath id={`layer_clip_${layer.id}`} key={`clip_${layer.id}`}>
-                    <path
-                      d={compoundD || layer.baseShape?.d || ''}
-                      clipRule="evenodd"
-                    />
-                  </clipPath>
-                );
-              })}
             </defs>
 
             {/* Underlay Notepad Backing */}
-            <rect
-              width={project.width}
-              height={project.height}
-              fill="#FAF8F2"
-              rx="16"
-              className="shadow-inner"
-            />
-            <rect
-              width={project.width}
-              height={project.height}
-              fill="url(#craft-grid)"
-              rx="16"
-              opacity="0.85"
-            />
+            <rect width={project.width} height={project.height} fill="#FAF8F2" rx="16" />
+            <rect width={project.width} height={project.height} fill="url(#craft-grid)" rx="16" opacity="0.85" />
+
+            {ref && !ref.onTop && referenceNode}
 
             {/* Layer Stacks */}
-            {renderLayerOrder.map((layer) => {
-              const isCurrentLayer = layer.id === activeLayerId;
-              const holePaths = layer.cutouts.filter((c) => c.isHole).map((c) => c.d);
-              const positiveElements = layer.positiveElements.concat(
-                layer.cutouts.filter((c) => !c.isHole)
-              );
+            {renderLayerOrder.map((layer) => (
+              <LayerMarkup
+                key={layer.id}
+                layer={layer}
+                shadow={shadow}
+                transform={selectedSet.has(layer.id) ? previewTransform : undefined}
+              />
+            ))}
 
-              // Paper base + hollow cutouts
-              const compoundD = [layer.baseShape.d, ...holePaths].join(' ');
+            {ref && ref.onTop && referenceNode}
 
-              return (
-                <g
-                  key={layer.id}
-                  opacity={layer.opacity}
-                  style={{ mixBlendMode: layer.blendMode }}
-                  filter="url(#paper-drop-shadow)"
-                >
-                  {/* 1. Base Paper with Holes (fill-rule="evenodd" is the key to true hollow papercuts) */}
-                  {layer.baseShape.d && (
+            {/* Direct clickable hit area for cutouts when in anchor_edit mode */}
+            {activeLayer && currentTool === 'anchor_edit' && isLayerRendered(project, activeLayer.id) && (
+              <g>
+                {activeLayer.cutouts.map((c) => {
+                  const isSelected = selectedCutoutId === c.id;
+                  return (
                     <path
-                      d={compoundD}
-                      fill={layer.color}
-                      fillRule="evenodd"
-                      className="transition-colors duration-100"
+                      key={`hit_${c.id}`}
+                      d={c.d}
+                      fill={isSelected ? '#2652D0' : 'transparent'}
+                      fillOpacity={isSelected ? 0.08 : 0}
+                      stroke={isSelected ? '#2652D0' : '#BAC5EB'}
+                      strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom}
+                      strokeDasharray={isSelected ? '4 3' : '2 2'}
+                      strokeOpacity={isSelected ? 1 : 0.4}
+                      style={{ pointerEvents: 'all' }}
+                      className="cursor-pointer"
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        setSelectedCutoutId(c.id);
+                        const anchors =
+                          c.points && c.points.length > 0
+                            ? c.points
+                            : extractAnchorPointsFromD(c.d);
+                        setEditableAnchors(anchors);
+                      }}
                     />
-                  )}
+                  );
+                })}
+              </g>
+            )}
 
-                  {/* 2. Positive Applique Cutouts (Additive paper pieces) */}
-                  {positiveElements.map((elem) => (
-                    <path
-                      key={elem.id}
-                      d={elem.d}
-                      fill={elem.fillColor || layer.color}
-                    />
-                  ))}
-
-                  {/* 3. Layer Hand Drawings (手绘：铅笔/钢笔/喷枪，严格受限于图层剪贴蒙版，绝不出界) */}
-                  {layer.drawings && layer.drawings.length > 0 && (
-                    <g clipPath={`url(#layer_clip_${layer.id})`}>
-                      {layer.drawings.map((drw) => (
-                        <path
-                          key={drw.id}
-                          d={drw.d}
-                          fill="none"
-                          stroke={drw.color}
-                          strokeWidth={drw.strokeWidth}
-                          strokeOpacity={drw.opacity}
-                          strokeLinecap={drw.strokeLinecap || 'round'}
-                          strokeLinejoin={drw.strokeLinejoin || 'round'}
-                          style={{
-                            filter: drw.blur ? `blur(${drw.blur}px)` : undefined,
-                          }}
-                        />
-                      ))}
-                    </g>
-                  )}
-
-                  {/* 4. Direct clickable hit area for cutouts when in anchor_edit mode */}
-                  {isCurrentLayer && currentTool === 'anchor_edit' && (
-                    <g>
-                      {layer.cutouts.map((c) => {
-                        const isSelected = selectedCutoutId === c.id;
-                        return (
-                          <g key={`hit_group_${c.id}`}>
-                            <path
-                              d={c.d}
-                              fill={isSelected ? '#2652D0' : 'transparent'}
-                              fillOpacity={isSelected ? 0.08 : 0}
-                              stroke={isSelected ? '#2652D0' : '#BAC5EB'}
-                              strokeWidth={isSelected ? 2.5 / zoom : 1.5 / zoom}
-                              strokeDasharray={isSelected ? '4 3' : '2 2'}
-                              strokeOpacity={isSelected ? 1 : 0.4}
-                              style={{ pointerEvents: 'all' }}
-                              className="cursor-pointer"
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                setSelectedCutoutId(c.id);
-                                const anchors =
-                                  c.points && c.points.length > 0
-                                    ? c.points
-                                    : extractAnchorPointsFromD(c.d);
-                                setEditableAnchors(anchors);
-                              }}
-                            />
-                          </g>
-                        );
-                      })}
-                    </g>
-                  )}
-                </g>
-              );
-            })}
+            {/* Active layer outline for drawing tools, so it is always clear where strokes land */}
+            {currentTool !== 'select' && activeBBox && !isDrawing && (
+              <rect
+                x={activeBBox.x - 4 * hs}
+                y={activeBBox.y - 4 * hs}
+                width={activeBBox.width + 8 * hs}
+                height={activeBBox.height + 8 * hs}
+                fill="none"
+                stroke={activeLocked ? '#D23838' : '#2652D0'}
+                strokeOpacity={0.55}
+                strokeWidth={1.2 * hs}
+                strokeDasharray={`${5 * hs} ${4 * hs}`}
+                pointerEvents="none"
+              />
+            )}
 
             {/* Real-time Hand Drawing Stroke Preview (Clipped by active layer mask) */}
             {isDrawing && currentTool === 'hand_draw' && activeLayer && previewD && (
-              <g clipPath={`url(#layer_clip_${activeLayer.id})`}>
+              <g mask={`url(#cv_${activeLayer.id}_mask)`}>
                 <path
                   d={previewD}
                   fill="none"
@@ -874,28 +1140,128 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {/* Real-time Cutout Preview (Willow Leaf, Geom Shapes, Pen Knife) */}
             {isDrawing && currentTool !== 'hand_draw' && previewD && (
+              <path
+                d={previewD}
+                fill={
+                  brushSettings.mode === 'erase'
+                    ? '#EB8E88'
+                    : brushSettings.mode === 'cutout'
+                    ? '#FAF8F2'
+                    : activeLayer?.color || '#2652D0'
+                }
+                fillOpacity={brushSettings.mode === 'erase' ? 0.3 : 0.88}
+                stroke={brushSettings.mode === 'cutout' ? '#2652D0' : '#EB8E88'}
+                strokeWidth={2 / zoom}
+                strokeDasharray={brushSettings.mode === 'erase' ? '3 3' : brushSettings.mode === 'cutout' ? '4 3' : undefined}
+                opacity={0.88}
+              />
+            )}
+
+            {/* Polyline in progress */}
+            {polylinePoints.length > 0 && (
+              <polyline
+                points={polylinePoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="none"
+                stroke="#2652D0"
+                strokeWidth={2 / zoom}
+                strokeDasharray="4 3"
+                pointerEvents="none"
+              />
+            )}
+
+            {/* Select tool: bounding box + scale/rotate handles */}
+            {currentTool === 'select' && liveBox && (
               <g>
-                <path
-                  d={previewD}
-                  fill={
-                    brushSettings.mode === 'erase'
-                      ? '#EB8E88'
-                      : brushSettings.mode === 'cutout'
-                      ? '#FAF8F2'
-                      : (activeLayer?.color || '#2652D0')
-                  }
-                  fillOpacity={brushSettings.mode === 'erase' ? 0.3 : 0.88}
-                  stroke={
-                    brushSettings.mode === 'erase'
-                      ? '#EB8E88'
-                      : brushSettings.mode === 'cutout'
-                      ? '#2652D0'
-                      : '#EB8E88'
-                  }
-                  strokeWidth={2 / zoom}
-                  strokeDasharray={brushSettings.mode === 'erase' ? '3 3' : brushSettings.mode === 'cutout' ? '4 3' : undefined}
-                  opacity={0.88}
+                <rect
+                  x={liveBox.x}
+                  y={liveBox.y}
+                  width={liveBox.width}
+                  height={liveBox.height}
+                  fill="none"
+                  stroke="#2652D0"
+                  strokeWidth={1.5 * hs}
+                  strokeDasharray={selectedItem ? undefined : `${6 * hs} ${4 * hs}`}
+                  pointerEvents="none"
                 />
+                {!isSelectDragging && (
+                  <>
+                    <line
+                      x1={liveBox.x + liveBox.width / 2}
+                      y1={liveBox.y}
+                      x2={liveBox.x + liveBox.width / 2}
+                      y2={liveBox.y - 26 * hs}
+                      stroke="#2652D0"
+                      strokeWidth={1.2 * hs}
+                      pointerEvents="none"
+                    />
+                    <circle
+                      data-handle="rotate"
+                      cx={liveBox.x + liveBox.width / 2}
+                      cy={liveBox.y - 26 * hs}
+                      r={6 * hs}
+                      fill="#FBFBFC"
+                      stroke="#2652D0"
+                      strokeWidth={2 * hs}
+                      className="cursor-grab"
+                    />
+                    {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
+                      <rect
+                        key={corner}
+                        data-handle={`scale-${corner}`}
+                        x={(corner.includes('w') ? liveBox.x : liveBox.x + liveBox.width) - 5 * hs}
+                        y={(corner.includes('n') ? liveBox.y : liveBox.y + liveBox.height) - 5 * hs}
+                        width={10 * hs}
+                        height={10 * hs}
+                        fill="#FBFBFC"
+                        stroke="#2652D0"
+                        strokeWidth={2 * hs}
+                        className={corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}
+                      />
+                    ))}
+                  </>
+                )}
+              </g>
+            )}
+
+            {/* Item pivot & sockets */}
+            {currentTool === 'select' && selectedItem && itemPivot && (
+              <g>
+                {selectedItem.sockets.map((s) => {
+                  const pos =
+                    dragRef.current?.drag.kind === 'socket' &&
+                    (dragRef.current.drag as { socketId: string }).socketId === s.id &&
+                    dragPoint
+                      ? dragPoint
+                      : applyToPoint(previewMatrix, s);
+                  return (
+                    <g key={s.id} data-handle={`socket:${s.id}`} className="cursor-move">
+                      <path
+                        d={`M ${pos.x} ${pos.y - 7 * hs} L ${pos.x + 7 * hs} ${pos.y} L ${pos.x} ${pos.y + 7 * hs} L ${pos.x - 7 * hs} ${pos.y} Z`}
+                        fill="#EB8E88"
+                        stroke="#FBFBFC"
+                        strokeWidth={1.5 * hs}
+                      />
+                      <text
+                        x={pos.x + 10 * hs}
+                        y={pos.y + 4 * hs}
+                        fontSize={11 * hs}
+                        fill="#482A45"
+                        fontWeight={600}
+                        style={{ paintOrder: 'stroke', stroke: '#FBFBFC', strokeWidth: 3 * hs }}
+                      >
+                        {s.name}
+                      </text>
+                    </g>
+                  );
+                })}
+                <g data-handle="pivot" className="cursor-move">
+                  <circle cx={itemPivot.x} cy={itemPivot.y} r={9 * hs} fill="#FBFBFC" fillOpacity={0.85} stroke="#D23838" strokeWidth={2 * hs} />
+                  <path
+                    d={`M ${itemPivot.x - 13 * hs} ${itemPivot.y} H ${itemPivot.x + 13 * hs} M ${itemPivot.x} ${itemPivot.y - 13 * hs} V ${itemPivot.y + 13 * hs}`}
+                    stroke="#D23838"
+                    strokeWidth={1.5 * hs}
+                  />
+                </g>
               </g>
             )}
 
@@ -917,14 +1283,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         document.body.style.userSelect = 'none';
                       }}
                     >
-                      <circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={18 / zoom}
-                        fill="transparent"
-                        style={{ pointerEvents: 'all' }}
-                        className="cursor-move"
-                      />
+                      <circle cx={pt.x} cy={pt.y} r={18 / zoom} fill="transparent" style={{ pointerEvents: 'all' }} />
                       <circle
                         cx={pt.x}
                         cy={pt.y}
@@ -932,14 +1291,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                         fill={isAnchorActive ? '#2652D0' : '#FFFFFF'}
                         stroke="#2652D0"
                         strokeWidth={2.5 / zoom}
-                        className="transition-transform hover:scale-125 shadow-lg"
                       />
-                      <circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={2.5 / zoom}
-                        fill={isAnchorActive ? '#FFFFFF' : '#2652D0'}
-                      />
+                      <circle cx={pt.x} cy={pt.y} r={2.5 / zoom} fill={isAnchorActive ? '#FFFFFF' : '#2652D0'} />
                     </g>
                   );
                 })}
@@ -947,6 +1300,60 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
           </svg>
         </div>
+      </div>
+
+      {/* HUD: 当前图层 / 物件 / 模式，永远知道笔落在哪 */}
+      <div className="absolute top-3 left-3 z-20 pointer-events-none flex flex-col gap-1.5 max-w-[60%]">
+        {currentTool === 'select' ? (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border border-[#2B364D] text-[11px] text-[#CAD0DB] shadow-lg backdrop-blur-md">
+            <span className="text-[#8E9FCA]">选择</span>
+            <span className="text-[#FBFBFC] font-medium">
+              {selectedLayerIds.length === 0
+                ? '点击画布上的纸片'
+                : selectedItem
+                ? `物件「${selectedItem.name}」· ${selectedItem.partIds.length} 个部件`
+                : `${selectedLayerIds.length} 个部件`}
+            </span>
+            <span className="text-[#5E6E94]">
+              {selectionScope === 'item' ? '整物件选取' : '单部件选取'}
+            </span>
+          </div>
+        ) : activeLayer ? (
+          <div
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border text-[11px] text-[#CAD0DB] shadow-lg backdrop-blur-md ${
+              activeLocked || activeHidden ? 'border-[#D23838]/70' : 'border-[#2B364D]'
+            }`}
+          >
+            <span className="w-3 h-3 rounded-sm border border-white/40 shrink-0" style={{ backgroundColor: activeLayer.color }} />
+            <span className="text-[#FBFBFC] font-medium truncate">{activeLayer.name}</span>
+            {activeGroup && <span className="text-[#7E8FB8] truncate">· {activeGroup.name}</span>}
+            {activeItem && (
+              <span className="flex items-center gap-1 text-[#EB8E88] truncate">
+                <Box className="w-3 h-3" />
+                {activeItem.name}
+              </span>
+            )}
+            {currentTool !== 'hand_draw' && currentTool !== 'anchor_edit' && (
+              <span className="px-1.5 py-0.5 rounded-md bg-[#2652D0]/25 text-[#BAC5EB]">
+                {MODE_LABELS[brushSettings.mode] || '刻纸'}
+              </span>
+            )}
+            {activeLocked && (
+              <span className="flex items-center gap-1 text-[#EB8E88]">
+                <Lock className="w-3 h-3" />已锁定
+              </span>
+            )}
+            {activeHidden && (
+              <span className="flex items-center gap-1 text-[#EB8E88]">
+                <EyeOff className="w-3 h-3" />已隐藏
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="px-2.5 py-1.5 rounded-xl bg-[#161B29]/92 border border-[#D23838]/70 text-[11px] text-[#EB8E88]">
+            没有选中图层：在右侧选择，或按住 Alt 点击画布上的纸片
+          </div>
+        )}
       </div>
 
       {/* Floating Check and Cross for Anchor Edit */}

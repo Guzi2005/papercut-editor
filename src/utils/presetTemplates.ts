@@ -4,24 +4,27 @@
  */
 
 import { PapercutProject, Layer, LayerGroup } from '../types/papercut';
+import { createWeaveCharactersPreset } from './weavePresets';
 import { createBaseShapePath, generateWillowLeafPath, generateCrescentPath, generateDiamondPath, generateCombRibbonPath, applySymmetryToPath } from './bezierMath';
 
+/** Weave and Wander 色卡：取样自「针脚与远方」设定图 */
 export const FOLK_PALETTE = [
-  { name: '扎染靛蓝', hex: '#2652D0', desc: '蓝印花布核心靛蓝' },
-  { name: '青花瓷蓝', hex: '#3B6EF0', desc: '明朗织物宝蓝' },
-  { name: '紫藤浅蓝', hex: '#BAC5EB', desc: '柔和薰衣草薄青' },
-  { name: '深绛紫茄', hex: '#482A45', desc: '复古桑葚沉稳深绛' },
-  { name: '松针墨绿', hex: '#1B523D', desc: '静谧冷杉苍翠' },
-  { name: '湖水青绿', hex: '#438B6E', desc: '淡雅竹青与瓷碧' },
-  { name: '珊瑚胭脂', hex: '#EB8E88', desc: '初绽山茶温润珊瑚' },
-  { name: '麦芒亚麻', hex: '#E8DEC8', desc: '天然棉麻原色' },
-  { name: '苍石墨青', hex: '#1E2538', desc: '深郁岩石墨青' },
-  { name: '宣纸净白', hex: '#FBFBFC', desc: '纯手工宣纸本白' },
-  { name: '蜜蜡明黄', hex: '#E59824', desc: '质朴明朗暖阳' },
-  { name: '朱砂印红', hex: '#D23838', desc: '印章吉庆朱红' },
-  { name: '丁香粉藕', hex: '#9DAEE3', desc: '温润丁香薄紫' },
-  { name: '玄墨沉黑', hex: '#15171F', desc: '高定松烟纯墨' },
-  { name: '素练暖白', hex: '#F3EFE6', desc: '手工织匹温润米白' },
+  { name: '织梦靛蓝', hex: '#2E58D6', desc: '贝雷帽与长围巾的主蓝' },
+  { name: '深靛', hex: '#16358F', desc: '蓝印花布的沉底蓝' },
+  { name: '藏青夜', hex: '#1B2352', desc: '裤装、领带与眼镜' },
+  { name: '石灰紫', hex: '#6C73A4', desc: '阴面与次级织物' },
+  { name: '紫藤雾', hex: '#A4A9E0', desc: '长袍拼色与布卷' },
+  { name: '薄雾蓝', hex: '#C6D6F2', desc: '地毯与远景' },
+  { name: '桑葚绛', hex: '#52253A', desc: '柜台、货架与外套' },
+  { name: '茜草红', hex: '#BD5A63', desc: '嘴唇与小点缀' },
+  { name: '腮红粉', hex: '#E48C8C', desc: '腮红、花朵、布卷' },
+  { name: '麦肤', hex: '#F2D2B6', desc: '角色肤色' },
+  { name: '米白棉', hex: '#F6EEE2', desc: '长袍与桌布' },
+  { name: '纸本白', hex: '#FCFAF6', desc: '纹样与高光' },
+  { name: '松石绿', hex: '#2F6E59', desc: '挂布、立柱与凳子' },
+  { name: '胡桃木', hex: '#7E5E4F', desc: '木纹与背板' },
+  { name: '蜜蜡黄', hex: '#E3A548', desc: '少量暖色点缀' },
+  { name: '墨发', hex: '#15161C', desc: '头发与猫' },
 ];
 
 /**
@@ -786,6 +789,12 @@ function createBlankCanvas(): PapercutProject {
 }
 
 export const PRESET_PROJECTS: { id: string; name: string; desc: string; factory: () => PapercutProject }[] = [
+  {
+    id: 'weave_characters',
+    name: '织游角色 · 造型拼装',
+    desc: 'Weave and Wander 风格示范：两名角色与柜台，部件分布在 7 个深度层，已打组为物件',
+    factory: createWeaveCharactersPreset,
+  },
   {
     id: 'folk_workshop',
     name: '针脚与远方 · 民俗工坊',

@@ -85,6 +85,48 @@ export interface Layer {
   cutouts: CutoutPath[];
   positiveElements: CutoutPath[];
   drawings?: LayerDrawStroke[]; // 手绘线条笔迹 (附属于此剪纸图层蒙版)
+  pattern?: LayerPattern; // 纹样填充 (蓝印菱花、条纹、格纹、圆点)
+  grain?: number; // 水粉颗粒质感强度 0 ~ 1
+}
+
+export type PatternType = 'diamond' | 'stripes' | 'checks' | 'dots' | 'argyle';
+
+export interface LayerPattern {
+  type: PatternType;
+  color: string;
+  scale: number; // 纹样单元尺寸 (px)
+  angle: number; // 旋转角度 (deg)
+  opacity: number;
+}
+
+export interface ItemSocket {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * 物件：同一个游戏对象的视觉部件集合。部件即图层，可分布在不同深度组里
+ * (例如柜台后板在家具层、柜台前挡在前景层)，导出到 Godot 时成为一个场景。
+ */
+export interface PapercutItem {
+  id: string;
+  name: string;
+  partIds: string[];
+  pivot: Point;
+  sockets: ItemSocket[];
+}
+
+export interface ReferenceImage {
+  src: string; // data URL
+  opacity: number;
+  visible: boolean;
+  onTop: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface LayerGroup {
@@ -109,6 +151,7 @@ export type GeomShapeType =
   | 'polyline';
 
 export type ToolType =
+  | 'select' // 选择/移动/缩放/旋转 (V)
   | 'willow_leaf' // 柳叶笔 (零直径实时流线，HiPaint/画世界)
   | 'geom_shape' // 基本几何形 (矩形/圆/三角/五角星/菱形)
   | 'pen_knife' // 笔刀 (原自由手绘刻刀，支持压感、不同笔尖形状选择)
@@ -177,4 +220,7 @@ export interface PapercutProject {
   rootOrder: RootItem[];
   backgroundColor: string;
   backgroundStyle: BackgroundStyle;
+  items?: PapercutItem[];
+  reference?: ReferenceImage;
+  shadowStrength?: number; // 纸影强度 0 ~ 1
 }

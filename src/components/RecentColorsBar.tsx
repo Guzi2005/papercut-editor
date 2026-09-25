@@ -34,7 +34,8 @@ export const RecentColorsBar: React.FC<RecentColorsBarProps> = ({
   };
 
   return (
-    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20 flex items-end justify-center pointer-events-auto select-none gap-2 pb-0">
+    <div className="h-11 shrink-0 bg-[#121622] border-t border-[#263147] flex items-end justify-center select-none gap-1.5 px-3 relative z-20">
+      <span className="self-center mr-2 text-[10px] text-[#5E6E94]">近期用色</span>
       {/* Rectangular / Square Bookmarks anchored to bottom, substantial height (不要太短乃至成悬浮样) */}
       {recentColors.map((hex) => {
         const isSelected = activeColor.toLowerCase() === hex.toLowerCase();
@@ -47,8 +48,8 @@ export const RecentColorsBar: React.FC<RecentColorsBarProps> = ({
             onClick={() => onSelectColor(hex)}
             className={`relative group rounded-none transition-all duration-200 ease-out flex flex-col items-center justify-start cursor-pointer shadow-2xl ${
               isSelected
-                ? 'h-15 sm:h-17 w-9 sm:w-11 z-20 ring-2 ring-white/95 shadow-blue-950/80'
-                : 'h-9 sm:h-11 w-8 sm:w-9.5 hover:h-12 sm:hover:h-13 opacity-90 hover:opacity-100 z-10'
+                ? 'h-9 w-9 z-20 ring-2 ring-white/95 shadow-blue-950/80'
+                : 'h-6 w-8 hover:h-8 opacity-90 hover:opacity-100 z-10'
             }`}
             style={{
               backgroundColor: hex,

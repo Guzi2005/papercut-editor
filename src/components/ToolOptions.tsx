@@ -39,13 +39,11 @@ interface ToolOptionsProps {
   brushSettings: BrushSettings;
   onChangeBrushSettings: (newSettings: Partial<BrushSettings>) => void;
   onSelectTool?: (tool: ToolType) => void;
+  selectionScope: 'part' | 'item';
+  onChangeSelectionScope: (scope: 'part' | 'item') => void;
+  selectedCount: number;
+  onCreateItemFromSelection: () => void;
 }
-
-const CARVE_MODES = [
-  { id: 'cutout', label: '刻纸', icon: Scissors },
-  { id: 'positive', label: '贴花', icon: Layers },
-  { id: 'erase', label: '剪除', icon: Eraser },
-] as const;
 
 const KNIFE_TIPS: { id: KnifeTipShape; label: string; desc: string }[] = [
   { id: 'round', label: '圆刃', desc: '平滑饱满弧度刀刃' },
@@ -73,6 +71,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   brushSettings,
   onChangeBrushSettings,
   onSelectTool,
+  selectionScope,
+  onChangeSelectionScope,
+  selectedCount,
+  onCreateItemFromSelection,
 }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showStarSettings, setShowStarSettings] = useState(false);
@@ -81,49 +83,8 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
     <div className="min-h-10 px-4 py-1.5 bg-[#141926] border-b border-[#263147] text-[#BAC5EB] flex items-center justify-between text-xs select-none overflow-x-auto gap-3 z-20">
       {/* Left: Essential Tools Controls */}
       <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-        {/* Carve Mode switch: 刻纸 vs 贴花 vs 剪除 (仅对剪刻工具有效) */}
-        {currentTool !== 'hand_draw' && (
+        {currentTool !== 'hand_draw' && currentTool !== 'select' && currentTool !== 'anchor_edit' && (
           <>
-            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
-              {CARVE_MODES.map((mode) => {
-                const isSelected = (brushSettings.mode || 'cutout') === mode.id;
-                const Icon = mode.icon;
-
-                if (isSelected) {
-                  return (
-                    <button
-                      key={mode.id}
-                      onClick={() => onChangeBrushSettings({ mode: mode.id })}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-medium bg-[#2652D0] text-white shadow-sm transition-all"
-                      title={`${mode.label}模式 (已启用)`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{mode.label}</span>
-                    </button>
-                  );
-                }
-
-                return (
-                  <div key={mode.id} className="relative group">
-                    <button
-                      onClick={() => onChangeBrushSettings({ mode: mode.id })}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8E9FCA] hover:bg-[#28324A] hover:text-[#FBFBFC] transition-colors"
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                    </button>
-
-                    {/* Tooltip on hover with bounce animation */}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover:flex flex-col items-center pointer-events-none z-50 animate-bounce">
-                      <div className="w-0 h-0 border-x-3 border-x-transparent border-b-3 border-b-[#161B29] -mb-px" />
-                      <div className="bg-[#161B29]/95 backdrop-blur-md px-2 py-0.5 text-[#FBFBFC] text-[10px] font-medium rounded shadow-xl border border-[#3A4766] whitespace-nowrap">
-                        {mode.label}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
             {/* ”剪除“下分两个模式：智能橡皮 vs 柳叶笔橡皮 */}
             {brushSettings.mode === 'erase' && (
               <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5 animate-in fade-in">
@@ -154,6 +115,41 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
             <div className="w-px h-5 bg-[#2B364D] mx-0.5" />
           </>
+        )}
+
+        {currentTool === 'select' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center bg-[#1C2335] rounded-xl p-0.5 border border-[#2B364D] gap-0.5">
+              {([
+                { id: 'item', label: '整物件', tip: '点击任一部件即选中它所属的整个物件' },
+                { id: 'part', label: '单部件', tip: '只选中点击到的那一张纸片' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => onChangeSelectionScope(opt.id)}
+                  title={`${opt.tip} (Tab 切换)`}
+                  className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-colors ${
+                    selectionScope === opt.id
+                      ? 'bg-[#2652D0] text-white font-medium'
+                      : 'text-[#8E9FCA] hover:text-[#FBFBFC]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={onCreateItemFromSelection}
+              disabled={selectedCount === 0}
+              className="px-2.5 py-1 rounded-xl text-[11px] border border-[#2B364D] bg-[#1C2335] text-[#BAC5EB] hover:text-white hover:border-[#EB8E88] disabled:opacity-40 disabled:cursor-not-allowed"
+              title="把当前选中的纸片打包成一个物件 (对应 Godot 里的一个场景)"
+            >
+              选中部件 → 打组为物件
+            </button>
+            <span className="text-[10px] text-[#6E7F9E]">
+              Shift 点击加选 · 方向键微移 · Delete 删除 · Alt 点击任意工具下拾取图层
+            </span>
+          </div>
         )}
 
         {/* 1. 柳叶笔 Controls */}
@@ -638,7 +634,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
       {/* Right status hint */}
       <div className="text-[11px] text-[#6E7F9E] shrink-0 font-mono hidden lg:flex items-center gap-1.5">
         <span className="text-[#2652D0]">❖</span>
-        <span>按住空格拖映画布 · 滚轮放缩</span>
+        <span>空格拖动画布 · Ctrl+滚轮缩放 · ? 快捷键</span>
       </div>
     </div>
   );
