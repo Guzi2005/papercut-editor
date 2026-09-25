@@ -42,9 +42,9 @@ export function generateSvgMarkup(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${project.width} ${project.height}" width="${width}" height="${height}">`
   );
 
-  if (includeBackground) {
+  if (includeBackground && project.canvasBg?.kind === 'solid') {
     lines.push(
-      `  <rect width="${project.width}" height="${project.height}" fill="${project.backgroundColor}" id="background-mat" />`
+      `  <rect width="${project.width}" height="${project.height}" fill="${project.canvasBg.color}" id="background-mat" />`
     );
   }
 

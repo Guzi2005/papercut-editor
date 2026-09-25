@@ -23,7 +23,8 @@ interface ExportModalProps {
 
 export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
-  const [includeBackground, setIncludeBackground] = useState(false);
+  const hasSolidBg = project.canvasBg?.kind === 'solid';
+  const [includeBackground, setIncludeBackground] = useState(hasSolidBg);
   const [pngScale, setPngScale] = useState(2);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -146,14 +147,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
           {/* Options & Action Footer */}
           <div className="mt-5 pt-4 border-t border-(--ui-border) flex items-center justify-between text-xs">
             <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer text-(--ui-text-2)">
+              <label
+                className={`flex items-center gap-2 text-(--ui-text-2) ${hasSolidBg ? 'cursor-pointer' : 'opacity-40'}`}
+                data-tip={hasSolidBg ? undefined : '画布背景是透明底，导出始终透明；在 文件 → 画布背景 里改成背景色'}
+              >
                 <input
                   type="checkbox"
-                  checked={includeBackground}
+                  disabled={!hasSolidBg}
+                  checked={hasSolidBg && includeBackground}
                   onChange={(e) => setIncludeBackground(e.target.checked)}
                   className="rounded bg-(--ui-raised) border-(--ui-border) text-(--ui-accent) focus:ring-(--ui-accent)"
                 />
-                <span>包含底板案台色 (默认透明镂空底)</span>
+                <span>包含背景色</span>
               </label>
 
               <div className="flex items-center gap-2">

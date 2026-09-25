@@ -60,6 +60,13 @@ export interface BaseShape {
 /** soft 柔和投影 · vector 无影平面矢量 · hard 硬边加深色投影 */
 export type PaperMode = 'soft' | 'vector' | 'hard';
 
+/**
+ * 画布背景，参考 SAI2：透明底只影响编辑时的显示，导出仍透明；背景色会随作品导出。
+ */
+export type CanvasBackground =
+  | { kind: 'transparent'; display: 'grid' | 'light' | 'dark' | 'white' | 'black' }
+  | { kind: 'solid'; color: string };
+
 /** 投影合成模式（CSS mix-blend-mode） */
 export type ShadowBlend = 'normal' | 'multiply' | 'color-burn' | 'darken' | 'overlay' | 'soft-light';
 
@@ -247,5 +254,6 @@ export interface PapercutProject {
   shadowStrength?: number; // 投影强度 0 ~ 1
   shadowSoftness?: number; // 投影软硬 0 硬边 ~ 1 柔和
   shadowBlend?: ShadowBlend; // 投影合成模式
+  canvasBg?: CanvasBackground; // 画布背景（缺省为方格纸透明底）
   paperMode?: PaperMode; // 剪贴模式
 }

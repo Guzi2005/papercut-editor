@@ -32,6 +32,7 @@ import {
   Volume2,
   VolumeX,
   SlidersHorizontal,
+  Grid2x2,
   CloudUpload,
   Sun,
   CloudFog,
@@ -39,7 +40,8 @@ import {
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
-import { PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
+import { CanvasBackground, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
+import { CanvasBgPanel } from './CanvasBgPanel';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
 import { SaveSettingsPanel } from './SaveSettingsPanel';
@@ -108,6 +110,8 @@ interface TopBarProps {
   onTogglePanel: () => void;
   currentWidth: number;
   currentHeight: number;
+  canvasBg?: CanvasBackground;
+  onChangeCanvasBg: (bg: CanvasBackground) => void;
   onUpdateCanvasSize: (w: number, h: number) => void;
   currentSkin?: WorkbenchSkin;
   onSelectSkin?: (skin: WorkbenchSkin) => void;
@@ -148,6 +152,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onTogglePanel,
   currentWidth,
   currentHeight,
+  canvasBg,
+  onChangeCanvasBg,
   onUpdateCanvasSize,
   currentSkin = 'indigo',
   onSelectSkin,
@@ -185,7 +191,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
-  const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | null>(null);
+  const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | 'bg' | null>(null);
   const [showNewDocDialog, setShowNewDocDialog] = useState(false);
 
   // New Doc Dialog fields
@@ -328,6 +334,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 [
                   { id: 'preset', label: '预设', icon: <Sparkles className="w-3.5 h-3.5 text-(--ui-accent-2)" /> },
                   { id: 'size', label: '画布尺寸', icon: <Sliders className="w-3.5 h-3.5 text-(--ui-muted)" /> },
+                  { id: 'bg', label: '画布背景', icon: <Grid2x2 className="w-3.5 h-3.5 text-(--ui-muted)" /> },
                 ] as const
               ).map((entry) => (
                 <div key={entry.id} className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setFileFlyout(entry.id)}>
@@ -359,6 +366,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                       ))}
                     </div>
                   )}
+                  {fileFlyout === entry.id && entry.id === 'bg' && <CanvasBgPanel value={canvasBg} onChange={onChangeCanvasBg} />}
                   {fileFlyout === entry.id && entry.id === 'size' && (
                     <div
                       onClick={(e) => e.stopPropagation()}

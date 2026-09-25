@@ -66,6 +66,7 @@ import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
 import { splitSubpaths } from '../utils/layerSvg';
 import { ShortcutHints } from './ShortcutHints';
+import { CanvasBackdrop } from './CanvasBackdrop';
 import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
 
 export type SelectionScope = 'part' | 'item' | 'color';
@@ -1622,15 +1623,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             viewBox={`0 0 ${project.width} ${project.height}`}
             className="overflow-visible w-full h-full"
           >
-            <defs>
-              <pattern id="craft-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-                <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#E2E7F3" strokeWidth="0.8" />
-              </pattern>
-            </defs>
-
-            {/* Underlay Notepad Backing */}
-            <rect width={project.width} height={project.height} fill="#FAF8F2" />
-            <rect width={project.width} height={project.height} fill="url(#craft-grid)" opacity="0.85" />
+            <CanvasBackdrop bg={project.canvasBg} width={project.width} height={project.height} zoom={zoom} />
 
             {ref && !ref.onTop && referenceNode}
 

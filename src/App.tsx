@@ -1082,6 +1082,8 @@ export default function App() {
           return { strength: o.shadow, softness: o.shadowSoftness, blend: o.shadowBlend };
         })()}
         onChangeShadow={handleUpdateProject}
+        canvasBg={project.canvasBg}
+        onChangeCanvasBg={(canvasBg) => handleUpdateProject({ canvasBg })}
         onQuickCopySvg={handleQuickCopySvg}
         onQuickDownloadSvg={handleQuickDownloadSvg}
         onQuickDownloadPng={handleQuickDownloadPng}
