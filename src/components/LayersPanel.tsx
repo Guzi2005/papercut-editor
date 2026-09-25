@@ -48,6 +48,7 @@ import {
   MoreHorizontal,
   ArrowUp,
   ArrowDown,
+  ArrowDownToLine,
   Brush,
   Scan,
 } from 'lucide-react';
@@ -72,6 +73,8 @@ interface LayersPanelProps {
   onAddLayer: (groupId?: string, kind?: 'paper' | 'doodle') => void;
   onDeleteLayer: (layerId: string) => void;
   onDuplicateLayer: (layerId: string) => void;
+  /** Merge into the layer below; returns the surviving layer and the two names to choose from. */
+  onMergeDown?: (layerId: string) => { layerId: string; names: [string, string] } | null;
   onInvertLayerCutouts?: (layerId: string) => void;
   onClearLayerCutouts?: (layerId: string) => void;
   onReorderLayers: (sourceLayerId: string, targetLayerId: string, position?: 'above' | 'below') => void;
@@ -255,6 +258,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onAddLayer,
   onDeleteLayer,
   onDuplicateLayer,
+  onMergeDown,
   onInvertLayerCutouts,
   onClearLayerCutouts,
   onReorderLayers,
@@ -321,7 +325,12 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
   const [chipMenu, setChipMenu] = useState<string | null>(null);
   const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; groupId: string } | null>(null);
+  /** After merge-down: pick which name the surviving layer keeps. */
+  const [mergeNamePick, setMergeNamePick] = useState<{ layerId: string; names: [string, string] } | null>(null);
   useEffect(() => setChipMenu(null), [contextMenu]);
+  useEffect(() => {
+    if (mergeNamePick && !layers[mergeNamePick.layerId]) setMergeNamePick(null);
+  }, [layers, mergeNamePick]);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -506,6 +515,38 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               {scope === 'items' && (
                 <span className="text-[9px] text-(--ui-faint) truncate min-w-0 shrink">{findGroupOfLayer(project, layer.id)?.name || '根层级'}</span>
               )}
+            </div>
+          )}
+          {mergeNamePick?.layerId === layer.id && !isEditing('layer', layer.id) && (
+            <div
+              className="mt-1.5 flex flex-col gap-0.5 rounded-lg border border-(--ui-accent)/40 bg-(--ui-raised)/80 p-0.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {mergeNamePick.names.map((n, i) => (
+                <button
+                  key={`${i}-${n}`}
+                  type="button"
+                  onClick={() => {
+                    onUpdateLayer(layer.id, { name: n });
+                    setMergeNamePick(null);
+                  }}
+                  className="w-full px-2 py-1 text-left text-[11px] rounded-md hover:bg-(--ui-accent)/15 truncate"
+                  data-tip={`沿用「${n}」`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setMergeNamePick(null);
+                  startRename('layer', layer.id, layer.name);
+                }}
+                className="w-full px-2 py-1 text-left text-[11px] rounded-md hover:bg-(--ui-hover) flex items-center gap-1.5 text-(--ui-muted)"
+              >
+                <Edit2 className="w-3 h-3 shrink-0" />
+                重命名
+              </button>
             </div>
           )}
           <div className="flex items-center gap-1.5 mt-1 min-w-0">
@@ -1283,6 +1324,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               },
               { label: '重命名', icon: Edit2, run: () => startRename('layer', ctxLayer.id, ctxLayer.name) },
               { label: '复制纸片', icon: Copy, run: () => onDuplicateLayer(ctxLayer.id) },
+              ...(onMergeDown && neighbour(ctxLayer.id, -1) && !ctxLayer.locked && !layers[neighbour(ctxLayer.id, -1)!]?.locked
+                ? [{
+                    label: '向下合并',
+                    icon: ArrowDownToLine,
+                    run: () => {
+                      const pick = onMergeDown(ctxLayer.id);
+                      if (pick) setMergeNamePick(pick);
+                    },
+                  }]
+                : []),
               ...(neighbour(ctxLayer.id, 1)
                 ? [{ label: '上移一层', icon: ArrowUp, run: () => onReorderLayers(ctxLayer.id, neighbour(ctxLayer.id, 1)!, 'above') }]
                 : []),

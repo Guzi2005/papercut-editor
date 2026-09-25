@@ -154,6 +154,23 @@ export const PATHFINDER_OPS: { id: PathfinderOp; label: string; tip: string }[] 
   { id: 'divide', label: '拆分', tip: '沿所有轮廓切成碎片，每片保留看得见的颜色，可分别移动' },
 ];
 
+/** Visible paper patches of a layer (base and appliqués with later holes already cut). */
+export function visiblePaperPieces(layer: Layer): { d: string; color: string }[] {
+  if (layer.kind === 'doodle' || !layer.baseShape?.d) return [];
+  const seq = paperSequence(layer);
+  const out: { d: string; color: string }[] = [];
+  const baseHoles = seq.filter((c) => c.isHole).map((c) => shapeOf(c.d));
+  const base = minus(shapeOf(layer.baseShape.d), ...baseHoles);
+  if (area(base) > 0.5) out.push({ d: multiD(base), color: layer.color });
+  seq.forEach((elem, i) => {
+    if (elem.isHole) return;
+    const later = seq.slice(i + 1).filter((c) => c.isHole).map((c) => shapeOf(c.d));
+    const g = minus(shapeOf(elem.d), ...later);
+    if (area(g) > 0.5) out.push({ d: multiD(g), color: elem.fillColor || layer.color });
+  });
+  return out;
+}
+
 /**
  * Applies a pathfinder operation to selected colour blocks. Results are written back into the
  * blocks they belong to (a base sheet takes its result as its new outline, an appliqué is

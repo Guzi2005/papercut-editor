@@ -5,7 +5,6 @@
 
 import { PapercutProject, Layer, LayerGroup } from '../types/papercut';
 import { createWeaveCharactersPreset, createPolishAngelPreset, createDoubleFishPreset } from './weavePresets';
-import { createBaseShapePath, generateWillowLeafPath, generateCrescentPath, generateDiamondPath, generateCombRibbonPath, applySymmetryToPath } from './bezierMath';
 
 /** Weave and Wander 色卡：取样自「针脚与远方」设定图 */
 export const FOLK_PALETTE = [
@@ -27,44 +26,66 @@ export const FOLK_PALETTE = [
   { name: '墨发', hex: '#15161C', desc: '头发与猫' },
 ];
 
+export type NewCanvasMode = 'cut' | 'create';
+
+export interface BlankCanvasOptions {
+  width?: number;
+  height?: number;
+  /** cut = 剪纸模式（一张居中色纸）；create = 创造模式（空组） */
+  mode?: NewCanvasMode;
+  paperColor?: string;
+  name?: string;
+}
+
 /**
- * Creates a clean blank canvas with a single red paper sheet ready to carve
+ * Creates a blank project. 剪纸模式放一张居中方纸；创造模式只有空深度层。
  */
-export function createBlankCanvas(): PapercutProject {
-  const width = 800;
-  const height = 800;
+export function createBlankCanvas(opts: BlankCanvasOptions = {}): PapercutProject {
+  const width = opts.width ?? 800;
+  const height = opts.height ?? 800;
+  const mode = opts.mode ?? 'cut';
+  const paperColor = opts.paperColor ?? '#D72626';
 
   const g1: LayerGroup = {
     id: 'grp_main',
-    name: '主剪纸图层组',
+    name: mode === 'cut' ? '主剪纸图层组' : '深度层 1',
     collapsed: false,
     visible: true,
     locked: false,
-    layerIds: ['layer_base_paper'],
+    layerIds: [],
   };
 
   const layers: Record<string, Layer> = {};
 
-  layers['layer_base_paper'] = {
-    id: 'layer_base_paper',
-    name: '朱红宣纸底片',
-    color: '#D72626',
-    texture: 'xuan',
-    opacity: 1,
-    blendMode: 'normal',
-    visible: true,
-    locked: false,
-    baseShape: {
-      type: 'rounded_rect',
-      d: createBaseShapePath('rounded_rect', width, height, 100),
-    },
-    cutouts: [],
-    positiveElements: [],
-  };
+  if (mode === 'cut') {
+    const side = Math.min(width, height) * 0.76;
+    const x = (width - side) / 2;
+    const y = (height - side) / 2;
+    const r = Math.min(24, side * 0.04);
+    layers['layer_base_paper'] = {
+      id: 'layer_base_paper',
+      name: '色纸',
+      color: paperColor,
+      texture: 'xuan',
+      opacity: 1,
+      blendMode: 'normal',
+      visible: true,
+      locked: false,
+      grain: 0.35,
+      baseShape: {
+        type: 'rounded_rect',
+        d: `M ${x + r} ${y} H ${x + side - r} Q ${x + side} ${y} ${x + side} ${y + r} V ${y + side - r} Q ${x + side} ${y + side} ${x + side - r} ${y + side} H ${x + r} Q ${x} ${y + side} ${x} ${y + side - r} V ${y + r} Q ${x} ${y} ${x + r} ${y} Z`,
+      },
+      cutouts: [],
+      positiveElements: [],
+      drawings: [],
+    };
+    g1.layerIds = ['layer_base_paper'];
+  }
 
   return {
-    id: 'proj_blank',
-    name: '未命名剪纸作品',
+    id: `proj_${Date.now()}`,
+    name: opts.name ?? (mode === 'cut' ? '未命名剪纸作品' : '未命名创作'),
     width,
     height,
     groups: [g1],

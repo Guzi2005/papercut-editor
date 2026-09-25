@@ -15,8 +15,7 @@ import {
   LayerDrawStroke,
   ReferenceImage,
 } from './types/papercut';
-import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas } from './utils/presetTemplates';
-import { createBaseShapePath } from './utils/bezierMath';
+import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas, NewCanvasMode } from './utils/presetTemplates';
 import { generateSvgMarkup, downloadFile, exportToPng } from './utils/svgExporter';
 import { Transform, applyTransform } from './utils/pathTransform';
 import {
@@ -32,6 +31,7 @@ import {
   itemPrefix,
   prefixedName,
   renameItemParts,
+  NAME_SEP,
 } from './utils/projectOps';
 import {
   loadWorkspace,
@@ -57,11 +57,13 @@ import { KeymapModal } from './components/KeymapModal';
 import { ToolQuickMenu } from './components/ToolQuickMenu';
 import { ActionId, Keymap, actionForKey, comboFromKeyEvent, loadKeymap, saveKeymap } from './utils/keymap';
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/zoom';
-import { playHistory, playToolPick } from './utils/soundEffects';
+import { playHistory, playToolPick, playPaperPlace } from './utils/soundEffects';
+import { TwinPreset, loadTwinPresets, storeTwinPresets } from './utils/twinPresets';
 import { projectShadowOptions } from './utils/layerSvg';
 import { SaveSettings, SaveStatus, loadSaveSettings, storeSaveSettings } from './utils/saveSettings';
 import { SaveBanner } from './components/SaveBanner';
 import { applyPathfinder, PathfinderOp } from './utils/pathfinder';
+import { mergeLayerOnto } from './utils/mergeLayers';
 
 interface DocumentItem {
   id: string;
@@ -118,6 +120,7 @@ export default function App() {
   const [toolMenu, setToolMenu] = useState<{ x: number; y: number; here?: PointInfo } | null>(null);
   const [flash, setFlash] = useState<FlashRequest | null>(null);
   const closeToolMenu = useCallback(() => setToolMenu(null), []);
+  const [imageDrop, setImageDrop] = useState<{ file: File; preview: string } | null>(null);
 
   // Tool & Brush Settings
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
@@ -427,14 +430,23 @@ export default function App() {
     setActiveDocId(doc.id);
   };
 
-  const handleNewDocument = (name?: string, width = 800, height = 800) => {
-    const docName = name || `新建剪纸 ${documents.length + 1}`;
-    const blankProj = createBlankCanvas();
-    blankProj.name = docName;
-    blankProj.width = width;
-    blankProj.height = height;
-    Object.values(blankProj.layers).forEach((l) => {
-      l.baseShape.d = createBaseShapePath('rounded_rect', width, height, Math.min(width, height) * 0.12);
+  const handleNewDocument = (opts?: {
+    name?: string;
+    width?: number;
+    height?: number;
+    mode?: NewCanvasMode;
+    paperColor?: string;
+  }) => {
+    const width = opts?.width ?? 800;
+    const height = opts?.height ?? 800;
+    const mode = opts?.mode ?? 'cut';
+    const docName = opts?.name || (mode === 'cut' ? `新建剪纸 ${documents.length + 1}` : `新建创作 ${documents.length + 1}`);
+    const blankProj = createBlankCanvas({
+      width,
+      height,
+      mode,
+      paperColor: opts?.paperColor,
+      name: docName,
     });
     openProjectAsDocument(blankProj, docName);
   };
@@ -763,10 +775,6 @@ export default function App() {
     const defaultColor = FOLK_PALETTE[Object.keys(project.layers).length % FOLK_PALETTE.length].hex;
     const doodle = kind === 'doodle';
 
-    const w = project.width * 0.36;
-    const h = project.height * 0.36;
-    const x = (project.width - w) / 2;
-    const y = (project.height - h) / 2;
     const newLayer: Layer = {
       id: newLayerId,
       name: `${doodle ? '涂鸦' : '纸片'} ${Object.keys(project.layers).length + 1}`,
@@ -778,10 +786,8 @@ export default function App() {
       visible: true,
       locked: false,
       grain: doodle ? 0 : 0.35,
-      baseShape: doodle ? { type: 'freeform', d: '' } : {
-        type: 'rounded_rect',
-        d: `M ${x + 12} ${y} H ${x + w - 12} Q ${x + w} ${y} ${x + w} ${y + 12} V ${y + h - 12} Q ${x + w} ${y + h} ${x + w - 12} ${y + h} H ${x + 12} Q ${x} ${y + h} ${x} ${y + h - 12} V ${y + 12} Q ${x} ${y} ${x + 12} ${y} Z`,
-      },
+      // Blank by default — carve or paste to give it shape.
+      baseShape: doodle ? { type: 'freeform', d: '' } : { type: 'freeform', d: '' },
       cutouts: [],
       positiveElements: [],
       drawings: [],
@@ -800,6 +806,9 @@ export default function App() {
         else ids.push(newLayerId);
         return { ...g, layerIds: ids };
       });
+    } else if (groups[0]) {
+      // Prefer an existing depth group over a root-level orphan when creating into an empty project.
+      groups = groups.map((g, i) => (i === 0 ? { ...g, layerIds: [...g.layerIds, newLayerId] } : g));
     } else {
       rootOrder = [...rootOrder, { type: 'layer', id: newLayerId }];
     }
@@ -808,6 +817,72 @@ export default function App() {
     handleSelectLayer(newLayerId);
     setSelectedLayerIds([newLayerId]);
     if (doodle) setCurrentTool('hand_draw');
+  };
+
+  // ---------- Twin layers: several sheets at once around the current layer ----------
+  const [twinPresets, setTwinPresetsState] = useState<TwinPreset[]>(loadTwinPresets);
+  const setTwinPresets = (next: TwinPreset[]) => {
+    setTwinPresetsState(next);
+    storeTwinPresets(next);
+  };
+
+  const handleAddTwin = (presetId: string) => {
+    const preset = twinPresets.find((p) => p.id === presetId);
+    if (!preset || preset.parts.length === 0) return;
+    const item = activeLayerId ? findItemOfLayer(project, activeLayerId) : null;
+    const prefix = item ? itemPrefix(item) : '';
+    const made = preset.parts.map((part) => {
+      const id = newId('layer');
+      const layer: Layer = {
+        id,
+        name: prefix ? `${prefix}${NAME_SEP}${part.suffix}` : part.suffix,
+        kind: 'paper',
+        color: brushSettings.brushColor,
+        texture: 'xuan',
+        opacity: 1,
+        blendMode: 'normal',
+        visible: true,
+        locked: false,
+        grain: 0.35,
+        baseShape: { type: 'freeform', d: '' },
+        cutouts: [],
+        positiveElements: [],
+        drawings: [],
+      };
+      return { layer, place: part.place };
+    });
+    // Later entries in a stack draw on top: "above" parts go right after the current layer (the
+    // first nearest to it), "below" parts right before it.
+    const above = made.filter((m) => m.place === 'above').map((m) => m.layer.id);
+    const below = made.filter((m) => m.place === 'below').map((m) => m.layer.id).reverse();
+    const place = (ids: string[], anchor: string | null) => {
+      const at = anchor ? ids.indexOf(anchor) : -1;
+      if (at === -1) return [...ids, ...below, ...above];
+      return [...ids.slice(0, at), ...below, ids[at], ...above, ...ids.slice(at + 1)];
+    };
+    const layers = { ...project.layers };
+    made.forEach((m) => (layers[m.layer.id] = m.layer));
+    const grp = activeLayerId ? findGroupOfLayer(project, activeLayerId) : project.groups[0];
+    let groups = project.groups;
+    let rootOrder = project.rootOrder;
+    if (grp) {
+      groups = groups.map((g) => (g.id === grp.id ? { ...g, layerIds: place(g.layerIds, activeLayerId) } : g));
+    } else {
+      const anchorAt = activeLayerId ? rootOrder.findIndex((r) => r.type === 'layer' && r.id === activeLayerId) : -1;
+      const entry = (id: string) => ({ type: 'layer' as const, id });
+      rootOrder =
+        anchorAt === -1
+          ? [...rootOrder, ...below.map(entry), ...above.map(entry)]
+          : [...rootOrder.slice(0, anchorAt), ...below.map(entry), rootOrder[anchorAt], ...above.map(entry), ...rootOrder.slice(anchorAt + 1)];
+    }
+    const items = item
+      ? (project.items || []).map((it) => (it.id === item.id ? { ...it, partIds: [...it.partIds, ...made.map((m) => m.layer.id)] } : it))
+      : project.items;
+    pushHistory({ ...project, layers, groups, rootOrder, items });
+    const ids = made.map((m) => m.layer.id);
+    handleSelectLayer(above[0] ?? ids[0]);
+    setSelectedLayerIds(ids);
+    playPaperPlace();
   };
 
   const handleUpdateLayer = (layerId: string, updates: Partial<Layer>) => {
@@ -865,6 +940,27 @@ export default function App() {
     pushHistory({ ...project, layers: { ...project.layers, [dupId]: duplicated }, rootOrder, groups });
     handleSelectLayer(dupId);
     setSelectedLayerIds([dupId]);
+  };
+
+  /** Merge this layer into the one directly below it in the same stack. Returns name choices for the result. */
+  const handleMergeDown = (layerId: string): { layerId: string; names: [string, string] } | null => {
+    const upper = project.layers[layerId];
+    if (!upper || upper.locked) return null;
+    const grp = findGroupOfLayer(project, layerId);
+    const ids = grp ? grp.layerIds : project.rootOrder.filter((r) => r.type === 'layer').map((r) => r.id);
+    const i = ids.indexOf(layerId);
+    const belowId = i > 0 ? ids[i - 1] : null;
+    const lower = belowId ? project.layers[belowId] : null;
+    if (!lower || lower.locked) return null;
+    const names: [string, string] = [upper.name, lower.name];
+    const merged = mergeLayerOnto(upper, lower);
+    const layers = { ...project.layers, [lower.id]: merged };
+    delete layers[layerId];
+    const next = normalizeProject({ ...project, layers });
+    pushHistory(next);
+    handleSelectLayer(lower.id);
+    setSelectedLayerIds([lower.id]);
+    return { layerId: lower.id, names };
   };
 
   const handleInvertLayerCutouts = (layerId: string) => {
@@ -1024,25 +1120,97 @@ export default function App() {
   const handleImportReference = async () => {
     const file = await pickFile('image/*');
     if (!file) return;
+    await applyImageAsReference(file);
+  };
+
+  const applyImageAsReference = async (file: File) => {
     const src = await readFileAsDataUrl(file);
     const img = new Image();
-    img.onload = () => {
-      const ratio = Math.min(project.width / img.width, project.height / img.height);
-      const width = img.width * ratio;
-      const height = img.height * ratio;
-      const reference: ReferenceImage = {
-        src,
-        opacity: 0.45,
-        visible: true,
-        onTop: true,
-        x: (project.width - width) / 2,
-        y: (project.height - height) / 2,
-        width,
-        height,
-      };
-      handleUpdateProject({ reference });
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = src;
+    });
+    const ratio = Math.min(project.width / img.width, project.height / img.height);
+    const width = img.width * ratio;
+    const height = img.height * ratio;
+    const reference: ReferenceImage = {
+      src,
+      opacity: 0.45,
+      visible: true,
+      onTop: true,
+      x: (project.width - width) / 2,
+      y: (project.height - height) / 2,
+      width,
+      height,
     };
-    img.src = src;
+    handleUpdateProject({ reference });
+  };
+
+  /** Drop an image as an editable paper rectangle sized to the fitted image. */
+  const applyImageAsEditObject = async (file: File) => {
+    const src = await readFileAsDataUrl(file);
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = src;
+    });
+    const ratio = Math.min(project.width / img.width, project.height / img.height, 1);
+    const w = Math.max(24, img.width * ratio);
+    const h = Math.max(24, img.height * ratio);
+    const x = (project.width - w) / 2;
+    const y = (project.height - h) / 2;
+    const baseName = file.name.replace(/\.[^.]+$/, '') || '图片纸片';
+    const newLayerId = newId('layer');
+    const newLayer: Layer = {
+      id: newLayerId,
+      name: baseName,
+      kind: 'paper',
+      color: brushSettings.brushColor,
+      texture: 'xuan',
+      opacity: 1,
+      blendMode: 'normal',
+      visible: true,
+      locked: false,
+      grain: 0.2,
+      baseShape: {
+        type: 'rect',
+        d: `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`,
+      },
+      cutouts: [],
+      positiveElements: [],
+      drawings: [],
+    };
+    let groups = project.groups;
+    let rootOrder = project.rootOrder;
+    const targetGroupId = activeLayerId ? findGroupOfLayer(project, activeLayerId)?.id : groups[0]?.id;
+    if (targetGroupId) {
+      groups = groups.map((g) => (g.id === targetGroupId ? { ...g, layerIds: [...g.layerIds, newLayerId] } : g));
+    } else {
+      rootOrder = [...rootOrder, { type: 'layer', id: newLayerId }];
+    }
+    // Keep the image as a dim reference under the new paper so the silhouette stays visible while carving.
+    const reference: ReferenceImage = {
+      src,
+      opacity: 0.55,
+      visible: true,
+      onTop: false,
+      x,
+      y,
+      width: w,
+      height: h,
+    };
+    pushHistory({
+      ...project,
+      layers: { ...project.layers, [newLayerId]: newLayer },
+      groups,
+      rootOrder,
+      reference,
+    });
+    handleSelectLayer(newLayerId);
+    setSelectedLayerIds([newLayerId]);
+    playPaperPlace();
   };
 
   // ---------- Quick export ----------
@@ -1097,7 +1265,7 @@ export default function App() {
         documents={documentTabItems}
         activeDocId={activeDocId}
         onSelectDocument={setActiveDocId}
-        onNewDocument={handleNewDocument}
+        onNewDocument={(name, width, height) => handleNewDocument({ name, width, height })}
         onCloseDocument={handleCloseDocument}
         onRenameDocument={handleRenameDocument}
         onOpenPreset={handleOpenPreset}
@@ -1263,7 +1431,9 @@ export default function App() {
           brushSettings={brushSettings}
           selectedItem={selectedItem}
           onDeleteLayer={handleDeleteLayer}
+          onDeleteLayers={handleDeleteLayers}
           onDuplicateLayer={handleDuplicateLayer}
+          onMergeDown={handleMergeDown}
           onInvertLayerCutouts={handleInvertLayerCutouts}
           onClearLayerCutouts={handleClearLayerCutouts}
           onReorderLayers={handleReorderLayers}
