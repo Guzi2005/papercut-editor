@@ -1059,7 +1059,14 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             <option value="overlay">叠加</option>
           </select>
         </label>
-        <StrokeButton stroke={activeLayer.stroke} brushColor={brushColor} onChange={(stroke) => onUpdateLayer(activeLayer.id, { stroke })} />
+        <StrokeButton
+          stroke={activeLayer.stroke}
+          brushColor={brushColor}
+          onChange={(stroke) => onUpdateLayer(activeLayer.id, { stroke })}
+          docStrokes={Object.values(layers)
+            .filter((l) => l.id !== activeLayer.id && l.stroke?.enabled)
+            .map((l) => ({ stroke: l.stroke!, layerName: l.name }))}
+        />
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="纹样">
