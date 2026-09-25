@@ -177,3 +177,25 @@ export function removeBlocks(layer: Layer, ids: string[]): Layer {
     drawings: layer.drawings?.filter((d) => !set.has(d.id)),
   };
 }
+
+/** Repaints everything in a layer drawn with `from`: paper, pattern, appliqués and strokes. */
+export function recolorLayer(layer: Layer, from: string, to: string): Layer {
+  const f = from.toLowerCase();
+  const is = (c?: string) => !!c && c.toLowerCase() === f;
+  const baseIs = is(layer.color);
+  const piece = <T extends { isHole: boolean; fillColor?: string }>(c: T): T =>
+    c.isHole ? c : is(c.fillColor) || (!c.fillColor && baseIs) ? { ...c, fillColor: to } : c;
+  return {
+    ...layer,
+    color: baseIs ? to : layer.color,
+    pattern: layer.pattern && is(layer.pattern.color) ? { ...layer.pattern, color: to } : layer.pattern,
+    cutouts: layer.cutouts.map(piece),
+    positiveElements: layer.positiveElements.map(piece),
+    drawings: layer.drawings?.map((d) => (is(d.color) ? { ...d, color: to } : d)),
+  };
+}
+
+/** Removes the appliqués and strokes painted in a colour; the base sheet stays. */
+export function removeColorBlocks(layer: Layer, color: string): Layer {
+  return removeBlocks(layer, blocksOfColor(layer, color).filter((id) => id !== BASE_BLOCK));
+}

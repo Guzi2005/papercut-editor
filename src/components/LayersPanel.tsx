@@ -15,8 +15,8 @@ import {
   BrushSettings,
 } from '../types/papercut';
 import { getPathBoundingBox } from '../utils/bezierMath';
-import { renderLayerMarkup } from '../utils/layerSvg';
-import { computeDepthTable, findGroupOfLayer, findItemOfLayer } from '../utils/projectOps';
+import { renderLayerMarkup, BASE_BLOCK } from '../utils/layerSvg';
+import { computeDepthTable, findGroupOfLayer, findItemOfLayer, blocksOfColor, recolorLayer, removeColorBlocks } from '../utils/projectOps';
 import {
   Plus,
   Eye,
@@ -213,6 +213,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [dragging, setDragging] = useState<{ kind: 'layer' | 'root'; id: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; position: 'above' | 'below' | 'into' } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
+  const [chipMenu, setChipMenu] = useState<string | null>(null);
+  useEffect(() => setChipMenu(null), [contextMenu]);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -1075,12 +1077,60 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     onChangeBrushColor(c);
                     setContextMenu(null);
                   }}
-                  data-tip={`${c} · 拾色`}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setChipMenu((v) => (v === c ? null : c));
+                  }}
+                  data-tip={`${c} · 单击拾色 · 右键删除或改色`}
                   className={`flex-1 min-w-0 h-6 first:rounded-l-md last:rounded-r-md border ${isLight(c) ? 'border-black/15' : 'border-white/10'} hover:scale-y-125 transition-transform`}
                   style={{ backgroundColor: c }}
                 />
               ))}
             </div>
+            {chipMenu && (() => {
+              const blocks = blocksOfColor(ctxLayer, chipMenu);
+              const removable = blocks.filter((id) => id !== BASE_BLOCK).length;
+              return (
+                <div className="mx-1.5 mb-1.5 p-1 rounded-lg bg-(--ui-panel) border border-(--ui-border) text-[11px]">
+                  <div className="flex items-center gap-1.5 px-1.5 pb-1 text-[10px] text-(--ui-muted)">
+                    <span className="w-3 h-3 rounded-[3px] border border-white/30" style={{ backgroundColor: chipMenu }} />
+                    <span className="font-mono">{chipMenu}</span>
+                    <span className="ml-auto">{blocks.length} 处</span>
+                  </div>
+                  <label className="w-full px-1.5 h-7 flex items-center gap-2 rounded-md hover:bg-(--ui-hover) cursor-pointer" data-tip="把用这个颜色的底纸、纹样、贴花和笔迹一起改色">
+                    <Palette className="w-3.5 h-3.5 text-(--ui-muted)" />
+                    <span className="flex-1">改色</span>
+                    <span className="relative w-5 h-5 rounded-md border border-white/30 overflow-hidden" style={{ backgroundColor: chipMenu }}>
+                      <input
+                        type="color"
+                        value={chipMenu.toLowerCase()}
+                        onChange={(e) => {
+                          const to = e.target.value.toUpperCase();
+                          onUpdateLayer(ctxLayer.id, recolorLayer(ctxLayer, chipMenu, to));
+                          setChipMenu(to);
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </span>
+                  </label>
+                  <button
+                    disabled={removable === 0}
+                    onClick={() => {
+                      playDiscardSwoosh();
+                      onUpdateLayer(ctxLayer.id, removeColorBlocks(ctxLayer, chipMenu));
+                      setChipMenu(null);
+                    }}
+                    data-tip={removable === 0 ? '底纸不能删除' : blocks.includes(BASE_BLOCK) ? '底纸会保留' : undefined}
+                    className="w-full px-1.5 h-7 flex items-center gap-2 rounded-md text-left text-red-400 hover:bg-red-950/60 disabled:opacity-35 disabled:hover:bg-transparent"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="flex-1">删除此色色块</span>
+                    {removable > 0 && <span className="text-[10px] opacity-70">{removable}</span>}
+                  </button>
+                </div>
+              );
+            })()}
             {[
               { label: '重命名', icon: Edit2, run: () => startRename('layer', ctxLayer.id, ctxLayer.name) },
               { label: '复制纸片', icon: Copy, run: () => onDuplicateLayer(ctxLayer.id) },
