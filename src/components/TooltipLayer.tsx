@@ -30,7 +30,14 @@ export const TooltipLayer: React.FC = () => {
       current.current = null;
       setTip(null);
     };
+    let lastTouch = 0;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') lastTouch = performance.now();
+      hide();
+    };
     const onOver = (e: MouseEvent) => {
+      // Taps emulate mouseover afterwards; tips are a hover affordance only.
+      if (performance.now() - lastTouch < 1000) return;
       const el = (e.target as Element | null)?.closest?.('[data-tip]') || null;
       if (el === current.current) return;
       hide();
@@ -50,11 +57,11 @@ export const TooltipLayer: React.FC = () => {
       }, DELAY_MS);
     };
     document.addEventListener('mouseover', onOver);
-    document.addEventListener('pointerdown', hide, true);
+    document.addEventListener('pointerdown', onDown, true);
     window.addEventListener('blur', hide);
     return () => {
       document.removeEventListener('mouseover', onOver);
-      document.removeEventListener('pointerdown', hide, true);
+      document.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('blur', hide);
       window.clearTimeout(timer.current);
     };

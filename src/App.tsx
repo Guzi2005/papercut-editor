@@ -39,6 +39,7 @@ import {
 import { TopBar, DocumentTabItem } from './components/TopBar';
 import { TooltipLayer } from './components/TooltipLayer';
 import { WorkbenchSkin, skinVariables, loadSkin, saveSkin } from './utils/skins';
+import { useMediaQuery, COMPACT_QUERY } from './hooks/useMediaQuery';
 import { Toolbar } from './components/Toolbar';
 import { ToolOptions } from './components/ToolOptions';
 import { Canvas, SelectionScope } from './components/Canvas';
@@ -128,6 +129,9 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isGodotModalOpen, setIsGodotModalOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [fitSignal, setFitSignal] = useState(0);
 
   const [colorNotes, setColorNotes] = useState<Record<string, string>>(() =>
     Object.fromEntries(FOLK_PALETTE.map((c) => [c.hex.toLowerCase(), c.name]))
@@ -436,13 +440,48 @@ export default function App() {
   });
 
   const handleFitZoom = () => {
-    const availWidth = window.innerWidth - 420;
-    const availHeight = window.innerHeight - 170;
+    const stage = document.getElementById('canvas-stage')?.getBoundingClientRect();
+    const availWidth = (stage?.width ?? window.innerWidth - 420) - 32;
+    const availHeight = (stage?.height ?? window.innerHeight - 170) - 32;
     if (availWidth > 0 && availHeight > 0) {
       const fitRatio = Math.min(availWidth / project.width, availHeight / project.height);
-      handleZoomChange(Math.max(Math.min(fitRatio * 0.95, 2.0), 0.25));
+      handleZoomChange(Math.max(Math.min(fitRatio, 2.0), 0.15));
+      setFitSignal((n) => n + 1);
     }
   };
+  const fitRef = useRef(handleFitZoom);
+  fitRef.current = handleFitZoom;
+
+  // Fit when a document opens larger than the stage (e.g. first launch in tablet portrait).
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = requestAnimationFrame(() => {
+      const stage = document.getElementById('canvas-stage')?.getBoundingClientRect();
+      if (stage && (project.width * zoom > stage.width - 16 || project.height * zoom > stage.height - 16)) {
+        fitRef.current();
+      }
+    });
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, activeDocId, compact]);
+
+  // Rotating a tablet swaps the stage aspect, so refit once the new layout has settled.
+  useEffect(() => {
+    let landscape = window.innerWidth > window.innerHeight;
+    let timer: number | undefined;
+    const onResize = () => {
+      const now = window.innerWidth > window.innerHeight;
+      if (now === landscape) return;
+      landscape = now;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fitRef.current(), 250);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   // ---------- Layer content edits ----------
   const updateActiveLayer = (fn: (layer: Layer) => Layer) => {
@@ -864,7 +903,7 @@ export default function App() {
 
   return (
     <div
-      className="flex flex-col h-screen w-screen bg-(--ui-app) text-(--ui-text) overflow-hidden font-sans"
+      className="flex flex-col h-dvh w-screen bg-(--ui-app) text-(--ui-text) overflow-hidden font-sans select-none pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
     >
       <TooltipLayer />
       <TopBar
@@ -890,6 +929,9 @@ export default function App() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenGodotExport={() => setIsGodotModalOpen(true)}
         paperMode={project.paperMode ?? 'soft'}
+        compact={compact}
+        panelOpen={panelOpen}
+        onTogglePanel={() => setPanelOpen((v) => !v)}
         onChangePaperMode={(mode) => handleUpdateProject({ paperMode: mode })}
         onQuickCopySvg={handleQuickCopySvg}
         onQuickDownloadSvg={handleQuickDownloadSvg}
@@ -934,7 +976,7 @@ export default function App() {
           recentBrushColors={recentBrushColors}
         />
 
-        <div className="flex-1 flex flex-col relative overflow-hidden">
+        <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
           <Canvas
             project={project}
             activeLayerId={activeLayerId}
@@ -957,12 +999,25 @@ export default function App() {
             onTransformLayers={handleTransformLayers}
             onUpdateItem={handleUpdateItem}
             onDeleteLayers={handleDeleteLayers}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            fitSignal={fitSignal}
           />
 
 
         </div>
 
-        <LayersPanel
+        {compact && panelOpen && (
+          <div className="absolute inset-0 z-30 bg-black/30" onPointerDown={() => setPanelOpen(false)} />
+        )}
+        <div
+          className={
+            compact
+              ? `absolute top-0 right-0 bottom-0 z-40 flex shadow-2xl transition-transform duration-200 ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`
+              : 'flex shrink-0'
+          }
+        >
+          <LayersPanel
           project={project}
           activeLayerId={activeLayerId}
           selectedLayerIds={selectedLayerIds}
@@ -991,6 +1046,7 @@ export default function App() {
           onUpdateProject={handleUpdateProject}
           onImportReference={handleImportReference}
         />
+        </div>
       </div>
 
       {isExportModalOpen && (

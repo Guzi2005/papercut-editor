@@ -94,7 +94,7 @@ const IconButton: React.FC<{
     onContextMenu={onContextMenu}
     disabled={disabled}
     data-tip={tip}
-    className={`w-7 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-35 ${
+    className={`w-7 h-6 pointer-coarse:w-9 pointer-coarse:h-8 flex items-center justify-center rounded-md transition-colors disabled:opacity-35 ${
       active ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
     }`}
   >
@@ -149,7 +149,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   );
 
   return (
-    <div className="relative z-30 h-10 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
+    <div className="relative z-30 h-10 pointer-coarse:h-12 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
       {currentTool === 'select' && (
         <>
           <Segmented>

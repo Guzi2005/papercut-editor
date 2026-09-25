@@ -41,6 +41,7 @@ import {
 } from '../utils/pathTransform';
 import { findGroupOfLayer, findItemOfLayer, isLayerRendered, flattenLayerIds } from '../utils/projectOps';
 import { Check, X, Lock, EyeOff, Box } from 'lucide-react';
+import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 
 export type SelectionScope = 'part' | 'item';
 
@@ -66,6 +67,10 @@ interface CanvasProps {
   onTransformLayers: (layerIds: string[], m: Matrix) => void;
   onUpdateItem: (itemId: string, updates: Partial<PapercutItem>) => void;
   onDeleteLayers: (layerIds: string[]) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  /** Incremented by the host to recentre the canvas after a fit-to-screen. */
+  fitSignal?: number;
 }
 
 interface BBox {
@@ -144,6 +149,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   onTransformLayers,
   onUpdateItem,
   onDeleteLayers,
+  onUndo,
+  onRedo,
+  fitSignal = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -173,6 +181,24 @@ export const Canvas: React.FC<CanvasProps> = ({
   const previewRef = useRef<SVGPathElement>(null);
   const lastClientRef = useRef<{ x: number; y: number } | null>(null);
   const previewFnRef = useRef<(pts: Point[], cur: Point) => string>(() => '');
+
+  // Touch: pinch/pan gesture state, pen-driven palm rejection.
+  const coarse = useMediaQuery(COARSE_QUERY);
+  const touchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const gestureRef = useRef<{
+    startDist: number;
+    startMid: { x: number; y: number };
+    startPan: Point;
+    startZoom: number;
+    startTime: number;
+    fingers: number;
+    moved: boolean;
+  } | null>(null);
+  const penSeenRef = useRef(false);
+  const pointerTypeRef = useRef('mouse');
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panRef = useRef<Point>({ x: 0, y: 0 });
 
   // Polyline shape drawing state (单击新增锚点，双击终止)
   const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
@@ -331,7 +357,86 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   useEffect(() => {
     rectRef.current = null;
+    panRef.current = pan;
   }, [pan, zoom]);
+
+  useEffect(() => {
+    if (fitSignal) setPan({ x: 0, y: 0 });
+  }, [fitSignal]);
+
+  const abortGestureConflicts = () => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    strokeRef.current = [];
+    curRef.current = null;
+    setIsDrawing(false);
+    setStartPoint(null);
+    dragRef.current = null;
+    setIsSelectDragging(false);
+    setPreviewMatrix(IDENTITY);
+    setDragPoint(null);
+    setIsPanning(false);
+    setActiveAnchorIndex(null);
+    setIsDraggingAnchor(false);
+    brushRef.current?.setAttribute('visibility', 'hidden');
+  };
+
+  const beginPinch = () => {
+    const pts = [...touchesRef.current.values()];
+    const [a, b] = pts;
+    gestureRef.current = {
+      startDist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      startMid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      startPan: { ...panRef.current },
+      startZoom: zoomRef.current,
+      startTime: performance.now(),
+      fingers: pts.length,
+      moved: false,
+    };
+  };
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!touchesRef.current.has(e.pointerId)) return;
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const g = gestureRef.current;
+      if (!g || touchesRef.current.size < 2) return;
+      const [a, b] = [...touchesRef.current.values()];
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const nextZoom = Math.min(Math.max(g.startZoom * (dist / g.startDist), 0.15), 4);
+      const qx = (g.startMid.x - cx - g.startPan.x) / g.startZoom;
+      const qy = (g.startMid.y - cy - g.startPan.y) / g.startZoom;
+      if (Math.hypot(mid.x - g.startMid.x, mid.y - g.startMid.y) > 8 || Math.abs(dist - g.startDist) > 10) g.moved = true;
+      g.fingers = Math.max(g.fingers, touchesRef.current.size);
+      setPan({ x: mid.x - cx - qx * nextZoom, y: mid.y - cy - qy * nextZoom });
+      onZoomChange(nextZoom);
+    };
+    const onEnd = (e: PointerEvent) => {
+      if (!touchesRef.current.delete(e.pointerId)) return;
+      const g = gestureRef.current;
+      if (g && touchesRef.current.size < 2) {
+        if (!g.moved && performance.now() - g.startTime < 320) {
+          if (g.fingers >= 3) onRedo?.();
+          else onUndo?.();
+        }
+        gestureRef.current = touchesRef.current.size === 0 ? null : { ...g, moved: true };
+      }
+      if (touchesRef.current.size === 0) gestureRef.current = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+    };
+  }, [onZoomChange, onUndo, onRedo]);
 
   // The cached rect lives for one gesture; drop it once every pointerup handler has run.
   useEffect(() => {
@@ -359,7 +464,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         const tip = curRef.current;
         previewRef.current?.setAttribute('d', previewFnRef.current(pts, curRef.current) || 'M 0 0');
         const g = brushRef.current;
-        if (g && lastClientRef.current) {
+        if (g && lastClientRef.current && pointerTypeRef.current !== 'touch') {
           g.setAttribute('transform', `translate(${tip.x} ${tip.y})`);
           g.setAttribute('visibility', g.dataset.show === '1' ? 'visible' : 'hidden');
         }
@@ -611,6 +716,22 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Mouse / Pointer Down handler
   const handleMouseDown = (e: React.PointerEvent) => {
+    pointerTypeRef.current = e.pointerType;
+    if (e.pointerType === 'pen') penSeenRef.current = true;
+    if (e.pointerType === 'touch') {
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touchesRef.current.size >= 2) {
+        abortGestureConflicts();
+        beginPinch();
+        return;
+      }
+      // Remaining finger of a finished pinch, or a palm/finger while a pen is in use: never draw.
+      if (gestureRef.current || penSeenRef.current) {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+        return;
+      }
+    }
     if (e.button === 1 || isSpacePressed) {
       setIsPanning(true);
       setPanStart({
@@ -1116,6 +1237,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     ) : null;
 
   const hs = 1 / zoom;
+  const hh = hs * (coarse ? 1.8 : 1);
   const itemPivot =
     selectedItem &&
     (dragRef.current?.drag.kind === 'pivot' && dragPoint
@@ -1141,7 +1263,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       ref={containerRef}
       onPointerDown={handleMouseDown}
       onPointerMove={(e) => {
-        if (!isDrawing) moveBrush(e.clientX, e.clientY, !isSpacePressed && !isPanning);
+        if (!isDrawing) moveBrush(e.clientX, e.clientY, e.pointerType !== 'touch' && !isSpacePressed && !isPanning);
       }}
       onPointerLeave={() => !isDrawing && moveBrush(0, 0, false)}
       onWheel={handleWheel}
@@ -1326,8 +1448,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                   height={liveBox.height}
                   fill="none"
                   stroke="#2652D0"
-                  strokeWidth={1.5 * hs}
-                  strokeDasharray={selectedItem ? undefined : `${6 * hs} ${4 * hs}`}
+                  strokeWidth={1.5 * hh}
+                  strokeDasharray={selectedItem ? undefined : `${6 * hh} ${4 * hh}`}
                   pointerEvents="none"
                 />
                 {!isSelectDragging && (
@@ -1336,20 +1458,20 @@ export const Canvas: React.FC<CanvasProps> = ({
                       x1={liveBox.x + liveBox.width / 2}
                       y1={liveBox.y}
                       x2={liveBox.x + liveBox.width / 2}
-                      y2={liveBox.y - 26 * hs}
+                      y2={liveBox.y - 26 * hh}
                       stroke="#2652D0"
-                      strokeWidth={1.2 * hs}
+                      strokeWidth={1.2 * hh}
                       pointerEvents="none"
                     />
                     <circle
                       data-handle="rotate"
                       pointerEvents="all"
                       cx={liveBox.x + liveBox.width / 2}
-                      cy={liveBox.y - 26 * hs}
-                      r={6 * hs}
+                      cy={liveBox.y - 26 * hh}
+                      r={6 * hh}
                       fill="#FBFBFC"
                       stroke="#2652D0"
-                      strokeWidth={2 * hs}
+                      strokeWidth={2 * hh}
                       className="cursor-grab"
                     />
                     {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
@@ -1357,13 +1479,13 @@ export const Canvas: React.FC<CanvasProps> = ({
                         key={corner}
                         data-handle={`scale-${corner}`}
                         pointerEvents="all"
-                        x={(corner.includes('w') ? liveBox.x : liveBox.x + liveBox.width) - 5 * hs}
-                        y={(corner.includes('n') ? liveBox.y : liveBox.y + liveBox.height) - 5 * hs}
-                        width={10 * hs}
-                        height={10 * hs}
+                        x={(corner.includes('w') ? liveBox.x : liveBox.x + liveBox.width) - 5 * hh}
+                        y={(corner.includes('n') ? liveBox.y : liveBox.y + liveBox.height) - 5 * hh}
+                        width={10 * hh}
+                        height={10 * hh}
                         fill="#FBFBFC"
                         stroke="#2652D0"
-                        strokeWidth={2 * hs}
+                        strokeWidth={2 * hh}
                         className={corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}
                       />
                     ))}
@@ -1385,18 +1507,18 @@ export const Canvas: React.FC<CanvasProps> = ({
                   return (
                     <g key={s.id} data-handle={`socket:${s.id}`} pointerEvents="all" className="cursor-move">
                       <path
-                        d={`M ${pos.x} ${pos.y - 7 * hs} L ${pos.x + 7 * hs} ${pos.y} L ${pos.x} ${pos.y + 7 * hs} L ${pos.x - 7 * hs} ${pos.y} Z`}
+                        d={`M ${pos.x} ${pos.y - 7 * hh} L ${pos.x + 7 * hh} ${pos.y} L ${pos.x} ${pos.y + 7 * hh} L ${pos.x - 7 * hh} ${pos.y} Z`}
                         fill="#EB8E88"
                         stroke="#FBFBFC"
-                        strokeWidth={1.5 * hs}
+                        strokeWidth={1.5 * hh}
                       />
                       <text
-                        x={pos.x + 10 * hs}
-                        y={pos.y + 4 * hs}
-                        fontSize={11 * hs}
+                        x={pos.x + 10 * hh}
+                        y={pos.y + 4 * hh}
+                        fontSize={11 * hh}
                         fill="#482A45"
                         fontWeight={600}
-                        style={{ paintOrder: 'stroke', stroke: '#FBFBFC', strokeWidth: 3 * hs }}
+                        style={{ paintOrder: 'stroke', stroke: '#FBFBFC', strokeWidth: 3 * hh }}
                       >
                         {s.name}
                       </text>
@@ -1404,11 +1526,11 @@ export const Canvas: React.FC<CanvasProps> = ({
                   );
                 })}
                 <g data-handle="pivot" pointerEvents="all" className="cursor-move">
-                  <circle cx={itemPivot.x} cy={itemPivot.y} r={9 * hs} fill="#FBFBFC" fillOpacity={0.85} stroke="#D23838" strokeWidth={2 * hs} />
+                  <circle cx={itemPivot.x} cy={itemPivot.y} r={9 * hh} fill="#FBFBFC" fillOpacity={0.85} stroke="#D23838" strokeWidth={2 * hh} />
                   <path
-                    d={`M ${itemPivot.x - 13 * hs} ${itemPivot.y} H ${itemPivot.x + 13 * hs} M ${itemPivot.x} ${itemPivot.y - 13 * hs} V ${itemPivot.y + 13 * hs}`}
+                    d={`M ${itemPivot.x - 13 * hh} ${itemPivot.y} H ${itemPivot.x + 13 * hh} M ${itemPivot.x} ${itemPivot.y - 13 * hh} V ${itemPivot.y + 13 * hh}`}
                     stroke="#D23838"
-                    strokeWidth={1.5 * hs}
+                    strokeWidth={1.5 * hh}
                   />
                 </g>
               </g>

@@ -88,8 +88,17 @@ export const WheelNumber: React.FC<WheelNumberProps> = ({
         setDraft(String(value));
         setEditing(true);
       }}
-      className={`h-7 flex items-center gap-1 px-2 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) cursor-ew-resize select-none hover:border-(--ui-accent) ${className}`}
+      style={{ touchAction: 'none' }}
+      className={`h-7 pointer-coarse:h-9 flex items-center gap-1 px-2 pointer-coarse:px-1 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-text-2) cursor-ew-resize select-none hover:border-(--ui-accent) ${className}`}
     >
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => onChange(clamp(value - step))}
+        className="hidden pointer-coarse:flex w-7 h-7 items-center justify-center rounded-md text-(--ui-muted) active:bg-(--ui-hover)"
+      >
+        −
+      </button>
       {icon && <span className="text-(--ui-muted) flex items-center">{icon}</span>}
       {editing ? (
         <input
@@ -110,6 +119,14 @@ export const WheelNumber: React.FC<WheelNumberProps> = ({
       ) : (
         <span className="text-[11px] font-mono tabular-nums text-(--ui-strong) min-w-[2.2em] text-right">{text}</span>
       )}
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => onChange(clamp(value + step))}
+        className="hidden pointer-coarse:flex w-7 h-7 items-center justify-center rounded-md text-(--ui-muted) active:bg-(--ui-hover)"
+      >
+        +
+      </button>
     </div>
   );
 };

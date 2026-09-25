@@ -26,6 +26,7 @@ import {
   Gamepad2,
   CloudCheck,
   Settings,
+  PanelRight,
 } from 'lucide-react';
 import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
@@ -79,6 +80,9 @@ interface TopBarProps {
   onOpenGodotExport: () => void;
   paperMode: PaperMode;
   onChangePaperMode: (mode: PaperMode) => void;
+  compact: boolean;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
   currentWidth: number;
   currentHeight: number;
   onUpdateCanvasSize: (w: number, h: number) => void;
@@ -108,6 +112,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenGodotExport,
   paperMode,
   onChangePaperMode,
+  compact,
+  panelOpen,
+  onTogglePanel,
   currentWidth,
   currentHeight,
   onUpdateCanvasSize,
@@ -606,6 +613,18 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           )}
         </div>
+
+        {compact && (
+          <button
+            onClick={onTogglePanel}
+            data-tip="图层面板"
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+              panelOpen ? 'bg-(--ui-accent) text-white' : 'bg-(--ui-raised) text-(--ui-text-2) hover:text-(--ui-strong)'
+            }`}
+          >
+            <PanelRight className="w-4 h-4" />
+          </button>
+        )}
 
         {/* 统一整合到一个方块内的导出按钮，点击展开下拉菜单 */}
         <div className="relative" ref={exportMenuRef}>

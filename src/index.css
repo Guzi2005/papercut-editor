@@ -27,3 +27,17 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Tablet: no page zoom/scroll bounce, no long-press callouts or text selection on the UI. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}

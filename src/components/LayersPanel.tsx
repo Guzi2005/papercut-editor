@@ -46,6 +46,9 @@ import {
   Maximize,
   Sun,
   ArrowUpDown,
+  MoreHorizontal,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
@@ -153,6 +156,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [editingColorNote, setEditingColorNote] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const listRef = useRef<HTMLDivElement>(null);
 
   const activeLayer = activeLayerId ? layers[activeLayerId] : null;
   const { zOf, slots } = useMemo(() => computeDepthTable(project), [project]);
@@ -167,8 +171,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     }
     const item = findItemOfLayer(project, activeLayerId);
     if (item && tab === 'items') setExpandedItemIds((prev) => ({ ...prev, [item.id]: true }));
+    // Scroll only the list: scrollIntoView would also scroll overflow-hidden ancestors and could
+    // drag an off-screen drawer into view.
     requestAnimationFrame(() => {
-      rowRefs.current[`${tab}:${activeLayerId}`]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const row = rowRefs.current[`${tab}:${activeLayerId}`];
+      const list = listRef.current;
+      if (!row || !list) return;
+      const r = row.getBoundingClientRect();
+      const l = list.getBoundingClientRect();
+      if (r.top < l.top) list.scrollBy({ top: r.top - l.top - 8, behavior: 'smooth' });
+      else if (r.bottom > l.bottom) list.scrollBy({ top: r.bottom - l.bottom + 8, behavior: 'smooth' });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLayerId, tab]);
@@ -277,7 +289,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             }`}
           />
         )}
-        {draggable && <GripVertical className="w-3 h-3 text-(--ui-faint) shrink-0 cursor-grab" />}
+        {draggable && <GripVertical className="w-3 h-3 text-(--ui-faint) shrink-0 cursor-grab pointer-coarse:hidden" />}
         <div className="w-8 h-8 rounded-md bg-[#FAF8F2]/95 p-0.5 shrink-0 overflow-hidden">
           <LayerThumb layer={layer} w={project.width} h={project.height} />
         </div>
@@ -296,7 +308,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               {layer.name}
             </div>
           )}
-          <div className="flex items-center gap-1.5 text-[9px] text-(--ui-faint) mt-0.5">
+          <div className="flex items-center gap-1.5 text-[9px] text-(--ui-faint) mt-0.5 whitespace-nowrap overflow-hidden">
             <span className="w-2 h-2 rounded-sm border border-white/30" style={{ backgroundColor: layer.color }} />
             <span className="font-mono">z {zOf[layer.id] ?? '-'}</span>
             {scope === 'depth' && item && (
@@ -311,6 +323,17 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           </div>
         </div>
         {extra}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setContextMenu({ x: r.left - 180, y: r.bottom + 4, layerId: layer.id });
+          }}
+          className="hidden pointer-coarse:flex p-1.5 rounded hover:bg-(--ui-hover) text-(--ui-muted)"
+          data-tip="更多"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -867,8 +890,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   const ctxLayer = contextMenu ? layers[contextMenu.layerId] : null;
 
+  /** Neighbour in the same stack (group or root), so touch users can reorder without drag and drop. */
+  const neighbour = (layerId: string, dir: 1 | -1): string | null => {
+    const grp = groups.find((g) => g.layerIds.includes(layerId));
+    const ids = grp ? grp.layerIds : rootOrder.filter((r) => r.type === 'layer').map((r) => r.id);
+    const i = ids.indexOf(layerId);
+    return ids[i + dir] ?? null;
+  };
+
   return (
-    <aside className="w-72 xl:w-80 flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative">
+    <aside className="w-64 xl:w-72 2xl:w-80 h-full flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative">
       <div className="h-11 px-2 border-b border-(--ui-divider) flex items-center gap-1">
         {([
           { id: 'depth', label: '深度', icon: LayersIcon },
@@ -907,7 +938,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div ref={listRef} className="flex-1 overflow-y-auto p-2">
         {tab === 'depth' ? depthTab : tab === 'items' ? itemsTab : styleTab}
       </div>
 
@@ -925,14 +956,20 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           <div
             className="absolute bg-(--ui-raised)/98 border border-(--ui-border-strong) text-(--ui-text) rounded-xl shadow-2xl py-1 w-52 text-xs backdrop-blur-md"
             style={{
-              left: Math.min(contextMenu.x, window.innerWidth - 220),
-              top: Math.min(contextMenu.y, window.innerHeight - 320),
+              left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 220)),
+              top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 360)),
             }}
             onClick={(e) => e.stopPropagation()}
           >
             {[
               { label: '重命名', icon: Edit2, run: () => startRename('layer', ctxLayer.id, ctxLayer.name) },
               { label: '复制纸片', icon: Copy, run: () => onDuplicateLayer(ctxLayer.id) },
+              ...(neighbour(ctxLayer.id, 1)
+                ? [{ label: '上移一层', icon: ArrowUp, run: () => onReorderLayers(ctxLayer.id, neighbour(ctxLayer.id, 1)!, 'above') }]
+                : []),
+              ...(neighbour(ctxLayer.id, -1)
+                ? [{ label: '下移一层', icon: ArrowDown, run: () => onReorderLayers(ctxLayer.id, neighbour(ctxLayer.id, -1)!, 'below') }]
+                : []),
               { label: ctxLayer.visible ? '隐藏' : '显示', icon: ctxLayer.visible ? EyeOff : Eye, run: () => onUpdateLayer(ctxLayer.id, { visible: !ctxLayer.visible }) },
               { label: ctxLayer.locked ? '解锁' : '锁定', icon: ctxLayer.locked ? Unlock : Lock, run: () => onUpdateLayer(ctxLayer.id, { locked: !ctxLayer.locked }) },
               ...(onInvertLayerCutouts ? [{ label: '镂空 / 贴花 互换', icon: LayersIcon, run: () => onInvertLayerCutouts(ctxLayer.id) }] : []),
