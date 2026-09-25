@@ -167,6 +167,10 @@ export const Canvas: React.FC<CanvasProps> = ({
   const rafRef = useRef(0);
   const rectRef = useRef<DOMRect | null>(null);
   const brushRef = useRef<SVGGElement>(null);
+  const previewRef = useRef<SVGPathElement>(null);
+  const predictedRef = useRef<Point[]>([]);
+  const lastClientRef = useRef<{ x: number; y: number } | null>(null);
+  const previewFnRef = useRef<(pts: Point[], cur: Point) => string>(() => '');
 
   // Polyline shape drawing state (单击新增锚点，双击终止)
   const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
@@ -346,9 +350,17 @@ export const Canvas: React.FC<CanvasProps> = ({
         setPan(panTargetRef.current);
         panTargetRef.current = null;
       }
+      // Stroke preview and brush ring are written straight to the DOM in the same frame,
+      // so the drawn tip never trails the ring by a React render.
       if (curRef.current) {
-        setStrokePoints(strokeRef.current.slice());
-        setCurrentPoint(curRef.current);
+        const pts = strokeRef.current.concat(predictedRef.current);
+        const tip = pts[pts.length - 1] || curRef.current;
+        previewRef.current?.setAttribute('d', previewFnRef.current(pts, curRef.current) || 'M 0 0');
+        const g = brushRef.current;
+        if (g && lastClientRef.current) {
+          g.setAttribute('transform', `translate(${tip.x} ${tip.y})`);
+          g.setAttribute('visibility', g.dataset.radius === '0' ? 'hidden' : 'visible');
+        }
       }
     });
   }, []);
@@ -693,6 +705,8 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     // 3. Normal drawing (Willow Leaf, Geom Shapes, Pen Knife, Hand Draw)
     strokeRef.current = [pt];
+    predictedRef.current = [];
+    lastClientRef.current = { x: e.clientX, y: e.clientY };
     curRef.current = pt;
     setIsDrawing(true);
     setStartPoint(pt);
@@ -711,7 +725,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         return;
       }
 
-      moveBrush(e.clientX, e.clientY, true);
+      lastClientRef.current = { x: e.clientX, y: e.clientY };
       const pt = clientToCanvas(e.clientX, e.clientY);
       pt.pressure = getEventPressure(e);
 
@@ -742,6 +756,11 @@ export const Canvas: React.FC<CanvasProps> = ({
           const sp = clientToCanvas(ev.clientX, ev.clientY);
           sp.pressure = getEventPressure(ev);
           strokeRef.current.push(sp);
+        });
+        predictedRef.current = (e.getPredictedEvents?.() || []).map((ev) => {
+          const pp = clientToCanvas(ev.clientX, ev.clientY);
+          pp.pressure = getEventPressure(ev);
+          return pp;
         });
       }
       curRef.current = pt;
@@ -992,46 +1011,42 @@ export const Canvas: React.FC<CanvasProps> = ({
     onAddDrawingStroke,
   ]);
 
-  // Generate live preview path while drawing
-  const getLivePreviewPath = (): string => {
-    if (!isDrawing || !startPoint || !currentPoint) return '';
-
+  // Live preview geometry, evaluated from refs inside the animation-frame flush
+  previewFnRef.current = (pts: Point[], cur: Point): string => {
+    const start = pts[0] || startPoint;
+    if (!start) return '';
     if (currentTool === 'willow_leaf') {
-      if (strokePoints.length < 2) return '';
+      if (pts.length < 2) return '';
       return generateRealtimeWillowLeaf(
-        strokePoints,
+        pts,
         brushSettings.willowMode || 'chord',
         brushSettings.stabilizer ?? 0.55,
         brushSettings.simplifyTolerance ?? 4.5
       );
     } else if (currentTool === 'geom_shape') {
-      const dist = Math.hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y);
-      const p1 = dist < 8 ? { x: startPoint.x - 40, y: startPoint.y - 40 } : startPoint;
-      const p2 = dist < 8 ? { x: startPoint.x + 40, y: startPoint.y + 40 } : currentPoint;
-      const geom = generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2, {
+      const origin = startPoint || start;
+      const dist = Math.hypot(cur.x - origin.x, cur.y - origin.y);
+      const p1 = dist < 8 ? { x: origin.x - 40, y: origin.y - 40 } : origin;
+      const p2 = dist < 8 ? { x: origin.x + 40, y: origin.y + 40 } : cur;
+      return generateGeomShape(brushSettings.geomShapeType || 'rect', p1, p2, {
         starPoints: brushSettings.starPoints ?? 5,
         starRoundness: brushSettings.starRoundness ?? 0,
         starIrregularity: brushSettings.starIrregularity ?? 0,
-      });
-      return geom.d;
+      }).d;
     } else if (currentTool === 'pen_knife' || currentTool === 'freehand') {
-      if (strokePoints.length >= 2) {
+      if (pts.length >= 2) {
         return generateFreehandKnifePath(
-          strokePoints,
+          pts,
           brushSettings.stampSize || 26,
           brushSettings.knifeTipShape || 'round',
           brushSettings.knifePressure ?? false
         );
       }
     } else if (currentTool === 'hand_draw') {
-      if (strokePoints.length >= 2) {
-        return generateFreehandDrawPath(strokePoints);
-      }
+      if (pts.length >= 2) return generateFreehandDrawPath(pts);
     }
     return '';
   };
-
-  const previewD = getLivePreviewPath();
 
   const renderLayerOrder: Layer[] = flattenLayerIds(project)
     .filter((id) => isLayerRendered(project, id))
@@ -1211,10 +1226,10 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
 
             {/* Real-time Hand Drawing Stroke Preview (Clipped by active layer mask) */}
-            {isDrawing && currentTool === 'hand_draw' && activeLayer && previewD && (
+            {isDrawing && currentTool === 'hand_draw' && activeLayer && (
               <g mask={`url(#cv_${activeLayer.id}_mask)`}>
                 <path
-                  d={previewD}
+                  ref={previewRef}
                   fill="none"
                   stroke={brushSettings.drawColor || '#161B29'}
                   strokeWidth={brushSettings.drawSize || 6}
@@ -1234,9 +1249,9 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
 
             {/* Real-time Cutout Preview (Willow Leaf, Geom Shapes, Pen Knife) */}
-            {isDrawing && currentTool !== 'hand_draw' && previewD && (
+            {isDrawing && currentTool !== 'hand_draw' && (
               <path
-                d={previewD}
+                ref={previewRef}
                 fill={
                   brushSettings.mode === 'erase'
                     ? '#EB8E88'
@@ -1397,7 +1412,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               </g>
             )}
             {/* Brush size ring following the pointer */}
-            <g ref={brushRef} visibility="hidden" pointerEvents="none">
+            <g ref={brushRef} data-radius={brushRadius} visibility="hidden" pointerEvents="none">
               <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#FBFBFC" strokeWidth={2.5 / zoom} opacity={0.9} />
               <circle r={Math.max(brushRadius, 1.5)} fill="none" stroke="#1B2352" strokeWidth={1 / zoom} />
             </g>
