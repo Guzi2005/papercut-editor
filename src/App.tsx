@@ -109,6 +109,7 @@ export default function App() {
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [selectionScope, setSelectionScope] = useState<SelectionScope>('item');
   const [toolMenu, setToolMenu] = useState<{ x: number; y: number } | null>(null);
+  const [flashItem, setFlashItem] = useState<{ id: string; key: number } | null>(null);
   const closeToolMenu = useCallback(() => setToolMenu(null), []);
 
   // Tool & Brush Settings
@@ -922,6 +923,7 @@ export default function App() {
     setSelectedLayerIds([...item.partIds]);
     setSelectionScope('item');
     setCurrentTool('select');
+    setFlashItem({ id: itemId, key: Date.now() });
     if (!item.partIds.includes(activeLayerId)) handleSelectLayer(item.partIds[item.partIds.length - 1]);
   };
 
@@ -1161,6 +1163,7 @@ export default function App() {
             onRedo={handleRedo}
             fitSignal={fitSignal}
             onOpenToolMenu={(x, y) => setToolMenu({ x, y })}
+            flashItem={flashItem}
           />
           {toolMenu && (
             <ToolQuickMenu

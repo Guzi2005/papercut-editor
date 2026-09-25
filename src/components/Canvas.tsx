@@ -102,6 +102,8 @@ interface CanvasProps {
   keymap: Keymap;
   /** Right click without dragging: the current tool's quick menu at the pointer. */
   onOpenToolMenu?: (x: number, y: number) => void;
+  /** Bumped when an item is picked from the items tab: flash it and point at its pivot. */
+  flashItem?: { id: string; key: number } | null;
 }
 
 interface BBox {
@@ -203,7 +205,15 @@ export const Canvas: React.FC<CanvasProps> = ({
   fitSignal = 0,
   keymap,
   onOpenToolMenu,
+  flashItem,
 }) => {
+  const [flashing, setFlashing] = useState<{ id: string; key: number } | null>(null);
+  useEffect(() => {
+    if (!flashItem) return;
+    setFlashing(flashItem);
+    const t = window.setTimeout(() => setFlashing(null), 1900);
+    return () => window.clearTimeout(t);
+  }, [flashItem]);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -1972,6 +1982,35 @@ export const Canvas: React.FC<CanvasProps> = ({
               </g>
             )}
 
+            {flashing && (() => {
+              const item = (project.items || []).find((it) => it.id === flashing.id);
+              if (!item) return null;
+              return (
+                <g key={flashing.key} className="item-flash" pointerEvents="none">
+                  <defs>
+                    <filter id="item-flash-halo" x="-10%" y="-10%" width="120%" height="120%">
+                      <feMorphology in="SourceAlpha" operator="dilate" radius={3.5 / zoom} result="d" />
+                      <feComposite in="d" in2="SourceAlpha" operator="out" result="ring" />
+                      <feGaussianBlur in="ring" stdDeviation={1.2 / zoom} result="glow" />
+                      <feFlood floodColor="#3A6DF0" />
+                      <feComposite in2="glow" operator="in" result="halo" />
+                      <feFlood floodColor="#3A6DF0" floodOpacity="0.22" />
+                      <feComposite in2="SourceAlpha" operator="in" result="tint" />
+                      <feMerge>
+                        <feMergeNode in="tint" />
+                        <feMergeNode in="halo" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {item.partIds
+                    .filter((id) => isLayerRendered(project, id))
+                    .map((id) => (
+                      <use key={id} href={`#cv_${id}_body`} filter="url(#item-flash-halo)" />
+                    ))}
+                </g>
+              );
+            })()}
+
             {/* Item pivot & sockets */}
             {currentTool === 'select' && selectedItem && itemPivot && (
               <g>
@@ -2003,7 +2042,29 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </g>
                   );
                 })}
+                {flashing?.id === selectedItem.id && (
+                  <g key={flashing.key} pointerEvents="none">
+                    {[0, 0.45].map((delay) => (
+                      <circle key={delay} cx={itemPivot.x} cy={itemPivot.y} r={9 * hh} fill="none" stroke="#D23838" strokeWidth={2 * hh} opacity="0">
+                        <animate attributeName="r" from={9 * hh} to={30 * hh} dur="0.9s" begin={`${delay}s`} fill="freeze" />
+                        <animate attributeName="opacity" values="0.9;0" dur="0.9s" begin={`${delay}s`} fill="freeze" />
+                      </circle>
+                    ))}
+                    <text
+                      x={itemPivot.x + 16 * hh}
+                      y={itemPivot.y - 12 * hh}
+                      fontSize={11 * hh}
+                      fill="#D23838"
+                      fontWeight={600}
+                      className="item-flash"
+                      style={{ paintOrder: 'stroke', stroke: '#FBFBFC', strokeWidth: 3 * hh }}
+                    >
+                      拖动调整锚点
+                    </text>
+                  </g>
+                )}
                 <g data-handle="pivot" pointerEvents="all" className="cursor-move">
+                  <title>锚点：拖动调整</title>
                   <circle cx={itemPivot.x} cy={itemPivot.y} r={9 * hh} fill="#FBFBFC" fillOpacity={0.85} stroke="#D23838" strokeWidth={2 * hh} />
                   <path
                     d={`M ${itemPivot.x - 13 * hh} ${itemPivot.y} H ${itemPivot.x + 13 * hh} M ${itemPivot.x} ${itemPivot.y - 13 * hh} V ${itemPivot.y + 13 * hh}`}
