@@ -351,44 +351,46 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           {isEditing('layer', layer.id) ? (
             renameInput
           ) : (
-            <div
-              className="truncate text-[11px] font-medium"
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                startRename('layer', layer.id, layer.name);
-              }}
-              data-tip="双击重命名"
-            >
-              {layer.name}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="truncate text-[11px] font-medium min-w-0"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startRename('layer', layer.id, layer.name);
+                }}
+                data-tip="双击重命名"
+              >
+                {layer.name}
+              </span>
+              {scope === 'depth' && item && (
+                <span className="flex items-center gap-0.5 text-[9px] text-(--ui-accent-2) truncate min-w-0 shrink" data-tip={`物件：${item.name}`}>
+                  <Box className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{item.name}</span>
+                </span>
+              )}
+              {scope === 'items' && (
+                <span className="text-[9px] text-(--ui-faint) truncate min-w-0 shrink">{findGroupOfLayer(project, layer.id)?.name || '根层级'}</span>
+              )}
             </div>
           )}
-          <div className="flex flex-wrap gap-[3px] mt-1">
-            {layerColors(layer).map((c) => (
-              <button
-                key={c}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChangeBrushColor(c);
-                }}
-                data-tip={`${c} · 单击拾色`}
-                className={`w-2.5 h-2.5 rounded-[2px] border hover:scale-125 transition-transform ${isLight(c) ? 'border-black/20' : 'border-white/25'} ${
-                  c === normalizeHex(brushColor) ? 'ring-1 ring-(--ui-accent) ring-offset-1 ring-offset-(--ui-panel)' : ''
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-          <div className="flex items-center gap-1.5 text-[9px] text-(--ui-faint) mt-0.5 whitespace-nowrap overflow-hidden">
-            <span className="font-mono">z {zOf[layer.id] ?? '-'}</span>
-            {scope === 'depth' && item && (
-              <span className="flex items-center gap-0.5 text-(--ui-accent-2) truncate">
-                <Box className="w-2.5 h-2.5" />
-                {item.name}
-              </span>
-            )}
-            {scope === 'items' && (
-              <span className="truncate">{findGroupOfLayer(project, layer.id)?.name || '根层级'}</span>
-            )}
+          <div className="flex items-center gap-1.5 mt-1 min-w-0">
+            <div className="flex flex-wrap gap-[3px] min-w-0">
+              {layerColors(layer).map((c) => (
+                <button
+                  key={c}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChangeBrushColor(c);
+                  }}
+                  data-tip={`${c} · 单击拾色`}
+                  className={`w-2.5 h-2.5 rounded-[2px] border hover:scale-125 transition-transform ${isLight(c) ? 'border-black/20' : 'border-white/25'} ${
+                    c === normalizeHex(brushColor) ? 'ring-1 ring-(--ui-accent) ring-offset-1 ring-offset-(--ui-panel)' : ''
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <span className="font-mono text-[9px] text-(--ui-faint) shrink-0" data-tip="深度 z 值">z {zOf[layer.id] ?? '-'}</span>
           </div>
         </div>
         {extra}
