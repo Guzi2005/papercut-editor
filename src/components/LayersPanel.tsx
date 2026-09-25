@@ -55,6 +55,7 @@ import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
 import { ColorStudio } from './ColorStudio';
 import { WorkStatus } from './WorkStatus';
+import { StrokeButton } from './StrokePanel';
 import { isLight, layerColors, normalizeHex, projectColors } from '../utils/color';
 
 interface LayersPanelProps {
@@ -888,6 +889,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             <option value="overlay">叠加</option>
           </select>
         </label>
+        <StrokeButton stroke={activeLayer.stroke} brushColor={brushColor} onChange={(stroke) => onUpdateLayer(activeLayer.id, { stroke })} />
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <label className="h-7 flex items-center gap-1 px-1.5 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted)" data-tip="纹样">

@@ -237,5 +237,80 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
       ? `<use href="#${bodyId}" filter="url(#${shadowId})"${shadowBlend !== 'normal' ? ` style="mix-blend-mode:${shadowBlend}"` : ''}/>`
       : '';
   const inner = useGrain ? `<g filter="url(#${grainId})">${body.join('')}</g>` : body.join('');
-  return `<defs>${defs.join('')}</defs><g ${outer}>${shadowEl}<g id="${bodyId}" opacity="${layer.opacity}"${blend}>${inner}</g></g>`;
+  const stroke = layer.stroke?.enabled && layer.stroke.width > 0 ? strokeMarkup(layer, pid, bodyId, defs) : '';
+  const contentId = `${pid}_content`;
+  const shadowUse = shadowEl.replace(`href="#${bodyId}"`, `href="#${contentId}"`);
+  return `<defs>${defs.join('')}</defs><g ${outer}>${shadowUse}<g id="${contentId}" opacity="${layer.opacity}"${blend}><g id="${bodyId}">${inner}</g>${stroke}</g></g>`;
+}
+
+/** Superset of a layer's extent from every coordinate in its paths (safe for filter regions). */
+function roughExtent(layer: Layer): [number, number, number, number] | null {
+  const ds = [layer.baseShape?.d, ...layer.positiveElements.map((c) => c.d), ...layer.cutouts.map((c) => c.d), ...(layer.drawings || []).map((d) => d.d)];
+  let lo = Infinity, hi = -Infinity;
+  ds.forEach((d) => (d?.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).forEach((n) => {
+    const v = +n;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }));
+  return isFinite(lo) ? [lo, lo, hi, hi] : null;
+}
+
+/** How far a layer's stroke can reach beyond its paper, for padding exports. */
+export function strokeReach(layer: Layer): number {
+  const s = layer.stroke;
+  if (!s?.enabled || s.width <= 0) return 0;
+  const out = s.position === 'outside' ? s.width : s.position === 'center' ? s.width / 2 : 0;
+  return Math.ceil(out + s.offset + s.softness * s.width * 1.5 + 2);
+}
+
+/**
+ * The stroke band comes from morphology on the finished paper's alpha, so it follows holes and
+ * appliqués alike. Solid lines fill the band; patterned lines are dashes along every contour,
+ * masked to the band so seams between overlapping pieces stay hidden.
+ */
+function strokeMarkup(layer: Layer, pid: string, bodyId: string, defs: string[]): string {
+  const s = layer.stroke!;
+  const w = Math.max(0.5, s.width);
+  const reach = strokeReach(layer) + w;
+  const ext = roughExtent(layer);
+  const region = ext
+    ? `filterUnits="userSpaceOnUse" x="${ext[0] - reach}" y="${ext[1] - reach}" width="${ext[2] - ext[0] + reach * 2}" height="${ext[3] - ext[1] + reach * 2}"`
+    : `filterUnits="userSpaceOnUse" x="${-HUGE}" y="${-HUGE}" width="${HUGE * 2}" height="${HUGE * 2}"`;
+  const grow = s.position === 'outside' ? w : s.position === 'center' ? w / 2 : 0;
+  const shrink = s.position === 'inside' ? w : s.position === 'center' ? w / 2 : 0;
+  const band =
+    (grow > 0 ? `<feMorphology in="SourceAlpha" operator="dilate" radius="${grow}" result="o"/>` : '') +
+    (shrink > 0 ? `<feMorphology in="SourceAlpha" operator="erode" radius="${shrink}" result="i"/>` : '') +
+    `<feComposite in="${grow > 0 ? 'o' : 'SourceAlpha'}" in2="${shrink > 0 ? 'i' : 'SourceAlpha'}" operator="out" result="band"/>`;
+  const rad = (s.angle * Math.PI) / 180;
+  const dx = +(Math.cos(rad) * s.offset).toFixed(2);
+  const dy = +(Math.sin(rad) * s.offset).toFixed(2);
+  const blur = s.softness * w * 0.6;
+  const finish = (blur > 0.05 ? `<feGaussianBlur stdDeviation="${blur.toFixed(2)}"/>` : '') + (dx || dy ? `<feOffset dx="${dx}" dy="${dy}"/>` : '');
+  const color = escapeAttr(s.color);
+  const patterned = s.line !== 'solid' && layer.kind !== 'doodle';
+
+  if (!patterned) {
+    const fid = `${pid}_stroke`;
+    defs.push(
+      `<filter id="${fid}" ${region} color-interpolation-filters="sRGB">${band}` +
+        `<feFlood flood-color="${color}" flood-opacity="${s.opacity}"/><feComposite in2="band" operator="in"/>${finish}</filter>`
+    );
+    return `<use href="#${bodyId}" filter="url(#${fid})"/>`;
+  }
+
+  const bandId = `${pid}_strokeband`, maskId = `${pid}_strokemask`, finishId = `${pid}_strokefx`;
+  defs.push(`<filter id="${bandId}" ${region}>${band}<feFlood flood-color="#fff"/><feComposite in2="band" operator="in"/></filter>`);
+  defs.push(`${maskOpen(maskId)}<use href="#${bodyId}" filter="url(#${bandId})"/></mask>`);
+  if (finish) defs.push(`<filter id="${finishId}" ${region}>${finish}</filter>`);
+  const dash =
+    s.line === 'dashed' ? { arr: `${w * 3} ${w * 2}`, cap: 'butt', width: w * 2 + 2 }
+    : s.line === 'dotted' ? { arr: `0 ${w * 2}`, cap: 'round', width: w * 2 }
+    : { arr: `${w * 2.2} ${w * 1.6}`, cap: 'round', width: w * 1.2 };
+  const contours = [layer.baseShape?.d, ...paperSequence(layer).map((c) => c.d)].filter(Boolean).flatMap((d) => splitSubpaths(d!));
+  const lines = contours
+    .map((d) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${dash.width}" stroke-dasharray="${dash.arr}" stroke-linecap="${dash.cap}" stroke-linejoin="round"/>`)
+    .join('');
+  const masked = `<g mask="url(#${maskId})" opacity="${s.opacity}">${lines}</g>`;
+  return finish ? `<g filter="url(#${finishId})">${masked}</g>` : masked;
 }

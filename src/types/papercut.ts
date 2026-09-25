@@ -107,6 +107,23 @@ export interface Layer {
   drawings?: LayerDrawStroke[]; // 手绘线条笔迹 (附属于此剪纸图层蒙版)
   pattern?: LayerPattern; // 纹样填充 (蓝印菱花、条纹、格纹、圆点)
   grain?: number; // 水粉颗粒质感强度 0 ~ 1
+  stroke?: LayerStroke; // 描边
+}
+
+export type StrokePosition = 'inside' | 'center' | 'outside';
+export type StrokeLine = 'solid' | 'dashed' | 'dotted' | 'stitch';
+
+/** 图层描边：沿纸片实际轮廓（含镂空边）描一圈 */
+export interface LayerStroke {
+  enabled: boolean;
+  position: StrokePosition;
+  width: number;
+  opacity: number; // 0 ~ 1
+  color: string;
+  softness: number; // 0 硬 ~ 1 软
+  angle: number; // 偏移方向（度，0 为向右，90 为向下）
+  offset: number; // 偏移距离，0 为不偏移
+  line: StrokeLine;
 }
 
 export type PatternType = 'diamond' | 'stripes' | 'checks' | 'dots' | 'argyle';

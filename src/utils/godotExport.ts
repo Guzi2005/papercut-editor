@@ -5,7 +5,7 @@
 
 import { zipSync, strToU8, Zippable } from 'fflate';
 import { PapercutItem, PapercutProject } from '../types/papercut';
-import { projectShadowOptions, renderLayerMarkup, shadowFilterMarkup } from './layerSvg';
+import { projectShadowOptions, renderLayerMarkup, shadowFilterMarkup, strokeReach } from './layerSvg';
 import { computeDepthTable, flattenLayerIds, findItemOfLayer } from './projectOps';
 import { rasterizeSvg } from './svgExporter';
 import { serializeProject, PROJECT_FILE_EXT } from './storage';
@@ -228,10 +228,11 @@ export async function buildGodotExport(
             : `「${layer.name}」使用${BLEND_LABELS[layer.blendMode] || layer.blendMode}，但同物件里没有位于它下方的部件，按普通模式烘焙`
         );
       }
-      const x = Math.floor(b.x - pad);
-      const y = Math.floor(b.y - pad);
-      const w = Math.ceil(b.width + pad * 2);
-      const h = Math.ceil(b.height + pad * 2);
+      const lpad = pad + strokeReach(layer);
+      const x = Math.floor(b.x - lpad);
+      const y = Math.floor(b.y - lpad);
+      const w = Math.ceil(b.width + lpad * 2);
+      const h = Math.ceil(b.height + lpad * 2);
       const markup =
         blended && below.length > 0
           ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
