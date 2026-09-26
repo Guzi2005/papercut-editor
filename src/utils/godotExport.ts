@@ -9,6 +9,7 @@ import { projectShadowOptions, renderLayerMarkup, shadowFilterMarkup, strokeReac
 import { computeDepthTable, flattenLayerIds, findItemOfLayer } from './projectOps';
 import { rasterizeSvg } from './svgExporter';
 import { serializeProject, PROJECT_FILE_EXT } from './storage';
+import { assertTextureBudget, checkGodotExport, normalizeResourceRoot } from './godotPreflight';
 
 export interface GodotExportOptions {
   /** Folder inside the Godot project, e.g. res://art/papercut */
@@ -76,7 +77,7 @@ function uniqueName(name: string, used: Set<string>): string {
   return n;
 }
 
-const q = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const q = (s: string) => JSON.stringify(s);
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
 const vec2 = (x: number, y: number) => `Vector2(${num(x)}, ${num(y)})`;
 
@@ -159,12 +160,13 @@ export async function buildGodotExport(
   options: GodotExportOptions,
   onProgress?: (done: number, total: number) => void
 ): Promise<GodotExportResult> {
+  const preflight = checkGodotExport(project, options);
+  if (preflight.errors.length) throw new Error(preflight.errors.join('；'));
   await loadPinyin();
-  const warnings: string[] = [];
+  const warnings: string[] = [...preflight.warnings];
   const slug = asciiSlug(project.name, asciiSlug(project.id, 'papercut'));
-  const resRoot = options.resRoot.replace(/\/+$/, '');
-  if (!resRoot.startsWith('res://')) throw new Error('导出路径必须以 res:// 开头');
-  const resBase = `${resRoot}/${slug}`;
+  const resRoot = normalizeResourceRoot(options.resRoot);
+  const resBase = `${resRoot}${resRoot.endsWith('/') ? '' : '/'}${slug}`;
   const zipBase = resBase.slice('res://'.length);
 
   const { slots, zOf } = computeDepthTable(project);
@@ -200,6 +202,7 @@ export async function buildGodotExport(
   const manifestItems: unknown[] = [];
   const allSceneRefs: { itemName: string; scenePath: string; pivot: { x: number; y: number } }[] = [];
   let done = 0;
+  let exportedParts = 0;
 
   for (const item of exportItems) {
     const english = item.englishName?.trim();
@@ -234,6 +237,7 @@ export async function buildGodotExport(
       const y = Math.floor(b.y - lpad);
       const w = Math.ceil(b.width + lpad * 2);
       const h = Math.ceil(b.height + lpad * 2);
+      assertTextureBudget(w, h, s, layer.name);
       const markup =
         blended && below.length > 0
           ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
@@ -241,6 +245,9 @@ export async function buildGodotExport(
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w * s}" height="${h * s}">${markup}</svg>`;
       const canvas = await rasterizeSvg(svg, w * s, h * s);
       const png = await canvasToPng(canvas);
+      canvas.width = 0;
+      canvas.height = 0;
+      exportedParts++;
 
       const fileBase = uniqueName(asciiSlug(layer.name, pid.replace(/[^\w]/g, '_')), usedFiles);
       const fileRel = `items/${itemSlug}/${fileBase}.png`;
@@ -255,6 +262,7 @@ export async function buildGodotExport(
         [
           `[node name=${q(uniqueName(nodeName(layer.name, fileBase), usedNodes))} type="Sprite2D" parent="."]`,
           `z_index = ${z}`,
+          'z_as_relative = false',
           `position = ${vec2(px, py)}`,
           s !== 1 ? `scale = ${vec2(1 / s, 1 / s)}` : '',
           `texture = ExtResource(${q(resId)})`,
@@ -283,6 +291,7 @@ export async function buildGodotExport(
         [
           `[node name=${q(uniqueName(nodeName(sock.name, 'socket'), usedNodes))} type="Marker2D" parent="."]`,
           `position = ${vec2(sock.x - item.pivot.x, sock.y - item.pivot.y)}`,
+          `metadata/weave_socket_id = ${q(sock.id)}`,
         ].join('\n')
       );
     });
@@ -380,7 +389,7 @@ export async function buildGodotExport(
     zip: zipSync(files),
     folder: resBase,
     itemCount: exportItems.length,
-    partCount: allParts.length,
+    partCount: exportedParts,
     warnings,
   };
 }

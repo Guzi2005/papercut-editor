@@ -16,6 +16,7 @@ import {
 } from '../utils/godotExport';
 import { computeDepthTable, findItemOfLayer } from '../utils/projectOps';
 import { downloadFile } from '../utils/svgExporter';
+import { checkGodotExport } from '../utils/godotPreflight';
 
 const OPTIONS_KEY = 'weave-godot-export-options';
 
@@ -39,17 +40,20 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
   const [, setPinyinReady] = useState(false);
 
   useEffect(() => {
-    loadPinyin().then(() => setPinyinReady(true));
+    loadPinyin().then(() => setPinyinReady(true)).catch(() => setError('拼音字典加载失败，请检查连接后重试导出'));
   }, []);
 
   const items = project.items || [];
   const looseCount = Object.keys(project.layers).filter((id) => !findItemOfLayer(project, id)).length;
   const { slots } = computeDepthTable(project);
+  const preflight = checkGodotExport(project, opts);
   const slug = asciiSlug(project.name, asciiSlug(project.id, 'papercut'));
 
   const update = (patch: Partial<GodotExportOptions>) => {
     const next = { ...opts, ...patch };
     setOpts(next);
+    setResult(null);
+    setError(null);
     localStorage.setItem(OPTIONS_KEY, JSON.stringify(next));
   };
 
@@ -82,8 +86,8 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
-      <div
-        className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-2xl shadow-2xl text-(--ui-text) text-xs overflow-hidden"
+      <div role="dialog" aria-modal="true" aria-label="导出到 Godot 4"
+        className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-2xl max-h-[92dvh] overflow-y-auto shadow-2xl text-(--ui-text) text-xs"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="h-14 px-5 border-b border-(--ui-border) flex items-center justify-between">
@@ -100,12 +104,13 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
           </button>
         </div>
 
-        <div className="p-5 grid grid-cols-2 gap-5">
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
           <div className="space-y-3">
             <div>
               <label className="text-[10px] text-(--ui-muted) block mb-1">导出位置 (Godot 资源路径)</label>
               <input
                 value={opts.resRoot}
+                aria-label="Godot 资源路径"
                 onChange={(e) => update({ resRoot: e.target.value })}
                 className="w-full bg-(--ui-input) border border-(--ui-border) rounded-lg px-2 py-1.5 text-(--ui-strong) font-mono text-[11px] outline-none focus:border-(--ui-accent)"
               />
@@ -168,6 +173,11 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
           </div>
         </div>
 
+        <div className="px-5 pb-3" aria-live="polite">
+          <div className="text-(--ui-muted)">导出检查 · {preflight.partCount} 个部件</div>
+          {preflight.errors.map(message => <p key={message} className="text-red-500 mt-1">{message}</p>)}
+          {preflight.warnings.map(message => <p key={message} className="text-(--ui-muted) mt-1">{message}</p>)}
+        </div>
         {(error || result) && (
           <div className="px-5 pb-3">
             {error && (
@@ -195,7 +205,7 @@ export const GodotExportModal: React.FC<{ project: PapercutProject; onClose: () 
           <span className="text-[10px] text-(--ui-faint)" data-tip="给物件加脚本请用「新建继承场景」，重新导出不会覆盖你的改动">解压到 Godot 项目根目录</span>
           <button
             onClick={run}
-            disabled={busy}
+            disabled={busy || preflight.errors.length > 0}
             className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#438B6E] hover:bg-[#3A7A60] disabled:opacity-60 text-white font-semibold"
           >
             <Download className="w-4 h-4" />
