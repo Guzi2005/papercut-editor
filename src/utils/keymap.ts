@@ -53,7 +53,7 @@ export const ACTIONS: ActionMeta[] = [
   { id: 'tool.geom', label: '几何形', group: '工具', kind: 'key' },
   { id: 'tool.knife', label: '笔刀', group: '工具', kind: 'key' },
   { id: 'tool.draw', label: '手绘', group: '工具', kind: 'key' },
-  { id: 'tool.anchor', label: '锚点微调', group: '工具', kind: 'key' },
+  { id: 'tool.anchor', label: '矢量绘图 · 极简锚点', group: '工具', kind: 'key' },
   { id: 'mode.cutout', label: '刻纸', group: '落刀', kind: 'key' },
   { id: 'mode.positive', label: '贴花', group: '落刀', kind: 'key' },
   { id: 'mode.erase', label: '剪除', group: '落刀', kind: 'key' },

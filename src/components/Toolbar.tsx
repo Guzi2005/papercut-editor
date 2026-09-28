@@ -147,11 +147,11 @@ export const TOOLS: ToolDefinition[] = [
     icon: Paintbrush,
   },
   {
-    id: 'anchor_edit',
-    name: '锚点微调',
-    shortName: '锚点',
-    hotkey: 'A',
-    description: '拖动切口锚点调整轮廓',
+    id: 'vector_edit',
+    name: '矢量绘图',
+    shortName: '矢量',
+    hotkey: '',
+    description: '极简锚点 / 精细贝塞尔编辑',
     icon: Spline,
   },
 ];
@@ -221,19 +221,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {TOOLS.map((tool) => {
           const isActive =
-            currentTool === tool.id || (tool.id === 'pen_knife' && currentTool === 'freehand');
+            currentTool === tool.id || (tool.id === 'vector_edit' && currentTool === 'anchor_edit') || (tool.id === 'pen_knife' && currentTool === 'freehand');
           const Icon = tool.icon;
 
           return (
             <button
               key={tool.id}
+              aria-label={tool.name}
+              aria-pressed={isActive}
               onClick={() => {
-                if (isActive && tool.id === 'anchor_edit') onSelectTool('select');
-                else onSelectTool(tool.id);
+                if (!isActive) onSelectTool(tool.id);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
-                onSelectTool(tool.id);
+                if (!isActive) onSelectTool(tool.id);
                 const r = e.currentTarget.getBoundingClientRect();
                 onOpenToolMenu?.(r.right + 8, r.top);
               }}

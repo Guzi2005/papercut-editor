@@ -1,3 +1,4 @@
+import { isVectorTool } from './VectorModes';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -88,6 +89,11 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
   const tool = currentTool === 'freehand' ? 'pen_knife' : currentTool;
   const lock = bs.lockAspect ?? true;
   const sections: { title?: string; entries: Entry[] }[] = [];
+
+  if (isVectorTool(tool)) sections.push({ title: '矢量绘图', entries: [
+    { key: 'vector-simple', label: '极简模式 · 锚点微调', icon: icon(MousePointerClick), active: tool === 'anchor_edit', run: () => onSelectTool('anchor_edit') },
+    { key: 'vector-precise', label: '精细模式 · 贝塞尔节点', icon: icon(Link2), active: tool === 'vector_edit', run: () => onSelectTool('vector_edit') },
+  ] });
 
   if (tool === 'select') {
     sections.push({
@@ -182,13 +188,14 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
         {TOOLS.map((t) => (
           <button
             key={t.id}
+            aria-label={t.name}
             onClick={() => {
               playCrispClick();
               onSelectTool(t.id);
             }}
             data-tip={t.name}
             className={`flex-1 h-7 flex items-center justify-center rounded-lg transition-colors ${
-              t.id === tool ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
+              t.id === tool || (t.id === 'vector_edit' && tool === 'anchor_edit') ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
             }`}
           >
             <t.icon className="w-3.5 h-3.5" />

@@ -654,7 +654,7 @@ export default function App() {
         ...project.layers,
         [activeLayerId]: {
           ...layer,
-          cutouts: layer.cutouts.map((c) => (c.id === cutoutId ? { ...c, ...updates } : c)),
+          cutouts: layer.cutouts.map((c) => (c.id === cutoutId ? { ...c, ...updates, ...(updates.d ? {vectorNodeModes: undefined} : {}) } : c)),
         },
       },
     };
@@ -1414,6 +1414,7 @@ export default function App() {
         <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
           <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
+            onCommitVectorLayer={(layer) => pushHistory({...project, layers: {...project.layers, [layer.id]: layer}})}
             project={project}
             activeLayerId={activeLayerId}
             currentTool={currentTool}

@@ -1,3 +1,4 @@
+import { VectorEditor } from './VectorEditor';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -87,6 +88,7 @@ export interface PointInfo {
 
 interface CanvasProps {
   project: PapercutProject;
+  onCommitVectorLayer: (layer: Layer) => void;
   activeLayerId: string | null;
   currentTool: ToolType;
   brushSettings: BrushSettings;
@@ -194,6 +196,7 @@ function unionBBox(boxes: BBox[]): BBox | null {
 
 export const Canvas: React.FC<CanvasProps> = ({
   project,
+  onCommitVectorLayer,
   activeLayerId,
   currentTool,
   brushSettings,
@@ -225,6 +228,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   flash,
 }) => {
   const [flashing, setFlashing] = useState<FlashRequest | null>(null);
+  const [vectorPreview, setVectorPreview] = useState<Layer | null>(null);
   useEffect(() => {
     if (!flash) return;
     setFlashing(flash);
@@ -1168,6 +1172,8 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
+    if (currentTool === 'vector_edit') return;
+
     if (currentTool === 'select') {
       handleSelectDown(e, pt);
       return;
@@ -1802,7 +1808,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                 <LayerMarkup
                   key={layer.id}
                   layer={
-                    colorScope && blockSel[layer.id] && preview !== IDENTITY
+                    currentTool === 'vector_edit' && vectorPreview?.id === layer.id
+                      ? vectorPreview
+                      : colorScope && blockSel[layer.id] && preview !== IDENTITY
                       ? transformBlocks(layer, blockSel[layer.id], preview)
                       : !colorScope && isWarp(preview) && selectedSet.has(layer.id)
                       ? transformLayer(layer, preview)
@@ -1824,6 +1832,11 @@ export const Canvas: React.FC<CanvasProps> = ({
             className="absolute inset-0 w-full h-full overflow-visible"
             style={{ pointerEvents: 'none', willChange: 'transform' }}
           >
+            {currentTool === 'vector_edit' && activeLayer && <VectorEditor
+              key={project.id + ':' + activeLayer.id}
+              layer={activeLayer} zoom={zoom} disabled={activeLocked || !isLayerRendered(project, activeLayer.id)}
+              panHeld={isSpacePressed} onCommit={onCommitVectorLayer} onPreview={setVectorPreview}
+            />}
             {/* Direct clickable hit area for cutouts when in anchor_edit mode */}
             {activeLayer && currentTool === 'anchor_edit' && isLayerRendered(project, activeLayer.id) && (
               <g>

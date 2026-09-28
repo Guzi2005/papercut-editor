@@ -45,7 +45,7 @@ export const WorkStatus: React.FC<{
   selectedItem: PapercutItem | null;
   brushColor: string;
 }> = ({ project, activeLayerId, currentTool, brushSettings, selectedLayerIds, selectedItem, brushColor }) => {
-  const tool = TOOLS.find((t) => t.id === (currentTool === 'freehand' ? 'pen_knife' : currentTool));
+  const tool = TOOLS.find((t) => t.id === (currentTool === 'freehand' ? 'pen_knife' : currentTool === 'anchor_edit' ? 'vector_edit' : currentTool));
   const layer = activeLayerId ? project.layers[activeLayerId] : null;
   const group = layer ? findGroupOfLayer(project, layer.id) : null;
   const item = layer ? findItemOfLayer(project, layer.id) : null;

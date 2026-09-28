@@ -25,6 +25,7 @@ export type CutoutType =
   | 'custom_polygon';
 
 export interface CutoutPath {
+  vectorNodeModes?: VectorNodeMode[][];
   id: string;
   name: string;
   type: CutoutType;
@@ -47,7 +48,10 @@ export type BaseShapeType =
   | 'polygon'
   | 'freeform';
 
+export type VectorNodeMode = 'corner' | 'smooth' | 'symmetric';
+
 export interface BaseShape {
+  vectorNodeModes?: VectorNodeMode[][];
   type: BaseShapeType;
   d: string; // SVG path for outer paper boundary
   x?: number;
@@ -103,6 +107,7 @@ export type DrawBrushType = 'pencil' | 'pen' | 'airbrush' | 'willow';
 export type PencilHardness = 1 | 2 | 3 | 4 | 5;
 
 export interface LayerDrawStroke {
+  vectorNodeModes?: VectorNodeMode[][];
   id: string;
   brushType: DrawBrushType;
   d: string;
@@ -225,6 +230,7 @@ export type ToolType =
   | 'pen_knife' // 笔刀 (原自由手绘刻刀，支持压感、不同笔尖形状选择)
   | 'freehand' // 别名兼容
   | 'hand_draw' // 手绘 (铅笔/钢笔/喷枪，附属于剪纸图层蒙版)
+  | 'vector_edit' // 矢量绘图：精细贝塞尔编辑
   | 'anchor_edit'; // 锚点调整 (自由拖动顶点变形)
 
 export type SymmetryMode =

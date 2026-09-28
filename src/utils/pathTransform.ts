@@ -214,6 +214,7 @@ export function transformPathD(d: string, t: Transform): string {
       out.push('Z');
       cx = sx;
       cy = sy;
+      cmd = '';
       continue;
     }
 

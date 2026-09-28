@@ -1,3 +1,4 @@
+import { VectorModes, isVectorTool } from './VectorModes';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -144,6 +145,7 @@ const IconButton: React.FC<{
 
 export const ToolOptions: React.FC<ToolOptionsProps> = ({
   currentTool,
+  onSelectTool,
   brushSettings,
   onChangeBrushSettings,
   selectionScope,
@@ -195,6 +197,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
   return (
     <div className="relative z-30 h-10 pointer-coarse:h-12 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
+      {isVectorTool(currentTool) && <>
+        <VectorModes tool={currentTool} onSelect={onSelectTool ?? (() => {})} />
+        {currentTool === 'vector_edit' ? <div id="vector-options" className="min-w-0 flex-1" /> : <span className="text-(--ui-muted) truncate">选择切口 · 拖动锚点调整轮廓</span>}
+      </>}
       {currentTool === 'select' && (
         <>
           <Segmented>
