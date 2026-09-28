@@ -1,3 +1,4 @@
+import { NewCanvasDialog } from './components/NewCanvasDialog';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -15,7 +16,7 @@ import {
   LayerDrawStroke,
   ReferenceImage,
 } from './types/papercut';
-import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas, NewCanvasMode } from './utils/presetTemplates';
+import { PRESET_PROJECTS, FOLK_PALETTE, createBlankCanvas, BlankCanvasOptions } from './utils/presetTemplates';
 import { generateSvgMarkup, downloadFile, exportToPng } from './utils/svgExporter';
 import { Transform, applyTransform } from './utils/pathTransform';
 import {
@@ -164,6 +165,7 @@ export default function App() {
     });
   }, [skin]);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isNewCanvasOpen, setIsNewCanvasOpen] = useState(false);
   const [isGodotModalOpen, setIsGodotModalOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
@@ -430,13 +432,7 @@ export default function App() {
     setActiveDocId(doc.id);
   };
 
-  const handleNewDocument = (opts?: {
-    name?: string;
-    width?: number;
-    height?: number;
-    mode?: NewCanvasMode;
-    paperColor?: string;
-  }) => {
+  const handleNewDocument = (opts: BlankCanvasOptions) => {
     const width = opts?.width ?? 800;
     const height = opts?.height ?? 800;
     const mode = opts?.mode ?? 'cut';
@@ -446,9 +442,11 @@ export default function App() {
       height,
       mode,
       paperColor: opts?.paperColor,
+      canvasBg: opts.canvasBg,
       name: docName,
     });
     openProjectAsDocument(blankProj, docName);
+    setIsNewCanvasOpen(false);
   };
 
   const handleOpenPreset = (presetId: string) => {
@@ -516,7 +514,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (isShortcutsOpen) return;
+      if (isShortcutsOpen || document.querySelector('dialog[open]')) return;
       const combo = comboFromKeyEvent(e);
       const action = combo ? actionForKey(keymap, combo) : null;
       if (!action) return;
@@ -543,7 +541,7 @@ export default function App() {
         case 'file.open':
           return void handleOpenProjectFile();
         case 'file.new':
-          return handleNewDocument();
+          return setIsNewCanvasOpen(true);
         case 'help.keymap':
           return setIsShortcutsOpen(true);
         case 'select.scope':
@@ -1329,7 +1327,7 @@ export default function App() {
         documents={documentTabItems}
         activeDocId={activeDocId}
         onSelectDocument={setActiveDocId}
-        onNewDocument={handleNewDocument}
+        onNewDocument={() => setIsNewCanvasOpen(true)}
         onCloseDocument={handleCloseDocument}
         onRenameDocument={handleRenameDocument}
         onOpenPreset={handleOpenPreset}
@@ -1527,6 +1525,7 @@ export default function App() {
       {isExportModalOpen && (
         <ExportModal project={project} onClose={() => setIsExportModalOpen(false)} />
       )}
+      {isNewCanvasOpen && <NewCanvasDialog onClose={() => setIsNewCanvasOpen(false)} onCreate={handleNewDocument} />}
       {isGodotModalOpen && (
         <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />
       )}

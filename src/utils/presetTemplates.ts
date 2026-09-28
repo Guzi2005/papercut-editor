@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { PapercutProject, Layer, LayerGroup } from '../types/papercut';
+import { PapercutProject, Layer, LayerGroup, CanvasBackground } from '../types/papercut';
 import { createWeaveCharactersPreset, createPolishAngelPreset, createDoubleFishPreset } from './weavePresets';
 
 /** Weave and Wander 色卡：取样自「针脚与远方」设定图 */
@@ -29,6 +29,7 @@ export const FOLK_PALETTE = [
 export type NewCanvasMode = 'cut' | 'create';
 
 export interface BlankCanvasOptions {
+  canvasBg?: CanvasBackground;
   width?: number;
   height?: number;
   /** cut = 剪纸模式（一张居中色纸）；create = 创造模式（空组） */
@@ -85,6 +86,7 @@ export function createBlankCanvas(opts: BlankCanvasOptions = {}): PapercutProjec
 
   return {
     id: `proj_${Date.now()}`,
+    canvasBg: opts.canvasBg,
     name: opts.name ?? (mode === 'cut' ? '未命名剪纸作品' : '未命名创作'),
     width,
     height,

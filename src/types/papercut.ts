@@ -68,7 +68,8 @@ export type PaperMode = 'soft' | 'vector' | 'hard';
  * 画布背景，参考 SAI2：透明底只影响编辑时的显示，导出仍透明；背景色会随作品导出。
  * display `none` = 无背景（只露出工作区底色）；`grid` 可调格线颜色、线粗与格子大小。
  */
-export type CanvasBackground =
+export type CanvasTexture = 'none' | 'paper' | 'linen' | 'grid';
+export type CanvasBackground = (
   | {
       kind: 'transparent';
       display: 'none' | 'grid' | 'light' | 'dark' | 'white' | 'black';
@@ -79,7 +80,7 @@ export type CanvasBackground =
       /** 方格纸格子边长，画布坐标像素（仅 display=grid） */
       gridSize?: number;
     }
-  | { kind: 'solid'; color: string };
+  | { kind: 'solid'; color: string }) & { texture?: CanvasTexture };
 
 /** 投影合成模式（CSS mix-blend-mode） */
 export type ShadowBlend = 'normal' | 'multiply' | 'color-burn' | 'darken' | 'overlay' | 'soft-light';

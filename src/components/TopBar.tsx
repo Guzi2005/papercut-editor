@@ -40,7 +40,7 @@ import {
   GitBranch,
   Scissors,
 } from 'lucide-react';
-import { PRESET_PROJECTS, FOLK_PALETTE, NewCanvasMode } from '../utils/presetTemplates';
+import { PRESET_PROJECTS } from '../utils/presetTemplates';
 import { SKINS, WorkbenchSkin } from '../utils/skins';
 import { CanvasBackground, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 import { CanvasBgPanel } from './CanvasBgPanel';
@@ -94,13 +94,7 @@ interface TopBarProps {
   documents: DocumentTabItem[];
   activeDocId: string;
   onSelectDocument: (docId: string) => void;
-  onNewDocument: (opts?: {
-    name?: string;
-    width?: number;
-    height?: number;
-    mode?: NewCanvasMode;
-    paperColor?: string;
-  }) => void;
+  onNewDocument: () => void;
   twinPresets?: TwinPreset[];
   onChangeTwinPresets?: (presets: TwinPreset[]) => void;
   onCloseDocument: (docId: string) => void;
@@ -222,15 +216,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
   const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | 'bg' | null>(null);
-  const [showNewDocDialog, setShowNewDocDialog] = useState(false);
-
-  // New Doc Dialog fields
-  const [newDocName, setNewDocName] = useState('新建剪纸');
-  const [newDocWidth, setNewDocWidth] = useState(800);
-  const [newDocHeight, setNewDocHeight] = useState(800);
-  const [newDocMode, setNewDocMode] = useState<NewCanvasMode>('cut');
-  const [newDocPaperColor, setNewDocPaperColor] = useState('#D72626');
-
   // Settings menu fields (canvas size)
   const [customWidth, setCustomWidth] = useState(currentWidth);
   const [customHeight, setCustomHeight] = useState(currentHeight);
@@ -285,18 +270,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     setShowFileMenu(false);
   };
 
-  const handleCreateDocument = () => {
-    const fallback = newDocMode === 'cut' ? `新建剪纸 ${documents.length + 1}` : `新建创作 ${documents.length + 1}`;
-    onNewDocument({
-      name: newDocName.trim() || fallback,
-      width: newDocWidth,
-      height: newDocHeight,
-      mode: newDocMode,
-      paperColor: newDocPaperColor,
-    });
-    setShowNewDocDialog(false);
-  };
-
   return (
     <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-40 shrink-0 px-2 sm:px-4 gap-2">
       {/* 1. Left: Brand Icon + 文件 / 设置 (皮肤选择) Menu Tabs */}
@@ -343,7 +316,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <div className="absolute left-0 top-full mt-1 w-44 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
               {(
                 [
-                  { label: '新建', key: 'Alt+N', icon: <FilePlus className="w-3.5 h-3.5 text-(--ui-accent)" />, run: () => setShowNewDocDialog(true) },
+                  { label: '新建', key: 'Alt+N', icon: <FilePlus className="w-3.5 h-3.5 text-(--ui-accent)" />, run: onNewDocument },
                   { label: '打开', key: 'Ctrl+O', icon: <FolderOpen className="w-3.5 h-3.5 text-(--ui-muted)" />, run: onOpenProjectFile },
                   { label: '保存', key: 'Ctrl+S', icon: <Save className="w-3.5 h-3.5 text-(--ui-muted)" />, run: onSaveProjectFile },
                   { label: '导出到 Godot', key: '…', icon: <Gamepad2 className="w-3.5 h-3.5 text-[#438B6E]" />, run: onOpenGodotExport },
@@ -723,7 +696,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onNewDocument()}
           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
-          data-tip="新建空白画布标签页"
+          aria-label="新建空白画布"
+          data-tip="新建空白画布"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -875,163 +849,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* 4. Modal Dialog for "新建文件" */}
-      {showNewDocDialog && (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-100"
-          onClick={() => setShowNewDocDialog(false)}
-        >
-          <div
-            className="bg-(--ui-panel) border border-(--ui-border) rounded-2xl w-full max-w-md p-5 shadow-2xl text-(--ui-strong) select-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-(--ui-divider)">
-              <div className="flex items-center gap-2">
-                <FilePlus className="w-5 h-5 text-(--ui-accent)" />
-                <h3 className="font-bold text-sm text-(--ui-strong)">新建画布</h3>
-              </div>
-              <button
-                onClick={() => setShowNewDocDialog(false)}
-                className="p-1 rounded-lg hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong)"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 py-4 text-xs">
-              <div>
-                <label className="text-(--ui-muted) block mb-1.5">模式</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      { id: 'cut' as const, label: '剪纸模式', tip: '一张居中色纸，可改颜色', icon: Scissors },
-                      { id: 'create' as const, label: '创造模式', tip: '空画布，不含纸片', icon: Sparkles },
-                    ] as const
-                  ).map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => {
-                        setNewDocMode(m.id);
-                        setNewDocName(m.id === 'cut' ? '新建剪纸' : '新建创作');
-                      }}
-                      data-tip={m.tip}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-colors ${
-                        newDocMode === m.id
-                          ? 'border-(--ui-accent) bg-(--ui-hover) text-(--ui-strong)'
-                          : 'border-(--ui-border) text-(--ui-text-2) hover:bg-(--ui-hover)'
-                      }`}
-                    >
-                      <m.icon className="w-4 h-4 text-(--ui-accent)" />
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {newDocMode === 'cut' && (
-                <div>
-                  <label className="text-(--ui-muted) block mb-1.5">色纸颜色</label>
-                  <div className="flex flex-wrap gap-1.5 items-center">
-                    {FOLK_PALETTE.slice(0, 10).map((c) => (
-                      <button
-                        key={c.hex}
-                        onClick={() => setNewDocPaperColor(c.hex)}
-                        data-tip={c.name}
-                        className={`w-6 h-6 rounded-md border-2 ${
-                          newDocPaperColor.toUpperCase() === c.hex.toUpperCase() ? 'border-(--ui-accent)' : 'border-white/20'
-                        }`}
-                        style={{ backgroundColor: c.hex }}
-                      />
-                    ))}
-                    <label
-                      className="relative w-6 h-6 rounded-md border border-(--ui-border) overflow-hidden cursor-pointer"
-                      data-tip="自定义颜色"
-                      style={{ background: newDocPaperColor }}
-                    >
-                      <input
-                        type="color"
-                        value={newDocPaperColor}
-                        onChange={(e) => setNewDocPaperColor(e.target.value.toUpperCase())}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="text-(--ui-muted) block mb-1">名称</label>
-                <input
-                  type="text"
-                  value={newDocName}
-                  onChange={(e) => setNewDocName(e.target.value)}
-                  className="w-full bg-(--ui-input) border border-(--ui-border) rounded-xl px-3 py-2 text-(--ui-strong) text-xs outline-none focus:border-(--ui-accent)"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-(--ui-muted) block mb-1">宽</label>
-                  <input
-                    type="number"
-                    min={200}
-                    max={4000}
-                    step={50}
-                    value={newDocWidth}
-                    onChange={(e) => setNewDocWidth(Number(e.target.value))}
-                    className="w-full bg-(--ui-input) border border-(--ui-border) rounded-xl px-3 py-2 text-(--ui-strong) text-xs outline-none focus:border-(--ui-accent)"
-                  />
-                </div>
-                <div>
-                  <label className="text-(--ui-muted) block mb-1">高</label>
-                  <input
-                    type="number"
-                    min={200}
-                    max={4000}
-                    step={50}
-                    value={newDocHeight}
-                    onChange={(e) => setNewDocHeight(Number(e.target.value))}
-                    className="w-full bg-(--ui-input) border border-(--ui-border) rounded-xl px-3 py-2 text-(--ui-strong) text-xs outline-none focus:border-(--ui-accent)"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-(--ui-muted) block mb-1.5">推荐尺寸</label>
-                <div className="flex flex-wrap gap-2 justify-between">
-                  {SIZE_PRESETS.map(({ w, h }) => (
-                    <AspectSizeButton
-                      key={`${w}x${h}`}
-                      w={w}
-                      h={h}
-                      active={newDocWidth === w && newDocHeight === h}
-                      onClick={() => {
-                        setNewDocWidth(w);
-                        setNewDocHeight(h);
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-(--ui-divider)">
-              <button
-                onClick={() => setShowNewDocDialog(false)}
-                className="px-4 py-2 rounded-xl bg-(--ui-raised) hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong) text-xs transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleCreateDocument}
-                className="px-5 py-2 rounded-xl bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white font-semibold text-xs shadow-md shadow-blue-950/60 transition-colors"
-              >
-                创建
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {thumb && (() => {
         const doc = documents.find((d) => d.id === thumb.id);
         return doc ? <DocThumbnail project={doc.project} name={doc.name} x={thumb.x} y={thumb.y} /> : null;

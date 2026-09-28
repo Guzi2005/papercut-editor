@@ -136,6 +136,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); setSelection([]); setContext(null); return; }
       if (drag.current) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); } return; }

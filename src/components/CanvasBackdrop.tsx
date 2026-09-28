@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useId } from 'react';
+import { canvasTextureMarkup } from '../utils/canvasTexture';
 import { CanvasBackground } from '../types/papercut';
 
 export const DEFAULT_CANVAS_BG: CanvasBackground = { kind: 'transparent', display: 'grid' };
@@ -18,12 +19,13 @@ const CHECKERS = {
 };
 
 /** What sits behind the paper on the artboard. Transparent modes are only a viewing aid. */
-export const CanvasBackdrop: React.FC<{ bg?: CanvasBackground; width: number; height: number; zoom: number }> = ({
+const BaseBackdrop: React.FC<{ bg?: CanvasBackground; width: number; height: number; zoom: number }> = ({
   bg = DEFAULT_CANVAS_BG,
   width,
   height,
   zoom,
 }) => {
+  const uid = 'backdrop-' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
   if (bg.kind === 'solid') return <rect width={width} height={height} fill={bg.color} />;
   if (bg.display === 'none') return null;
   if (bg.display === 'white' || bg.display === 'black') {
@@ -36,12 +38,12 @@ export const CanvasBackdrop: React.FC<{ bg?: CanvasBackground; width: number; he
     return (
       <>
         <defs>
-          <pattern id="craft-grid" width={size} height={size} patternUnits="userSpaceOnUse">
+          <pattern id={`${uid}-grid`} width={size} height={size} patternUnits="userSpaceOnUse">
             <path d={`M ${size} 0 L 0 0 0 ${size}`} fill="none" stroke={color} strokeWidth={stroke} />
           </pattern>
         </defs>
         <rect width={width} height={height} fill={DEFAULT_GRID_FILL} />
-        <rect width={width} height={height} fill="url(#craft-grid)" opacity="0.85" />
+        <rect width={width} height={height} fill={`url(#${uid}-grid)`} opacity="0.85" />
       </>
     );
   }
@@ -51,13 +53,18 @@ export const CanvasBackdrop: React.FC<{ bg?: CanvasBackground; width: number; he
   return (
     <>
       <defs>
-        <pattern id={`checker-${bg.display}`} width={s * 2} height={s * 2} patternUnits="userSpaceOnUse">
+        <pattern id={`${uid}-checker`} width={s * 2} height={s * 2} patternUnits="userSpaceOnUse">
           <rect width={s * 2} height={s * 2} fill={a} />
           <rect width={s} height={s} fill={b} />
           <rect x={s} y={s} width={s} height={s} fill={b} />
         </pattern>
       </defs>
-      <rect width={width} height={height} fill={`url(#checker-${bg.display})`} />
+      <rect width={width} height={height} fill={`url(#${uid}-checker)`} />
     </>
   );
 };
+
+export function CanvasBackdrop(props: { bg?: CanvasBackground; width: number; height: number; zoom: number }) {
+  const id = 'canvas-texture-' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  return <><BaseBackdrop {...props}/><g dangerouslySetInnerHTML={{__html:canvasTextureMarkup(props.bg?.texture,props.width,props.height,id)}}/></>;
+}

@@ -1,3 +1,4 @@
+import { canvasTextureMarkup } from './canvasTexture';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -44,9 +45,11 @@ export function generateSvgMarkup(
 
   if (includeBackground && project.canvasBg?.kind === 'solid') {
     lines.push(
-      `  <rect width="${project.width}" height="${project.height}" fill="${project.canvasBg.color}" id="background-mat" />`
+      `  <rect width="${project.width}" height="${project.height}" fill="${escapeAttr(project.canvasBg.color)}" id="background-mat" />`
     );
   }
+
+  if (includeBackground && project.canvasBg?.kind === 'solid') lines.push(canvasTextureMarkup(project.canvasBg.texture,project.width,project.height,'export-canvas-texture'));
 
   rootOrder.forEach((item) => {
     if (item.type === 'group') {

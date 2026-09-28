@@ -351,6 +351,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const heldPanCode = useRef<string | null>(null);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if (
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA'
@@ -384,6 +385,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     if (currentTool !== 'select') return;
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (selectedLayerIds.length === 0 && !blockMode) return;
@@ -1591,6 +1593,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   pendingRef.current = polylinePoints;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if (pendingRef.current.length === 0) return;
       if (e.key === 'Enter') {
         e.preventDefault();

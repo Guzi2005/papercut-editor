@@ -59,8 +59,9 @@ const Tile: React.FC<{ active: boolean; label: string; swatch: string; tip: stri
 /** Canvas background choices in the manner of SAI2's canvas menu. */
 export const CanvasBgPanel: React.FC<{ value?: CanvasBackground; onChange: (bg: CanvasBackground) => void }> = ({
   value = DEFAULT_CANVAS_BG,
-  onChange,
+  onChange: commitChange,
 }) => {
+  const onChange = (bg: CanvasBackground) => commitChange({...bg,texture:value.texture});
   const solidColor = value.kind === 'solid' ? value.color : '#F7F4EB';
   const isSolid = (c: string) => value.kind === 'solid' && value.color.toUpperCase() === c;
   const custom = value.kind === 'solid' && !isSolid('#FFFFFF') && !isSolid('#000000');
