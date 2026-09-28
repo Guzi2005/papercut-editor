@@ -1,3 +1,4 @@
+import { layerContent } from '../utils/layerContent';
 import { VectorEditor } from './VectorEditor';
 /**
  * @license
@@ -449,39 +450,22 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // Measure selection / active layer bounds from the rendered geometry
   const measureLayers = useCallback((ids: string[]): BBox | null => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const boxes: BBox[] = [];
-    ids.forEach((id) => {
-      const el = svg.querySelector(`[data-layer-id="${id}"]`) as SVGGElement | null;
-      if (!el) return;
-      try {
-        const b = el.getBBox();
-        if (b.width > 0 || b.height > 0) boxes.push({ x: b.x, y: b.y, width: b.width, height: b.height });
-      } catch {
-        /* element not rendered */
-      }
-    });
-    return unionBBox(boxes);
-  }, []);
+    return unionBBox(ids.flatMap(id=>{
+      const layer=project.layers[id];
+      if(!layer||!isLayerRendered(project,id))return [];
+      const box=layerContent(layer).bounds;
+      return box?[box]:[];
+    }));
+  }, [project]);
 
   const measureBlocks = useCallback((sel: BlockSelection): BBox | null => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const boxes: BBox[] = [];
-    Object.entries(sel).forEach(([lid, ids]) =>
-      ids.forEach((id) => {
-        const el = svg.querySelector(`[data-layer-id="${lid}"] [data-element-id="${id}"]`) as SVGGraphicsElement | null;
-        try {
-          const b = el?.getBBox();
-          if (b && (b.width > 0 || b.height > 0)) boxes.push({ x: b.x, y: b.y, width: b.width, height: b.height });
-        } catch {
-          /* not rendered */
-        }
-      })
-    );
-    return unionBBox(boxes);
-  }, []);
+    return unionBBox(Object.entries(sel).flatMap(([lid,ids])=>{
+      const layer=project.layers[lid];
+      if(!layer||!isLayerRendered(project,lid))return [];
+      const blocks=layerContent(layer).blocks;
+      return ids.flatMap(id=>blocks.has(id)?[blocks.get(id)!]:[]);
+    }));
+  }, [project]);
 
   useLayoutEffect(() => {
     setSelectionBBox(colorScope ? (blockCount ? measureBlocks(blockSel) : null) : measureLayers(selectedLayerIds));

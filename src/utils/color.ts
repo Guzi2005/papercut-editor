@@ -1,3 +1,4 @@
+import { layerContent } from './layerContent';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -66,18 +67,7 @@ export function isLight(hex: string): boolean {
 
 /** Every colour a layer paints with: paper, pattern, appliqués and brush strokes, in that order. */
 export function layerColors(layer: Layer): string[] {
-  const out: string[] = [];
-  const add = (c?: string) => {
-    const h = c && normalizeHex(c);
-    if (h && !out.includes(h)) out.push(h);
-  };
-  if (layer.kind !== 'doodle' && layer.baseShape?.d) add(layer.color);
-  if (layer.pattern) add(layer.pattern.color);
-  if (layer.surface && !layer.surface.inheritColor) add(layer.surface.color);
-  [...layer.positiveElements, ...layer.cutouts].forEach((c) => !c.isHole && add(c.fillColor || layer.color));
-  (layer.drawings || []).forEach((d) => add(d.color));
-  if (out.length === 0) add(layer.color);
-  return out;
+  return [...new Set(layerContent(layer).colors.map(normalizeHex).filter((c): c is string => !!c))];
 }
 
 export function projectColors(project: PapercutProject): string[] {

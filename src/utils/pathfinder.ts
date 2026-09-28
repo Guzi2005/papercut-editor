@@ -73,11 +73,11 @@ function flatten(d: string): Ring[] {
 const EMPTY: MultiPolygon = [];
 
 /** A path as the renderer paints it: each absolute subpath filled on its own, then unioned. */
-function shapeOf(d: string): MultiPolygon {
+export function shapeOf(d: string): MultiPolygon {
   const parts = splitSubpaths(d)
     .map((piece) => {
       const rings = flatten(piece);
-      return rings.length ? polygonClipping.union(rings.map((r) => [r]) as never) : EMPTY;
+      return rings.length ? polygonClipping.union(rings) : EMPTY;
     })
     .filter((m) => m.length);
   return parts.length ? polygonClipping.union(EMPTY, ...parts) : EMPTY;
