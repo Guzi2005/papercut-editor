@@ -242,7 +242,7 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
       return `<path data-element-id="${drw.id}" d="${drw.d}" fill="none" stroke="${escapeAttr(drw.color)}" stroke-width="${drw.strokeWidth}" stroke-opacity="${drw.opacity}" stroke-linecap="${drw.strokeLinecap || 'round'}" stroke-linejoin="${drw.strokeLinejoin || 'round'}"${blur}/>`;
     })
     .join('');
-  if (strokes) body.push(doodle ? strokes : `<g mask="url(#${paperMaskId})">${strokes}</g>`);
+  if (strokes) body.push(doodle || layer.unclippedDrawings ? strokes : `<g mask="url(#${paperMaskId})">${strokes}</g>`);
 
   const outer = [opts.interactive ? '' : `id="${layer.id}"`, `data-name="${escapeAttr(layer.name)}"`].filter(Boolean).join(' ');
   const blend = layer.blendMode && layer.blendMode !== 'normal' ? ` style="mix-blend-mode:${layer.blendMode}"` : '';

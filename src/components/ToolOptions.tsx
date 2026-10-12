@@ -68,6 +68,7 @@ const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
 
 interface ToolOptionsProps {
   currentTool: ToolType;
+  onOpenStamp?: () => void;
   brushSettings: BrushSettings;
   onChangeBrushSettings: (newSettings: Partial<BrushSettings>) => void;
   onSelectTool?: (tool: ToolType) => void;
@@ -145,6 +146,7 @@ const IconButton: React.FC<{
 
 export const ToolOptions: React.FC<ToolOptionsProps> = ({
   currentTool,
+  onOpenStamp,
   onSelectTool,
   brushSettings,
   onChangeBrushSettings,
@@ -197,6 +199,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
   return (
     <div className="relative z-30 h-10 pointer-coarse:h-12 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
+      {currentTool === 'stamp' && <><button onClick={onOpenStamp} className="px-3 py-1 border border-(--ui-border) hover:bg-(--ui-hover)">图章工作台</button><span className="text-(--ui-muted)">单击盖印 · 拖动铺纹样 · 一笔一撤销</span></>}
       {isVectorTool(currentTool) && <>
         <VectorModes tool={currentTool} onSelect={onSelectTool ?? (() => {})} />
         {currentTool === 'vector_edit' ? <div id="vector-options" className="min-w-0 flex-1" /> : <span className="text-(--ui-muted) truncate">选择切口 · 拖动锚点调整轮廓</span>}

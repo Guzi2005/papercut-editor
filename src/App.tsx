@@ -1,3 +1,6 @@
+import { StampWorkbench } from './components/StampWorkbench';
+import {createStampDocument,stampFromDocument} from './utils/stampDocument';
+import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS, type StampDefinition, type StampSettings } from './utils/stamps';
 import { NewCanvasDialog } from './components/NewCanvasDialog';
 /**
  * @license
@@ -124,6 +127,12 @@ export default function App() {
   const [imageDrop, setImageDrop] = useState<{ file: File; preview: string } | null>(null);
 
   // Tool & Brush Settings
+  const [stampDefinition,setStampDefinition]=useState<StampDefinition>(BUILTIN_STAMPS[0]);
+  const [stampSettings,setStampSettings]=useState<StampSettings>(DEFAULT_STAMP_SETTINGS);
+  const [stampOpen,setStampOpen]=useState(false);
+  const [stampEdit,setStampEdit]=useState<{docId:string;returnId:string;definition:StampDefinition}|null>(null);
+  const [stampEditMessage,setStampEditMessage]=useState('');
+  const selectTool=(tool:ToolType)=>{setCurrentTool(tool);if(tool==='stamp')setStampOpen(true);};
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const toolMounted = useRef(false);
   useEffect(() => {
@@ -449,6 +458,20 @@ export default function App() {
     setIsNewCanvasOpen(false);
   };
 
+  const startStampEdit=()=>{
+    if(stampEdit){setActiveDocId(stampEdit.docId);return;}
+    const doc=makeDocument(newId('motif_doc'),`图章原稿 · ${stampDefinition.name}`,createStampDocument(stampDefinition),1.3);
+    setStampEdit({docId:doc.id,returnId:activeDocId,definition:structuredClone(stampDefinition)});
+    setDocuments(d=>[...d,doc]);setActiveDocId(doc.id);setSelectedLayerIds([doc.activeLayerId]);
+    setCurrentTool('select');setBrushSettings(s=>({...s,mode:'positive',brushColor:'#D90B20'}));setStampOpen(false);setStampEditMessage('');
+  };
+  const finishStampEdit=()=>{
+    if(!stampEdit)return;const doc=documents.find(d=>d.id===stampEdit.docId);if(!doc)return;
+    try{setStampDefinition(stampFromDocument(doc.project,stampEdit.definition));}catch(e){setStampEditMessage(e instanceof Error?e.message:'无法应用图案');return;}
+    setActiveDocId(documents.some(d=>d.id===stampEdit.returnId)?stampEdit.returnId:doc.id);
+    setStampEdit(null);setStampOpen(true);setCurrentTool('stamp');setSelectedLayerIds([]);setStampEditMessage('');
+  };
+
   const handleOpenPreset = (presetId: string) => {
     const preset = PRESET_PROJECTS.find((p) => p.id === presetId);
     if (!preset) return;
@@ -457,6 +480,7 @@ export default function App() {
 
   const handleCloseDocument = (docId: string) => {
     if (documents.length <= 1) return;
+    if(stampEdit?.docId===docId){setStampEditMessage('请先应用图案，或使用“返回，保留原稿”结束编辑。');setActiveDocId(docId);return;}
     const closeIdx = documents.findIndex((d) => d.id === docId);
     const nextDocs = documents.filter((d) => d.id !== docId);
     setDocuments(nextDocs);
@@ -514,7 +538,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (isShortcutsOpen || document.querySelector('dialog[open]')) return;
+      if (isShortcutsOpen || document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       const combo = comboFromKeyEvent(e);
       const action = combo ? actionForKey(keymap, combo) : null;
       if (!action) return;
@@ -637,6 +661,21 @@ export default function App() {
 
   const handleAddCutout = (cutout: CutoutPath) => {
     updateActiveLayer((layer) => ({ ...layer, cutouts: [...layer.cutouts, cutout] }));
+  };
+
+  const handleStamp=(paths:CutoutPath[])=>{
+    if(!paths.length)return;
+    const layer=project.layers[activeLayerId];
+    if(layer){
+      if(layer.locked||findGroupOfLayer(project,layer.id)?.locked||!layer.visible)return;
+      const next=layer.kind==='doodle'?{...layer,drawings:[...(layer.drawings??[]),...paths.map(p=>({id:p.id,d:p.d,color:p.fillColor??layer.color,opacity:1,strokeWidth:1,brushType:'pen' as const,fill:true}))]}:{...layer,positiveElements:[...layer.positiveElements,...paths]};
+      pushHistory({...project,layers:{...project.layers,[layer.id]:next}});
+    }else{
+      const id=newId('layer'),created:Layer={id,name:stampDefinition.name+' · 图章',kind:'paper',color:paths[0].fillColor??'#2E58D6',texture:'xuan',grain:.25,opacity:1,blendMode:'normal',visible:true,locked:false,baseShape:{type:'freeform',d:''},cutouts:[],positiveElements:paths};
+      pushHistory({...project,layers:{...project.layers,[id]:created},rootOrder:[...project.rootOrder,{type:'layer',id}]});
+      setDocuments(docs=>docs.map(d=>d.id===activeDocId?{...d,activeLayerId:id}:d));
+      setSelectedLayerIds([id]);
+    }
   };
 
   const handleAddDrawingStroke = (stroke: LayerDrawStroke) => {
@@ -1371,10 +1410,11 @@ export default function App() {
       />
 
       <ToolOptions
+        onOpenStamp={() => setStampOpen(true)}
         currentTool={currentTool}
         brushSettings={brushSettings}
         onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
-        onSelectTool={setCurrentTool}
+        onSelectTool={selectTool}
         selectionScope={selectionScope}
         onChangeSelectionScope={setSelectionScope}
         selectedCount={selectedLayerIds.length}
@@ -1386,7 +1426,7 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden relative">
         <Toolbar
           currentTool={currentTool}
-          onSelectTool={setCurrentTool}
+          onSelectTool={selectTool}
           carveMode={brushSettings.mode}
           onChangeCarveMode={(mode) => {
             setBrushSettings((prev) => ({ ...prev, mode }));
@@ -1410,8 +1450,15 @@ export default function App() {
         />
 
         <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
+          {stampEdit&&<div className="stamp-edit-bar flex items-center gap-3 px-3 py-2 border-b border-(--ui-accent) bg-(--ui-panel) text-xs" role="status">
+            <span className="flex-1">{activeDocId===stampEdit.docId?'图章原稿 · 256 × 256 · 使用左栏任意绘图工具':'图章原稿仍在编辑'}<span className="block text-[10px] text-(--ui-muted)">{stampEditMessage||'保留画布边距；原稿可独立撤销，应用后保存入库。'}</span></span>
+            {activeDocId!==stampEdit.docId&&<button onClick={()=>setActiveDocId(stampEdit.docId)}>回到原稿</button>}
+            <button className="px-2 py-1 border border-(--ui-border)" onClick={()=>{setActiveDocId(stampEdit.returnId);setStampEdit(null);setStampOpen(true);setCurrentTool('stamp');}}>返回，保留原稿</button>
+            <button className="px-2 py-1 bg-(--ui-accent) text-white" onClick={finishStampEdit}>应用到图章</button>
+          </div>}
           <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
+            stampDefinition={stampDefinition} stampSettings={stampSettings} onStamp={handleStamp}
             onCommitVectorLayer={(layer) => pushHistory({...project, layers: {...project.layers, [layer.id]: layer}})}
             project={project}
             activeLayerId={activeLayerId}
@@ -1451,7 +1498,7 @@ export default function App() {
               currentTool={currentTool}
               brushSettings={brushSettings}
               onChangeBrushSettings={(patch) => setBrushSettings((prev) => ({ ...prev, ...patch }))}
-              onSelectTool={setCurrentTool}
+              onSelectTool={selectTool}
               selectionScope={selectionScope}
               onChangeSelectionScope={setSelectionScope}
               selectedCount={selectedLayerIds.length}
@@ -1525,6 +1572,7 @@ export default function App() {
       {isExportModalOpen && (
         <ExportModal project={project} onClose={() => setIsExportModalOpen(false)} />
       )}
+      <div style={{display:stampOpen?'contents':'none'}}><StampWorkbench definition={stampDefinition} settings={stampSettings} onDefinition={setStampDefinition} onSettings={setStampSettings} activeLayer={activeLayer} onEditCanvas={startStampEdit} onClose={()=>setStampOpen(false)}/></div>
       {isNewCanvasOpen && <NewCanvasDialog onClose={() => setIsNewCanvasOpen(false)} onCreate={handleNewDocument} />}
       {isGodotModalOpen && (
         <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />

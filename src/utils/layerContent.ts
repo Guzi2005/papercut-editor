@@ -1,13 +1,13 @@
 import clipping, { type MultiPolygon } from 'polygon-clipping';
 import type { Layer, LayerDrawStroke, Point } from '../types/papercut';
 import { BASE_BLOCK, paperSequence, strokeReach } from './layerSvg';
-import { shapeOf } from './pathfinder';
+import { shapeOf, multiD } from './pathfinder';
 import { parseVectorPath } from './vectorPath';
 import { strokeOutline } from './strokePath';
 
 export interface ContentBounds { x:number; y:number; width:number; height:number }
 interface ContentBlock { id:string; color:string; shape:MultiPolygon; opacity:number }
-interface LayerContent { colors:string[]; bounds:ContentBounds|null; blocks:Map<string,ContentBounds> }
+interface LayerContent { pieces:{id:string;d:string;color:string}[]; colors:string[]; bounds:ContentBounds|null; blocks:Map<string,ContentBounds> }
 const cache = new WeakMap<Layer,LayerContent>();
 const empty:MultiPolygon=[];
 const union=(a:MultiPolygon,b:MultiPolygon)=>clipping.union(a,b);
@@ -51,24 +51,32 @@ export function layerContent(layer:Layer):LayerContent {
       else blocks.push({id:p.id,color:p.fillColor||layer.color,shape,opacity:1});
     }
   }
-  const paper=blocks.reduce((a,b)=>union(a,b.shape),empty);
+  const hasPaper=blocks.some(b=>b.shape.length>0);
+  const paper=layer.drawings?.length&&hasPaper?clipping.union(...blocks.map(b=>b.shape) as [MultiPolygon,...MultiPolygon[]]):empty;
   for(const d of layer.drawings??[]) {
     if(d.opacity<=0||!d.d)continue;
     const raw=drawingShape(d);
-    blocks.push({id:d.id,color:d.color,shape:layer.kind==='doodle'?raw:intersect(raw,paper),opacity:d.opacity});
+    blocks.push({id:d.id,color:d.color,shape:layer.kind==='doodle'||layer.unclippedDrawings?raw:intersect(raw,paper),opacity:d.opacity});
   }
-  let covered:MultiPolygon=[];
+  const pieces:{id:string;d:string;color:string}[]=[];
+  const covered:{shape:MultiPolygon;box:ContentBounds}[]=[];
   const colors:string[]=[], blockBounds=new Map<string,ContentBounds>();
-  let all:MultiPolygon=[];
+  let box:ContentBounds|null=null;
+  const overlaps=(a:ContentBounds,b:ContentBounds)=>a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;
   for(let i=blocks.length-1;i>=0;i--) {
-    const b=blocks[i],visible=subtract(b.shape,covered),box=bounds(visible);
-    if(box){blockBounds.set(b.id,box);if(!colors.includes(b.color))colors.push(b.color);all=union(all,visible);}
-    if(b.opacity>=1)covered=union(covered,b.shape);
+    const b=blocks[i],rawBox=bounds(b.shape);if(!rawBox)continue;
+    // Most repeating stamps are disjoint. Avoid repeatedly unioning the whole layer.
+    const occluders=covered.filter(c=>overlaps(rawBox,c.box)).map(c=>c.shape);
+    const visible=occluders.length?clipping.difference(b.shape,...occluders):b.shape,visibleBox=bounds(visible);
+    if(visibleBox){pieces.unshift({id:b.id,d:multiD(visible),color:b.color});blockBounds.set(b.id,visibleBox);if(!colors.includes(b.color))colors.push(b.color);
+      if(!box)box=visibleBox;else {const x=Math.min(box.x,visibleBox.x),y=Math.min(box.y,visibleBox.y);box={x,y,width:Math.max(box.x+box.width,visibleBox.x+visibleBox.width)-x,height:Math.max(box.y+box.height,visibleBox.y+visibleBox.height)-y};}
+    }
+    if(b.opacity>=1)covered.push({shape:b.shape,box:rawBox});
   }
   if(blockBounds.has(BASE_BLOCK)&&layer.pattern&&(layer.pattern.opacity??1)>0)colors.push(layer.pattern.color);
-  if(paper.length&&layer.surface&&!layer.surface.inheritColor&&layer.surface.intensity>0)colors.push(layer.surface.color);
-  if(all.length&&layer.stroke?.enabled&&layer.stroke.width>0&&layer.stroke.opacity>0)colors.push(layer.stroke.color);
-  const box=bounds(all),reach=strokeReach(layer);
-  const result={colors:[...new Set(colors)],blocks:blockBounds,bounds:box&&{x:box.x-reach,y:box.y-reach,width:box.width+2*reach,height:box.height+2*reach}};
+  if(hasPaper&&layer.surface&&!layer.surface.inheritColor&&layer.surface.intensity>0)colors.push(layer.surface.color);
+  if(box&&layer.stroke?.enabled&&layer.stroke.width>0&&layer.stroke.opacity>0)colors.push(layer.stroke.color);
+  const reach=strokeReach(layer);
+  const result={pieces,colors:[...new Set(colors)],blocks:blockBounds,bounds:box&&{x:box.x-reach,y:box.y-reach,width:box.width+2*reach,height:box.height+2*reach}};
   cache.set(layer,result);return result;
 }

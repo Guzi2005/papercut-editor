@@ -1,3 +1,5 @@
+import { StampPainter } from './StampPainter';
+import type { StampDefinition, StampSettings } from '../utils/stamps';
 import { layerContent } from '../utils/layerContent';
 import { VectorEditor } from './VectorEditor';
 /**
@@ -88,6 +90,9 @@ export interface PointInfo {
 }
 
 interface CanvasProps {
+  stampDefinition: StampDefinition;
+  stampSettings: StampSettings;
+  onStamp: (paths: CutoutPath[]) => void;
   project: PapercutProject;
   onCommitVectorLayer: (layer: Layer) => void;
   activeLayerId: string | null;
@@ -197,6 +202,7 @@ function unionBBox(boxes: BBox[]): BBox | null {
 
 export const Canvas: React.FC<CanvasProps> = ({
   project,
+  stampDefinition, stampSettings, onStamp,
   onCommitVectorLayer,
   activeLayerId,
   currentTool,
@@ -352,7 +358,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const heldPanCode = useRef<string | null>(null);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       if (
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA'
@@ -386,7 +392,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     if (currentTool !== 'select') return;
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (selectedLayerIds.length === 0 && !blockMode) return;
@@ -1158,7 +1164,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
-    if (currentTool === 'vector_edit') return;
+    if (currentTool === 'vector_edit' || currentTool === 'stamp') return;
 
     if (currentTool === 'select') {
       handleSelectDown(e, pt);
@@ -1577,7 +1583,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   pendingRef.current = polylinePoints;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog[open]')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       if (pendingRef.current.length === 0) return;
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1819,6 +1825,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             className="absolute inset-0 w-full h-full overflow-visible"
             style={{ pointerEvents: 'none', willChange: 'transform' }}
           >
+            {currentTool === 'stamp' && <StampPainter definition={stampDefinition} settings={stampSettings} width={project.width} height={project.height} panHeld={isSpacePressed} disabled={activeLocked || (!!activeLayer && !isLayerRendered(project,activeLayer.id))} onCommit={onStamp}/>}
             {currentTool === 'vector_edit' && activeLayer && <VectorEditor
               key={project.id + ':' + activeLayer.id}
               layer={activeLayer} zoom={zoom} disabled={activeLocked || !isLayerRendered(project, activeLayer.id)}

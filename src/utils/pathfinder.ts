@@ -108,7 +108,7 @@ function polygonD(poly: MultiPolygon[number]): string {
   return d;
 }
 
-const multiD = (m: MultiPolygon) => m.map(polygonD).filter(Boolean).join(' ');
+export const multiD = (m: MultiPolygon) => m.map(polygonD).filter(Boolean).join(' ');
 
 interface Block {
   layerId: string;

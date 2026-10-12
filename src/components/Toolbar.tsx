@@ -5,6 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Stamp,
   Feather,
   Shapes,
   PenTool,
@@ -106,6 +107,7 @@ interface ToolDefinition {
 }
 
 export const TOOLS: ToolDefinition[] = [
+  {id:'stamp',name:'图章',shortName:'图章',hotkey:'',description:'单击盖印 · 拖动铺纹样 · 图章工作台',icon:Stamp},
   {
     id: 'select',
     name: '选择',
@@ -230,11 +232,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               aria-label={tool.name}
               aria-pressed={isActive}
               onClick={() => {
-                if (!isActive) onSelectTool(tool.id);
+                if (!isActive || tool.id === 'stamp') onSelectTool(tool.id);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
-                if (!isActive) onSelectTool(tool.id);
+                if (!isActive || tool.id === 'stamp') onSelectTool(tool.id);
                 const r = e.currentTarget.getBoundingClientRect();
                 onOpenToolMenu?.(r.right + 8, r.top);
               }}

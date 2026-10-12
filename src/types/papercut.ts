@@ -127,6 +127,8 @@ export interface Layer {
   name: string;
   /** doodle 涂鸦图层：没有纸，只承载手绘笔迹，笔迹不受纸片边界裁切 */
   kind?: 'paper' | 'doodle';
+  /** Motif canvases can draw beyond the current paper silhouette. */
+  unclippedDrawings?: boolean;
   color: string; // Hex color code
   texture: PaperTextureType;
   opacity: number; // 0 to 1
@@ -231,6 +233,7 @@ export type ToolType =
   | 'pen_knife' // 笔刀 (原自由手绘刻刀，支持压感、不同笔尖形状选择)
   | 'freehand' // 别名兼容
   | 'hand_draw' // 手绘 (铅笔/钢笔/喷枪，附属于剪纸图层蒙版)
+  | 'stamp' // 图章与纹样散布
   | 'vector_edit' // 矢量绘图：精细贝塞尔编辑
   | 'anchor_edit'; // 锚点调整 (自由拖动顶点变形)
 
