@@ -60,6 +60,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 button:not(:disabled):active { filter: brightness(.9); }
 [data-stamp-workbench] button { border-radius: 2px; min-height: 24px; }
 [data-stamp-workbench] button:not(:disabled):hover { background-color: var(--ui-hover); box-shadow: inset 0 0 0 1px var(--ui-border-strong); }
+[data-stamp-workbench] .stamp-library-cell { border-radius: 0; }
+[data-stamp-workbench] .stamp-library-cell:not(:disabled):hover { background: transparent; box-shadow: none; border-color: var(--ui-border-strong); }
+[data-stamp-workbench] .stamp-library-cell[aria-pressed=true]:hover { border-color: var(--ui-accent); }
+[data-stamp-workbench] .stamp-library-cell:focus-visible { outline: none; border-color: var(--ui-accent); box-shadow: none; }
 [data-stamp-workbench] input:hover, [data-stamp-workbench] select:hover { border-color: var(--ui-border-strong); }
 [data-stamp-workbench] input[type=range] { cursor: ew-resize; }
 .stamp-edit-bar button:hover { box-shadow: inset 0 0 0 1px var(--ui-border-strong); }

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BUILTIN_STAMPS,DEFAULT_STAMP_SETTINGS as defaults,stampPlacements,prepareStamp,placedStampPaths,validateStampLibrary,normalizeStampSettings} from '../src/utils/stamps';
+import {BUILTIN_STAMPS,DEFAULT_STAMP_SETTINGS as defaults,stampPlacements,prepareStamp,placedStampPaths,validateStampLibrary,normalizeStampSettings,ribbonBasePaths,stampStrokePaths} from '../src/utils/stamps';
 import {createBlankCanvas} from '../src/utils/presetTemplates';
 import {layerContent} from '../src/utils/layerContent';
 
@@ -48,4 +48,36 @@ test('long patterned strips retain bounds and colours after deletion',()=>{
   const reduced=layerContent({...layer,positiveElements:paths.slice(0,6)});
   assert.ok(reduced.bounds!.width<100);
   assert.equal(layerContent({...layer,positiveElements:[]}).bounds,null);
+});
+
+test('ribbons produce a continuous editable band behind repeated motifs in a single stroke',()=>{
+  const s={...defaults,mode:'ribbon' as const,size:40,ribbonWidth:60,ribbonEdge:2,ribbonColor:'#FFFFFF',ribbonEdgeColor:'#000000'};
+  const points=[{x:100,y:100},{x:300,y:100}];
+  const paths=stampStrokePaths(BUILTIN_STAMPS[0],s,points,1,'ribbon');
+  assert.equal(paths.length,2+6*BUILTIN_STAMPS[0].parts.length);
+  assert.equal(paths[0].fillColor,'#000000');assert.equal(paths[1].fillColor,'#FFFFFF');
+  const layer={...createBlankCanvas().layers.layer_base_paper,baseShape:{type:'freeform' as const,d:''},cutouts:[],positiveElements:paths.slice(0,2),stroke:undefined};
+  const content=layerContent(layer);
+  assert.deepEqual(content.bounds,{x:80,y:68,width:240,height:64});
+  assert.ok(paths.every(p=>p.isHole===false&&!/NaN|Infinity/.test(p.d)));
+  assert.equal(ribbonBasePaths(points,defaults,'stamp').length,0);
+  assert.equal(ribbonBasePaths(points,{...s,ribbonFill:false},'transparent').length,0);
+  assert.equal(ribbonBasePaths(points,{...s,ribbonEdge:0},'no-edge').length,1);
+});
+
+test('ribbon tile spacing remains stable and turns with its path even when stamp rotation is fixed',()=>{
+  const s={...defaults,mode:'ribbon' as const,follow:false,size:20};
+  const sparse=[{x:0,y:0},{x:0,y:100}],dense=Array.from({length:101},(_,y)=>({x:0,y}));
+  assert.deepEqual(stampPlacements(sparse,s,7),stampPlacements(dense,s,7));
+  assert.equal(stampPlacements(sparse,s,7)[0].angle,Math.PI/2);
+  assert.deepEqual(ribbonBasePaths(sparse,s,'same').map(p=>p.d),ribbonBasePaths(dense,s,'same').map(p=>p.d));
+  for(const points of [[{x:30,y:30}],[{x:30,y:30},{x:30,y:30}],[{x:30,y:30},{x:90,y:30},{x:90,y:100}]])assert.ok(ribbonBasePaths(points,s,'test').every(p=>p.d.length>0&&!/NaN|Infinity/.test(p.d)));
+});
+
+test('old libraries default to stamp mode while ribbon recipes round-trip all band controls',()=>{
+  const legacy=normalizeStampSettings({size:83});assert.equal(legacy.mode,'stamp');assert.equal(legacy.ribbonWidth,80);
+  const [recipe]=validateStampLibrary([{...BUILTIN_STAMPS[0],settings:{...defaults,mode:'ribbon',ribbonWidth:92,ribbonFill:false,ribbonColor:'#998877',ribbonEdge:4,ribbonEdgeColor:'#445566'}}]);
+  assert.equal(recipe.settings!.mode,'ribbon');assert.equal(recipe.settings!.ribbonWidth,92);assert.equal(recipe.settings!.ribbonFill,false);assert.equal(recipe.settings!.ribbonEdgeColor,'#445566');
+  assert.equal(normalizeStampSettings({ribbonWidth:999,ribbonEdge:-5}).ribbonWidth,400);
+  assert.equal(normalizeStampSettings({ribbonWidth:999,ribbonEdge:-5}).ribbonEdge,0);
 });

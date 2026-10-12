@@ -7,14 +7,14 @@ import { CLASSIC_STAMPS } from './classicStamps';
 
 export interface StampPart { id:string; d:string; color:string }
 export interface StampDefinition { id:string; name:string; parts:StampPart[]; settings?:StampSettings; builtin?:boolean; group?:string }
-export interface StampSettings { motifScale:number; size:number; spacing:number; angle:number; follow:boolean; scatter:number; sizeJitter:number; angleJitter:number; hue:number; saturation:number; lightness:number; outline:number; outlineColor:string; recolor:Record<string,string> }
-export const DEFAULT_STAMP_SETTINGS:StampSettings={motifScale:1,size:64,spacing:1,angle:0,follow:true,scatter:0,sizeJitter:0,angleJitter:0,hue:0,saturation:0,lightness:0,outline:0,outlineColor:'#1B2352',recolor:{}};
+export interface StampSettings { mode:'stamp'|'ribbon'; ribbonWidth:number; ribbonFill:boolean; ribbonColor:string; ribbonEdge:number; ribbonEdgeColor:string; motifScale:number; size:number; spacing:number; angle:number; follow:boolean; scatter:number; sizeJitter:number; angleJitter:number; hue:number; saturation:number; lightness:number; outline:number; outlineColor:string; recolor:Record<string,string> }
+export const DEFAULT_STAMP_SETTINGS:StampSettings={mode:'stamp',ribbonWidth:80,ribbonFill:true,ribbonColor:'#F6EEE2',ribbonEdge:2,ribbonEdgeColor:'#2E58D6',motifScale:1,size:64,spacing:1,angle:0,follow:true,scatter:0,sizeJitter:0,angleJitter:0,hue:0,saturation:0,lightness:0,outline:0,outlineColor:'#1B2352',recolor:{}};
 const part=(d:string,color='#F6EEE2',id='p'):StampPart=>({id,d,color});
 const motif=(id:string,name:string,parts:StampPart[]):StampDefinition=>({id,name,parts:parts.map((p,i)=>({...p,id:`${id}_${i}`})),builtin:true});
 const diamond='M 50 5 L 95 50 L 50 95 L 5 50 Z';
 const petal='M 50 50 L 36 28 L 42 12 L 50 20 L 58 12 L 64 28 Z';
 const rotated=(d:string,deg:number)=>transformPathD(d,rotateAbout(deg*Math.PI/180,50,50));
-export const BUILTIN_STAMPS:StampDefinition[]=[
+const BASE_STAMPS:StampDefinition[]=[
   motif('cornflower','矢车菊格子',[part(diamond,'#2E58D6'),...[0,90,180,270].map(a=>part(rotated(petal,a))),part('M 50 40 L 60 50 L 50 60 L 40 50 Z','#E3A548')]),
   motif('blueflower','蓝印四瓣花',[...[0,90,180,270].map(a=>part(rotated('M 50 50 Q 18 32 28 15 Q 40 9 50 29 Q 60 9 72 15 Q 82 32 50 50 Z',a),'#2E58D6')),part('M 50 40 L 60 50 L 50 60 L 40 50 Z')]),
   motif('wave','双层波浪',[part('M 0 48 C 25 8 25 8 50 48 C 75 88 75 88 100 48 L 100 58 C 75 98 75 98 50 58 C 25 18 25 18 0 58 Z','#2E58D6'),part('M 0 27 C 25 -3 25 -3 50 27 C 75 57 75 57 100 27 L 100 32 C 75 62 75 62 50 32 C 25 2 25 2 0 32 Z','#E3A548')]),
@@ -25,6 +25,12 @@ export const BUILTIN_STAMPS:StampDefinition[]=[
   motif('rosette','民俗花轮',[...[0,45,90,135,180,225,270,315].map(a=>part(rotated('M 50 48 C 19 28 32 0 50 8 C 68 0 81 28 50 48 Z',a),'#E3A548')),part('M 50 32 A 18 18 0 1 1 49.99 32 Z','#BD5A63')]),
   ...CLASSIC_STAMPS,
 ];
+export const BUILTIN_STAMPS:StampDefinition[]=[...BASE_STAMPS,...[
+  {source:'cornflower',name:'蓝印花织带',color:'#F6EEE2',edge:'#2E58D6',size:48,width:68},
+  {source:'wave',name:'双波纹织带',color:'#F6EEE2',edge:'#2E58D6',size:64,width:64},
+  {source:'woven',name:'棋格织带',color:'#F6EEE2',edge:'#2E58D6',size:48,width:48},
+  {source:'mountain',name:'山纹织带',color:'#F6EEE2',edge:'#BD5A63',size:56,width:64},
+].map(p=>({...BASE_STAMPS.find(d=>d.id===p.source)!,id:`ribbon_${p.source}`,name:p.name,group:'织带示例',settings:{...DEFAULT_STAMP_SETTINGS,mode:'ribbon' as const,size:p.size,ribbonWidth:p.width,ribbonColor:p.color,ribbonEdgeColor:p.edge}}))];
 export interface StampPlacement extends Point { angle:number; scale:number }
 function random(seed:number,index:number,channel:number):number {let n=(seed^Math.imul(index+1,374761393)^Math.imul(channel+1,668265263))>>>0;n=Math.imul(n^(n>>>13),1274126177);return ((n^(n>>>16))>>>0)/4294967296;}
 /** Distance-based placement: independent of pointer event frequency; seed is stable for the entire stroke. */
@@ -33,7 +39,7 @@ export function stampPlacements(points:Point[],s:StampSettings,seed:number):Stam
   const out:StampPlacement[]=[];
   const add=(p:Point,tangent:number)=>{
     const i=out.length,jitter=(random(seed,i,0)*2-1)*s.scatter*s.size;
-    out.push({x:p.x-Math.sin(tangent)*jitter,y:p.y+Math.cos(tangent)*jitter,angle:(s.follow?tangent:0)+(s.angle+(random(seed,i,1)*2-1)*s.angleJitter)*Math.PI/180,scale:s.size/100*(1+(random(seed,i,2)*2-1)*s.sizeJitter)});
+    out.push({x:p.x-Math.sin(tangent)*jitter,y:p.y+Math.cos(tangent)*jitter,angle:(s.mode==='ribbon'||s.follow?tangent:0)+(s.angle+(random(seed,i,1)*2-1)*s.angleJitter)*Math.PI/180,scale:s.size/100*(1+(random(seed,i,2)*2-1)*s.sizeJitter)});
   };
   const first=points.find(p=>Math.hypot(p.x-points[0].x,p.y-points[0].y)>1e-6);
   add(points[0],first?Math.atan2(first.y-points[0].y,first.x-points[0].x):0);
@@ -65,6 +71,37 @@ export function placedStampPaths(parts:StampPart[],placements:StampPlacement[],n
     return parts.map((p,j)=>({id:`${id}_${i}_${j}`,name:`${name} · ${i+1}`,type:'custom_polygon' as const,d:transformPathD(p.d,m),isHole:false,fillColor:p.color,createdAt:time+i*parts.length+j}));
   });
 }
+/** Remove near-collinear pointer samples without changing corners or the two endpoints. */
+function ribbonCenterline(points:Point[]):Point[] {
+  if(points.length<3)return points;
+  const keep=new Set([0,points.length-1]),stack:[[number,number]]=[[0,points.length-1]];
+  while(stack.length){
+    const [a,b]=stack.pop()!,start=points[a],end=points[b],dx=end.x-start.x,dy=end.y-start.y,length2=dx*dx+dy*dy;
+    let far=.25,index=-1;
+    for(let i=a+1;i<b;i++){const p=points[i],t=length2?Math.max(0,Math.min(1,((p.x-start.x)*dx+(p.y-start.y)*dy)/length2)):0,distance=(p.x-start.x-t*dx)**2+(p.y-start.y-t*dy)**2;if(distance>far){far=distance;index=i;}}
+    if(index!==-1){keep.add(index);stack.push([a,index],[index,b]);}
+  }
+  return [...keep].sort((a,b)=>a-b).map(i=>points[i]);
+}
+export function ribbonBasePaths(points:Point[],s:StampSettings,id:string):CutoutPath[] {
+  if(s.mode!=='ribbon'||!s.ribbonFill||!points.length)return [];
+  let center=ribbonCenterline(points);
+  if(center.length===1||center.every(p=>Math.hypot(p.x-center[0].x,p.y-center[0].y)<.001)){
+    const p=center[0],angle=s.angle*Math.PI/180,dx=Math.cos(angle)*s.size/2,dy=Math.sin(angle)*s.size/2;
+    center=[{x:p.x-dx,y:p.y-dy},{x:p.x+dx,y:p.y+dy}];
+  }else{
+    const first=center[0],next=center[1],last=center.at(-1)!,previous=center.at(-2)!,startLength=Math.hypot(next.x-first.x,next.y-first.y),endLength=Math.hypot(last.x-previous.x,last.y-previous.y),margin=s.size/2;
+    center=[...center];
+    if(startLength>0)center[0]={x:first.x-(next.x-first.x)/startLength*margin,y:first.y-(next.y-first.y)/startLength*margin};
+    if(endLength>0)center[center.length-1]={x:last.x+(last.x-previous.x)/endLength*margin,y:last.y+(last.y-previous.y)/endLength*margin};
+  }
+  const base=(width:number,color:string,suffix:string):CutoutPath=>({id:`${id}_${suffix}`,name:suffix==='edge'?'织带边线':'织带底色',type:'custom_polygon',d:strokeOutline(center,{width,round:.4,cap:'butt',smooth:[]}),isHole:false,fillColor:color,createdAt:Date.now()});
+  return [...(s.ribbonEdge>0?[base(s.ribbonWidth+s.ribbonEdge*2,s.ribbonEdgeColor,'edge')]:[]),base(s.ribbonWidth,s.ribbonColor,'base')];
+}
+/** Preview and commit share the same centerline, placement and editable band geometry. */
+export function stampStrokePaths(def:StampDefinition,s:StampSettings,points:Point[],seed:number,id:string):CutoutPath[] {
+  return [...ribbonBasePaths(points,s,id),...placedStampPaths(prepareStamp(def,s),stampPlacements(points,s,seed),def.name,id)];
+}
 const KEY='papercut.stamps.v1';
 export function loadStampLibrary():StampDefinition[]{try{return validateStampLibrary(JSON.parse(localStorage.getItem(KEY)??'[]'));}catch{return [];}}
 export function validateStampLibrary(value:unknown):StampDefinition[]{
@@ -79,9 +116,12 @@ export function saveStampLibrary(library:StampDefinition[]):void {localStorage.s
 
 export function normalizeStampSettings(value:Partial<StampSettings>):StampSettings {
   const s={...DEFAULT_STAMP_SETTINGS};
-  const ranges:Record<string,[number,number]>={size:[8,300],spacing:[.15,3],angle:[-180,180],scatter:[0,.5],sizeJitter:[0,.3],angleJitter:[0,30],hue:[-180,180],saturation:[-100,100],lightness:[-80,80],outline:[0,6],motifScale:[.5,1.5]};
+  const ranges:Record<string,[number,number]>={ribbonWidth:[8,400],ribbonEdge:[0,12],size:[8,300],spacing:[.15,3],angle:[-180,180],scatter:[0,.5],sizeJitter:[0,.3],angleJitter:[0,30],hue:[-180,180],saturation:[-100,100],lightness:[-80,80],outline:[0,6],motifScale:[.5,1.5]};
   for(const [key,[min,max]] of Object.entries(ranges)){const n=value[key as keyof StampSettings];if(typeof n==='number'&&Number.isFinite(n))(s as unknown as Record<string,unknown>)[key]=Math.max(min,Math.min(max,n));}
   if(typeof value.follow==='boolean')s.follow=value.follow;
+  if(value.mode==='ribbon')s.mode='ribbon';
+  if(typeof value.ribbonFill==='boolean')s.ribbonFill=value.ribbonFill;
+  for(const key of ['ribbonColor','ribbonEdgeColor'] as const)if(typeof value[key]==='string'&&/^#[0-9a-f]{6}$/i.test(value[key]!))s[key]=value[key]!;
   if(typeof value.outlineColor==='string'&&/^#[0-9a-f]{6}$/i.test(value.outlineColor))s.outlineColor=value.outlineColor;
   s.recolor={};if(value.recolor&&typeof value.recolor==='object')for(const [from,to] of Object.entries(value.recolor))if(/^#[0-9a-f]{6}$/i.test(from)&&typeof to==='string'&&/^#[0-9a-f]{6}$/i.test(to))s.recolor[from]=to;
   return s;
