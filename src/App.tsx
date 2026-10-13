@@ -1,5 +1,7 @@
 import {attachLiveStampStroke,detachChangedLiveStamps,regenerateLiveStampLayer,expandLiveStampStroke,type LiveStampStroke} from './utils/liveStamps';
-import {createWardrobeTemplate,assignWardrobeCategory} from './utils/wardrobe';
+import {createWardrobeTemplate} from './utils/wardrobe';
+import {definitionForMode,type MaterialTab,type MotifMode} from './utils/materialLibrary';
+import {loadDrawingPreviewMode,saveDrawingPreviewMode,type DrawingPreviewMode} from './utils/drawingPreview';
 import {PalettePanel} from './components/PalettePanel';
 import {FabricPanel} from './components/FabricPanel';
 import {SaveStampDialog} from './components/SaveStampDialog';
@@ -11,7 +13,7 @@ import { reorderStack, flatStack } from './utils/layerStack';
 import { GameAssetBridge } from './components/GameAssetBridge';
 import { StampWorkbench } from './components/StampWorkbench';
 import {createStampDocument,stampFromDocument} from './utils/stampDocument';
-import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS, type StampDefinition, type StampSettings } from './utils/stamps';
+import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS, loadStampLibrary, type StampDefinition, type StampSettings } from './utils/stamps';
 import { NewCanvasDialog } from './components/NewCanvasDialog';
 /**
  * @license
@@ -141,15 +143,16 @@ export default function App() {
   const [stampDefinition,setStampDefinition]=useState<StampDefinition>(BUILTIN_STAMPS[0]);
   const [stampSettings,setStampSettings]=useState<StampSettings>(DEFAULT_STAMP_SETTINGS);
   const [stampOpen,setStampOpen]=useState(false);
+  const materialDrafts=useRef(new Map<string,{definition:StampDefinition;source:string|undefined}>());
   const [stampEdit,setStampEdit]=useState<{docId:string;returnId:string;definition:StampDefinition}|null>(null);
   const [stampEditMessage,setStampEditMessage]=useState('');
   const [liveStampEdit,setLiveStampEdit]=useState<{layerId:string;strokeId:string}|null>(null);
   const [liveStampPath,setLiveStampPath]=useState<{layerId:string;strokeId:string}|null>(null);
-  const [panelRequest,setPanelRequest]=useState<{tab:'materials'|'colors';materialTab?:'stamp'|'fabric'|'outfit';key:number}>();
+  const [panelRequest,setPanelRequest]=useState<{tab:'materials'|'colors';materialTab?:MaterialTab;key:number}>();
   const [isSaveStampOpen,setIsSaveStampOpen]=useState(false);
   const [fabricAdjust,setFabricAdjust]=useState(false);
   const [selectedBlocks,setSelectedBlocks]=useState<BlockSelection>({});
-  const openMaterials=(materialTab:'stamp'|'fabric'|'outfit'='stamp')=>{setPanelRequest({tab:'materials',materialTab,key:Date.now()});setPanelOpen(true);};
+  const openMaterials=(materialTab:MaterialTab=stampSettings.mode)=>{setPanelRequest({tab:'materials',materialTab,key:Date.now()});setPanelOpen(true);};
   const selectTool=(tool:ToolType)=>{setCurrentTool(tool);setFabricAdjust(false);setLiveStampPath(null);if(tool==='stamp')openMaterials();};
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const toolMounted = useRef(false);
@@ -178,6 +181,8 @@ export default function App() {
   });
 
   const [skin, setSkinState] = useState<WorkbenchSkin>(loadSkin);
+  const [drawingPreviewMode,setDrawingPreviewMode]=useState<DrawingPreviewMode>(loadDrawingPreviewMode);
+  const changeDrawingPreviewMode=(mode:DrawingPreviewMode)=>{setDrawingPreviewMode(mode);saveDrawingPreviewMode(mode);};
   const setSkin = (id: WorkbenchSkin) => {
     setSkinState(id);
     saveSkin(id);
@@ -202,7 +207,7 @@ export default function App() {
     setFabricAdjust(false);
     setLiveStampPath(null);
     setLiveStampEdit(null);
-    setStampOpen(false);
+    if(liveStampEdit)setStampOpen(false);
     setIsSaveStampOpen(false);
     setSelectedBlocks({});
   },[activeDocId]);
@@ -704,7 +709,22 @@ export default function App() {
   const canEditMaterialLayer=(layer:Layer|undefined|null)=>!!layer&&!layer.locked&&!findGroupOfLayer(project,layer.id)?.locked;
   const editLiveStamp=(stroke:LiveStampStroke)=>{if(!canEditMaterialLayer(activeLayer)||!activeLayer)return;setStampDefinition(stroke.definition);setStampSettings(structuredClone(stroke.settings));setLiveStampEdit({layerId:activeLayer.id,strokeId:stroke.id});setStampOpen(true);setCurrentTool('select');};
   const applyLiveStamp=()=>{if(!liveStampEdit)return;const layer=project.layers[liveStampEdit.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampEdit.strokeId,{definition:stampDefinition,settings:stampSettings})}});setStampOpen(false);setLiveStampEdit(null);};
-  const useStampMaterial=(definition:StampDefinition)=>{setLiveStampEdit(null);setStampDefinition(definition);setStampSettings({...DEFAULT_STAMP_SETTINGS,...definition.settings});setCurrentTool('stamp');setFabricAdjust(false);if(compact)setPanelOpen(false);};
+  const rememberMaterialDraft=()=>{
+    const saved=[...BUILTIN_STAMPS,...loadStampLibrary()].find(d=>d.id===stampDefinition.id),key=`${stampDefinition.id}:${stampSettings.mode}`;
+    const current={...stampDefinition,settings:stampSettings};
+    if(!saved||JSON.stringify(current)!==JSON.stringify({...saved,settings:saved.settings??DEFAULT_STAMP_SETTINGS}))materialDrafts.current.set(key,{definition:structuredClone(current),source:saved?JSON.stringify(saved):undefined});
+    else materialDrafts.current.delete(key);
+  };
+  const useStampMaterial=(definition:StampDefinition)=>{
+    rememberMaterialDraft();
+    const mode=definition.settings?.mode??'stamp',key=`${definition.id}:${mode}`,draft=materialDrafts.current.get(key);
+    const saved=[...BUILTIN_STAMPS,...loadStampLibrary()].find(d=>d.id===definition.id),source=saved?JSON.stringify(saved):undefined;
+    const chosen=draft&&draft.source===source?structuredClone(draft.definition):definition;
+    setLiveStampEdit(null);setStampDefinition(chosen);setStampSettings({...DEFAULT_STAMP_SETTINGS,...chosen.settings});setCurrentTool('stamp');setFabricAdjust(false);setLiveStampPath(null);
+    return chosen;
+  };
+  const chooseMaterialMode=(mode:MotifMode)=>{useStampMaterial({...stampDefinition,settings:{...stampSettings,mode}});};
+  const createMaterial=(mode:MotifMode)=>{const definition=definitionForMode({id:newId('user'),name:mode==='ribbon'?'新织带':'新图章',parts:[]},mode);useStampMaterial(definition);startStampEdit(definition);};
 
   // ---------- Layer content edits ----------
   const updateActiveLayer = (fn: (layer: Layer) => Layer) => {
@@ -1423,6 +1443,8 @@ export default function App() {
         currentHeight={project.height}
         onUpdateCanvasSize={handleUpdateCanvasSize}
         currentSkin={skin}
+        drawingPreviewMode={drawingPreviewMode}
+        onChangeDrawingPreviewMode={changeDrawingPreviewMode}
         onSelectSkin={setSkin}
         zoom={zoom}
         onZoomChange={handleZoomChange}
@@ -1491,7 +1513,7 @@ export default function App() {
           onOpenToolMenu={(x, y) => setToolMenu({ x, y })}
         />
 
-        <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden">
+        <div id="canvas-stage" className="flex-1 flex flex-col relative overflow-hidden" onPointerDownCapture={e=>{if(compact&&panelOpen&&(e.target as Element).closest('svg'))setPanelOpen(false);}}>
           {stampEdit&&<div className="stamp-edit-bar flex items-center gap-3 px-3 py-2 border-b border-(--ui-accent) bg-(--ui-panel) text-xs" role="status">
             <span className="flex-1">{activeDocId===stampEdit.docId?'图章原稿 · 256 × 256 · 使用左栏任意绘图工具':'图章原稿仍在编辑'}<span className="block text-[10px] text-(--ui-muted)">{stampEditMessage||'保留画布边距；原稿可独立撤销，应用后保存入库。'}</span></span>
             {activeDocId!==stampEdit.docId&&<button onClick={()=>setActiveDocId(stampEdit.docId)}>回到原稿</button>}
@@ -1500,6 +1522,7 @@ export default function App() {
           </div>}
           <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
+            drawingPreviewMode={drawingPreviewMode}
             stampDefinition={stampDefinition} stampSettings={stampSettings} onStamp={handleStamp}
             liveStampPath={liveStampPath&&canEditMaterialLayer(project.layers[liveStampPath.layerId])?project.layers[liveStampPath.layerId]?.liveStamps?.find(s=>s.id===liveStampPath.strokeId):undefined} onLiveStampPathCommit={points=>{if(!liveStampPath)return;const layer=project.layers[liveStampPath.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampPath.strokeId,{points})}});}}
             fabricAdjust={fabricAdjust && currentTool==='select'} onFabricCommit={handleUpdateFabric} onBlockSelectionChange={setSelectedBlocks}
@@ -1558,9 +1581,6 @@ export default function App() {
 
         </div>
 
-        {compact && panelOpen && (
-          <div className="absolute inset-0 z-30 bg-black/30" onPointerDown={() => setPanelOpen(false)} />
-        )}
         <div
           inert={compact&&!panelOpen}
           className={
@@ -1572,7 +1592,7 @@ export default function App() {
           <LayersPanel
           panelRequest={panelRequest}
           colorPanel={<PalettePanel key={activeDocId} project={project} selectedLayerIds={selectedLayerIds} onPick={hex=>changeBrushColor(hex,true)} onApply={handleApplyScheme} onProjectPalettes={colorSchemes=>handleUpdateProject({colorSchemes})}/>}
-          materialPanel={<FabricPanel request={panelRequest?.materialTab?{tab:panelRequest.materialTab,key:panelRequest.key}:undefined} activeStampId={stampDefinition.id} project={project} layer={activeLayer} onImport={asset=>handleUpdateProject({fabricAssets:{...project.fabricAssets,[asset.id]:asset}})} onUse={handleUseFabric} onUpdate={handleUpdateFabric} onUseStamp={useStampMaterial} onEditStamp={d=>{useStampMaterial(d);startStampEdit(d);}} onCapture={()=>setIsSaveStampOpen(true)} canCapture={captureLayerIds.length>0} adjusting={fabricAdjust} onAdjust={v=>{setFabricAdjust(v);if(v){setCurrentTool('select');if(compact)setPanelOpen(false);}}} selectedItem={selectedItem} onItemCategory={wardrobeCategory=>{if(selectedItem)try{pushHistory(assignWardrobeCategory(project,selectedItem.id,wardrobeCategory));}catch(e){setSaveBanner({id:Date.now(),text:e instanceof Error?e.message:'无法归类',error:true});}}} onWardrobeUpdate={pushHistory} onCreateTemplate={()=>{const template=createWardrobeTemplate(),id=openProjectAsDocument(template,'套装模板');setDocuments(docs=>docs.map(d=>d.id===id?{...d,activeLayerId:'wardrobe_clothes'}:d));setCurrentTool('select');setFabricAdjust(false);setLiveStampPath(null);openMaterials('outfit');}} onEditLiveStamp={editLiveStamp} onEditLivePath={stroke=>{if(activeLayer&&canEditMaterialLayer(activeLayer)){setLiveStampPath({layerId:activeLayer.id,strokeId:stroke.id});setCurrentTool('select');setStampOpen(false);setFabricAdjust(false);if(compact)setPanelOpen(false);}}} onExpandLiveStamp={id=>{if(activeLayer&&canEditMaterialLayer(activeLayer))pushHistory({...project,layers:{...project.layers,[activeLayer.id]:expandLiveStampStroke(activeLayer,id)}});}}/>}
+          materialPanel={<FabricPanel request={panelRequest?.materialTab?{tab:panelRequest.materialTab,key:panelRequest.key}:undefined} activeStampId={stampDefinition.id} stampSettings={stampSettings} onModeChange={chooseMaterialMode} onCreateMaterial={createMaterial} project={project} layer={activeLayer} onImport={asset=>handleUpdateProject({fabricAssets:{...project.fabricAssets,[asset.id]:asset}})} onUse={handleUseFabric} onUpdate={handleUpdateFabric} onUseStamp={useStampMaterial} onEditStamp={d=>{const chosen=useStampMaterial(d);startStampEdit(chosen);}} onCapture={()=>setIsSaveStampOpen(true)} canCapture={captureLayerIds.length>0} adjusting={fabricAdjust} onAdjust={v=>{setFabricAdjust(v);if(v){setCurrentTool('select');if(compact)setPanelOpen(false);}}} onWardrobeUpdate={pushHistory} onCreateTemplate={()=>{const template=createWardrobeTemplate(),id=openProjectAsDocument(template,'套装模板');setDocuments(docs=>docs.map(d=>d.id===id?{...d,activeLayerId:'wardrobe_clothes'}:d));setCurrentTool('select');setFabricAdjust(false);setLiveStampPath(null);openMaterials('outfit');}} onEditLiveStamp={editLiveStamp} onEditLivePath={stroke=>{if(activeLayer&&canEditMaterialLayer(activeLayer)){setLiveStampPath({layerId:activeLayer.id,strokeId:stroke.id});setCurrentTool('select');setStampOpen(false);setFabricAdjust(false);if(compact)setPanelOpen(false);}}} onExpandLiveStamp={id=>{if(activeLayer&&canEditMaterialLayer(activeLayer))pushHistory({...project,layers:{...project.layers,[activeLayer.id]:expandLiveStampStroke(activeLayer,id)}});}}/>}
           project={project}
           activeLayerId={activeLayerId}
           selectedLayerIds={selectedLayerIds}
@@ -1621,7 +1641,7 @@ export default function App() {
         <ExportModal project={project} onClose={() => setIsExportModalOpen(false)} />
       )}
       <div style={{display:stampOpen?'contents':'none'}}><StampWorkbench hideLibrary onApplyStroke={liveStampEdit?applyLiveStamp:undefined} definition={stampDefinition} settings={stampSettings} onDefinition={setStampDefinition} onSettings={setStampSettings} activeLayer={activeLayer} onEditCanvas={()=>startStampEdit()} onClose={()=>{setStampOpen(false);setLiveStampEdit(null);}}/></div>
-      {isSaveStampOpen&&<SaveStampDialog project={project} layerIds={captureLayerIds} blockSelection={selectionScope==='color'?selectedBlocks:undefined} onSave={d=>{setIsSaveStampOpen(false);useStampMaterial(d);openMaterials();}} onClose={()=>setIsSaveStampOpen(false)}/>}
+      {isSaveStampOpen&&<SaveStampDialog mode={stampSettings.mode} project={project} layerIds={captureLayerIds} blockSelection={selectionScope==='color'?selectedBlocks:undefined} onSave={d=>{setIsSaveStampOpen(false);useStampMaterial(d);openMaterials();}} onClose={()=>setIsSaveStampOpen(false)}/>}
       {isNewCanvasOpen && <NewCanvasDialog onClose={() => setIsNewCanvasOpen(false)} onCreate={handleNewDocument} />}
       {isGodotModalOpen && (
         <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />

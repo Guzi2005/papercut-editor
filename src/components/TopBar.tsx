@@ -54,6 +54,7 @@ import { SaveSettingsPanel } from './SaveSettingsPanel';
 import { SaveSettings, SaveStatus, describeSaveSettings } from '../utils/saveSettings';
 import { ZOOM_STEP, WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
 import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
+import type { DrawingPreviewMode } from '../utils/drawingPreview';
 
 const ModeGlyph: React.FC<{ kind: PaperMode }> = ({ kind }) => (
   <svg viewBox="0 0 24 24" className="w-6 h-6">
@@ -73,6 +74,24 @@ const PAPER_MODES: { id: PaperMode; tip: string; icon: React.ReactNode }[] = [
   { id: 'soft', tip: '剪贴模式：柔和投影', icon: <ModeGlyph kind="soft" /> },
   { id: 'vector', tip: '剪贴模式：平面矢量', icon: <ModeGlyph kind="vector" /> },
   { id: 'hard', tip: '剪贴模式：硬边加深投影', icon: <ModeGlyph kind="hard" /> },
+];
+
+const DrawingPreviewGlyph: React.FC<{ mode: DrawingPreviewMode }> = ({ mode }) => (
+  <svg viewBox="0 0 32 32" className="w-7 h-7" aria-hidden="true">
+    <path
+      d="M6 6 C20 4 29 15 22 24 C15 30 8 23 6 6 Z"
+      fill={mode === 'filled' ? 'currentColor' : 'none'}
+      stroke={mode === 'outline' ? 'currentColor' : 'none'}
+      strokeWidth="1.6"
+      strokeDasharray={mode === 'outline' ? '3 2' : undefined}
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const DRAWING_PREVIEW_MODES: { id: DrawingPreviewMode; label: string; tip: string }[] = [
+  { id: 'outline', label: '轮廓预览', tip: '拖动时显示选区轮廓 · 松手提交' },
+  { id: 'filled', label: '即时填充', tip: '拖动时用选中色即时填充 · 无边框 · 松手提交' },
 ];
 
 const TAB_COLORS = ['#2E58D6', '#D0574B', '#2F9E6A', '#8A62D6', '#D69A2E', '#2FA8B0', '#D66A9E'];
@@ -111,6 +130,8 @@ interface TopBarProps {
   onOpenGodotExport: () => void;
   paperMode: PaperMode;
   onChangePaperMode: (mode: PaperMode) => void;
+  drawingPreviewMode: DrawingPreviewMode;
+  onChangeDrawingPreviewMode: (mode: DrawingPreviewMode) => void;
   shadow: { strength: number; softness: number; blend: ShadowBlend };
   onChangeShadow: (patch: Partial<Pick<PapercutProject, 'shadowStrength' | 'shadowSoftness' | 'shadowBlend'>>) => void;
   compact: boolean;
@@ -155,6 +176,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenGodotExport,
   paperMode,
   onChangePaperMode,
+  drawingPreviewMode,
+  onChangeDrawingPreviewMode,
   shadow,
   onChangeShadow,
   compact,
@@ -436,6 +459,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               setShowFileMenu(false);
               setShowCanvasSubmenu(false);
             }}
+            aria-label="设置"
+            aria-expanded={showSettingsMenu}
             data-tip="设置"
             className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
               showSettingsMenu
@@ -541,6 +566,31 @@ export const TopBar: React.FC<TopBarProps> = ({
                     </label>
                   </div>
                 )}
+              </div>
+              <div className="px-3 pt-1 pb-2" onPointerEnter={() => setSettingsFlyout(null)}>
+                <div className="flex items-center gap-2 mb-1.5 text-(--ui-muted)">
+                  <Scissors className="w-3.5 h-3.5 text-(--ui-accent)" />
+                  <span>绘制反馈</span>
+                </div>
+                <div className="flex gap-1" role="group" aria-label="绘制反馈">
+                  {DRAWING_PREVIEW_MODES.map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() => onChangeDrawingPreviewMode(mode.id)}
+                      aria-label={mode.label}
+                      aria-pressed={drawingPreviewMode === mode.id}
+                      data-tip={mode.tip}
+                      className={`flex-1 flex items-center gap-1 py-1 border-b-2 transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--ui-accent) ${
+                        drawingPreviewMode === mode.id
+                          ? 'border-(--ui-accent) text-(--ui-accent)'
+                          : 'border-transparent text-(--ui-muted) hover:text-(--ui-strong) hover:bg-(--ui-hover)'
+                      }`}
+                    >
+                      <DrawingPreviewGlyph mode={mode.id} />
+                      <span className="text-[10px]">{mode.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="h-px bg-(--ui-divider) my-1" />
               <div className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('twin')}>

@@ -76,6 +76,7 @@ import { PathfinderBar } from './PathfinderBar';
 import type { PathfinderOp } from '../utils/pathfinder';
 import { CanvasBackdrop } from './CanvasBackdrop';
 import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
+import { drawingPreviewStyle, type DrawingPreviewMode } from '../utils/drawingPreview';
 
 export type SelectionScope = 'part' | 'item' | 'color';
 
@@ -92,6 +93,7 @@ export interface PointInfo {
 }
 
 interface CanvasProps {
+  drawingPreviewMode?: DrawingPreviewMode;
   liveStampPath?:import('../utils/liveStamps').LiveStampStroke;
   onLiveStampPathCommit?:(points:Point[])=>void;
   fabricAdjust?:boolean;
@@ -209,6 +211,7 @@ function unionBBox(boxes: BBox[]): BBox | null {
 
 export const Canvas: React.FC<CanvasProps> = ({
   project,
+  drawingPreviewMode = 'outline',
   stampDefinition, stampSettings, onStamp, fabricAdjust, onFabricCommit, onBlockSelectionChange, liveStampPath, onLiveStampPathCommit,
   onCommitVectorLayer,
   activeLayerId,
@@ -400,6 +403,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     if (currentTool !== 'select') return;
     const onKey = (e: KeyboardEvent) => {
+      if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"]'))return;
       if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -1639,6 +1643,15 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [symDragging, clientToCanvas, zoom, project.width, project.height, onChangeBrushSettings]);
 
   const drawingTool = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand', 'hand_draw'].includes(currentTool);
+  const canPreviewDrawing = !!activeLayer && !activeLocked && !activeHidden && (!activeDoodle || currentTool === 'hand_draw');
+  const shapePreviewStyle = drawingPreviewStyle(drawingPreviewMode, brushSettings.brushColor, zoom);
+  const willowDrawing = currentTool === 'hand_draw' && brushSettings.drawBrushType === 'willow';
+  const pendingShapePoints = [...polylinePoints, ...(polyHover ? [polyHover] : [])];
+  const pendingShapeD = pendingShapePoints.length < 2 ? '' : withSymmetry(
+    brushSettings.geomShapeType === 'path'
+      ? strokeOutline(pendingShapePoints, pathStyle(pendingShapePoints.length))
+      : `M ${pendingShapePoints.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`
+  );
   const symGuides = drawingTool ? symmetryGuides(symmetry, project.width, project.height) : [];
   const symCenter = symmetryCenter(symmetry, project.width, project.height);
 
@@ -1890,20 +1903,24 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
 
             {/* Real-time Hand Drawing Stroke Preview (Clipped by active layer mask) */}
-            {isDrawing && currentTool === 'hand_draw' && activeLayer && (
+            {isDrawing && currentTool === 'hand_draw' && activeLayer && canPreviewDrawing && (
               <g mask={activeDoodle ? undefined : `url(#cv_${activeLayer.id}_paper)`}>
                 <g
                   ref={previewRef}
-                  fill={brushSettings.drawBrushType === 'willow' ? brushSettings.brushColor : 'none'}
-                  fillOpacity={brushSettings.drawOpacity ?? 0.85}
-                  stroke={brushSettings.drawBrushType === 'willow' ? 'none' : brushSettings.brushColor}
-                  strokeWidth={brushSettings.drawSize || 6}
-                  strokeOpacity={brushSettings.drawOpacity ?? 0.85}
+                  data-drawing-preview={willowDrawing ? drawingPreviewMode : 'stroke'}
+                  {...(willowDrawing ? shapePreviewStyle : {
+                    fill: 'none',
+                    fillOpacity: brushSettings.drawOpacity ?? 0.85,
+                    stroke: brushSettings.brushColor,
+                    strokeWidth: brushSettings.drawSize || 6,
+                  })}
+                  strokeOpacity={willowDrawing ? 1 : brushSettings.drawOpacity ?? 0.85}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  pointerEvents="none"
                   style={{
                     filter:
-                      brushSettings.drawBrushType === 'airbrush'
+                      willowDrawing ? undefined : brushSettings.drawBrushType === 'airbrush'
                         ? `blur(${brushSettings.airbrushSoftness || 12}px)`
                         : brushSettings.pencilHardness === 1
                         ? 'blur(0.8px)'
@@ -1914,37 +1931,21 @@ export const Canvas: React.FC<CanvasProps> = ({
             )}
 
             {/* Real-time Cutout Preview (Willow Leaf, Geom Shapes, Pen Knife) */}
-            {isDrawing && currentTool !== 'hand_draw' && (
+            {isDrawing && drawingTool && currentTool !== 'hand_draw' && canPreviewDrawing && (
               <g
                 ref={previewRef}
-                fill={carveMode === 'erase' ? '#EB8E88' : carveMode === 'cutout' ? '#FAF8F2' : brushSettings.brushColor}
-                fillOpacity={carveMode === 'erase' ? 0.3 : carveMode === 'cutout' ? 0.55 : 0.88}
-                stroke={carveMode === 'cutout' ? '#2652D0' : '#EB8E88'}
-                strokeWidth={2 / zoom}
-                strokeDasharray={carveMode === 'erase' ? '3 3' : carveMode === 'cutout' ? '4 3' : undefined}
-                opacity={0.88}
+                data-drawing-preview={drawingPreviewMode}
+                {...shapePreviewStyle}
+                pointerEvents="none"
               />
             )}
 
             {/* Click-placed shape in progress */}
-            {polylinePoints.length > 0 && brushSettings.geomShapeType === 'path' && (
+            {currentTool === 'geom_shape' && multiPoint && polylinePoints.length > 0 && canPreviewDrawing && pendingShapeD && (
               <path
-                d={withSymmetry(strokeOutline([...polylinePoints, ...(polyHover ? [polyHover] : [])], pathStyle(polylinePoints.length + 1)))}
-                fill={carveMode === 'cutout' ? '#FAF8F2' : brushSettings.brushColor}
-                fillOpacity={0.6}
-                stroke="#2652D0"
-                strokeWidth={1.2 / zoom}
-                strokeDasharray={`${4 / zoom} ${3 / zoom}`}
-                pointerEvents="none"
-              />
-            )}
-            {polylinePoints.length > 0 && (
-              <polyline
-                points={[...polylinePoints, ...(polyHover ? [polyHover] : [])].map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke="#2652D0"
-                strokeWidth={2 / zoom}
-                strokeDasharray="4 3"
+                data-drawing-preview={drawingPreviewMode}
+                d={pendingShapeD}
+                {...shapePreviewStyle}
                 pointerEvents="none"
               />
             )}

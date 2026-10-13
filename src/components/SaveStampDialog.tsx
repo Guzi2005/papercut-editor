@@ -4,6 +4,8 @@ import type { PapercutProject } from '../types/papercut';
 import type { BlockSelection } from '../utils/projectOps';
 import { captureSelectedStamp, stampCaptureOmissions } from '../utils/materialCapture';
 import { loadStampLibrary, saveStampLibrary, validateStampLibrary, type StampDefinition } from '../utils/stamps';
+import {definitionForMode,ribbonTileSettings,type MotifMode} from '../utils/materialLibrary';
+import {StampStrokePreview} from './StampPainter';
 
 interface Props {
   project: PapercutProject;
@@ -11,12 +13,14 @@ interface Props {
   blockSelection?: BlockSelection;
   onSave: (definition: StampDefinition) => void;
   onClose: () => void;
+  mode?:MotifMode;
 }
 
-export function SaveStampDialog({ project, layerIds, blockSelection, onSave, onClose }: Props) {
+export function SaveStampDialog({ project, layerIds, blockSelection, onSave, onClose,mode='stamp' }: Props) {
+  const kind=mode==='ribbon'?'织带':'图章';
   const selectionKey = JSON.stringify(layerIds);
   const blockKey = blockSelection === undefined ? null : JSON.stringify(blockSelection);
-  const initialName = layerIds.length === 1 ? project.layers[layerIds[0]]?.name || '新图章' : '新图章';
+  const initialName = layerIds.length === 1 ? project.layers[layerIds[0]]?.name || `新${kind}` : `新${kind}`;
   const [name, setName] = useState(initialName);
   const [error, setError] = useState('');
   const [acceptFlat, setAcceptFlat] = useState(false);
@@ -37,7 +41,7 @@ export function SaveStampDialog({ project, layerIds, blockSelection, onSave, onC
   function save() {
     if (!capture.definition || !name.trim() || (capture.omissions.length > 0 && !acceptFlat)) return;
     try {
-      const definition = { ...capture.definition, name: name.trim().slice(0, 80) };
+      const definition = definitionForMode({ ...capture.definition, name: name.trim().slice(0, 80) },mode);
       const library = validateStampLibrary([...loadStampLibrary(), definition]);
       saveStampLibrary(library);
       onSave(library[library.length - 1]);
@@ -51,16 +55,16 @@ export function SaveStampDialog({ project, layerIds, blockSelection, onSave, onC
     className="m-auto w-[min(420px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-sm border border-(--ui-border-strong) bg-(--ui-panel) p-0 text-(--ui-text) shadow-2xl backdrop:bg-black/40">
     <form className="text-xs" onSubmit={event => { event.preventDefault(); save(); }}>
       <header className="flex items-center justify-between border-b border-(--ui-divider) px-4 py-3">
-        <h2 id="save-stamp-title" className="text-sm font-semibold text-(--ui-strong)">收为图章</h2>
+        <h2 id="save-stamp-title" className="text-sm font-semibold text-(--ui-strong)">收为{kind}</h2>
         <button type="button" aria-label="关闭收为图章" onClick={onClose} className="p-1 hover:bg-(--ui-hover)"><X size={16}/></button>
       </header>
       <div className="grid grid-cols-[120px_1fr] items-center gap-4 p-4">
-        <svg aria-label="图章预览" viewBox="0 0 100 100" className="block h-[120px] w-[120px] border border-(--ui-border)" style={{ background: 'var(--ui-input)' }}>
-          {capture.definition?.parts.map(part => <path key={part.id} d={part.d} fill={part.color}/>)}
+        <svg aria-label={`${kind}预览`} viewBox={mode==='ribbon'?'0 0 140 60':'0 0 100 100'} className="block h-[120px] w-[120px]">
+          {mode==='ribbon'&&capture.definition?<StampStrokePreview definition={capture.definition} settings={ribbonTileSettings(capture.definition)} points={[{x:-20,y:30},{x:160,y:30}]}/>:capture.definition?.parts.map(part => <path key={part.id} d={part.d} fill={part.color}/>)}
         </svg>
         <div className="min-w-0 space-y-3">
           <label className="block space-y-2"><span className="block text-(--ui-muted)">名称</span>
-            <input autoFocus required maxLength={80} aria-label="图章名称" value={name} onChange={event => { setName(event.target.value); setError(''); }}
+            <input autoFocus required maxLength={80} aria-label={`${kind}名称`} value={name} onChange={event => { setName(event.target.value); setError(''); }}
               className="w-full min-w-0 border border-(--ui-border) bg-(--ui-input) px-2 py-1.5 outline-none focus:border-(--ui-accent)"/>
           </label>
           <p className="text-[11px] leading-relaxed text-(--ui-muted)">保持原色与比例，原点位于图案中心。保存到素材库后可盖印或制作织带。</p>
@@ -78,7 +82,7 @@ export function SaveStampDialog({ project, layerIds, blockSelection, onSave, onC
       <footer className="flex justify-end gap-2 border-t border-(--ui-divider) px-4 py-3">
         <button type="button" onClick={onClose} className="px-3 py-1.5 hover:bg-(--ui-hover)">取消</button>
         <button type="submit" disabled={!capture.definition || !name.trim() || (capture.omissions.length > 0 && !acceptFlat)}
-          className="bg-(--ui-accent) px-4 py-1.5 text-white disabled:opacity-40">保存图章</button>
+          className="bg-(--ui-accent) px-4 py-1.5 text-white disabled:opacity-40">保存{kind}</button>
       </footer>
     </form>
   </dialog>;

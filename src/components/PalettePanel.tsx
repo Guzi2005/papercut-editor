@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, Lock, Plus, Trash2, Unlock, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Bookmark, Check, Contrast, CopyPlus, Download, Lock, Plus, Save, ScanEye, Trash2, Unlock, Upload } from 'lucide-react';
 import type { PapercutProject } from '../types/papercut';
+import { InlineName } from './InlineName';
+import { WheelNumber } from './WheelNumber';
 import { layerColors } from '../utils/color';
 import {
   type ColorScheme, type ImageRegion, type PaletteSwatch, PALETTE_ROLES, PALETTE_STORAGE_KEY, PALETTE_DRAFT_PREFIX,
@@ -15,9 +17,9 @@ export interface PalettePanelProps {
   onApply: (mapping: Record<string, string>, scope: 'selection' | 'document') => void;
   onProjectPalettes: (palettes: ColorScheme[]) => void;
 }
-const button = 'px-2 py-1 border border-(--ui-border) hover:bg-(--ui-hover) disabled:opacity-35 disabled:cursor-default text-[11px]';
-const field = 'min-w-0 bg-(--ui-input) border border-(--ui-border) px-1.5 py-1 text-[11px]';
-const smallButton = 'p-1 text-(--ui-muted) hover:text-(--ui-text) hover:bg-(--ui-hover) disabled:opacity-30';
+const button = 'px-2 py-1 hover:bg-(--ui-hover) disabled:opacity-35 disabled:cursor-default text-[11px]';
+const field = 'min-w-0 bg-transparent border-0 border-b border-(--ui-border) px-1 py-1 text-[11px] outline-none focus:border-(--ui-accent)';
+const smallButton = 'p-1.5 text-(--ui-muted) hover:text-(--ui-text) hover:bg-(--ui-hover) disabled:opacity-30';
 const schemeList = (project: PapercutProject): ColorScheme[] => {
   try { return validateColorSchemes((project as PapercutProject & { colorSchemes?: ColorScheme[] }).colorSchemes ?? []); } catch { return []; }
 };
@@ -192,39 +194,54 @@ export const PalettePanel: React.FC<PalettePanelProps> = ({ project, selectedLay
     <header className="sticky top-0 z-10 bg-(--ui-panel) flex border-b border-(--ui-border) shrink-0" role="tablist" aria-label="色彩面板功能">
       {([['scheme', '方案'], ['extract', '参考取色'], ['apply', '换色']] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} onClick={() => setPage(id)} className={`flex-1 py-2 border-b-2 ${page === id ? 'border-(--ui-accent) text-(--ui-text)' : 'border-transparent text-(--ui-muted) hover:bg-(--ui-hover)'}`}>{label}</button>)}
     </header>
-    <div className="p-3 overflow-y-auto min-h-0 space-y-3">
+    <div className="px-2 py-2 overflow-y-auto min-h-0 space-y-2">
       <div className="flex gap-1.5">
         <select aria-label="已有色彩方案" className={`${field} flex-1`} value={knownSchemes.some(s => s.id === draft.id) ? draft.id : ''} onChange={e => { const scheme = knownSchemes.find(s => s.id === e.target.value); if (scheme) chooseScheme(scheme); }}>
           <option value="">当前未保存方案</option><optgroup label="作品内">{saved.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
           <optgroup label="本机收藏">{library.filter(s => !saved.some(p => p.id === s.id)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
           <optgroup label="未保存草稿">{draftShelf.filter(s => !saved.some(p => p.id === s.id) && !library.some(p => p.id === s.id)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
         </select>
-        <button className={smallButton} title="新建色彩方案" aria-label="新建色彩方案" onClick={() => { rememberDraft(); setDraft(createColorScheme(['#FFFFFF'], '新色彩方案')); setSelected(null); setPage('scheme'); }}><Plus size={14} /></button>
+        <button className={smallButton} data-tip="新建色彩方案" aria-label="新建色彩方案" onClick={() => { rememberDraft(); setDraft(createColorScheme(['#FFFFFF'], '新色彩方案')); setSelected(null); setPage('scheme'); }}><Plus size={14} /></button>
       </div>
-      <div className="flex gap-1.5"><input aria-label="色彩方案名称" maxLength={120} className={`${field} flex-1`} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} /><button className={button} onClick={() => saveProject()} disabled={!dirty}>{dirty ? '保存到作品' : '已保存'}</button></div>
+      <div className="flex items-center gap-1">
+        <InlineName label="色彩方案名称" maxLength={120} className="min-w-0 flex-1 font-medium" value={draft.name} onCommit={name => setDraft(d => ({ ...d, name }))} />
+        <button className={`${smallButton} ${dirty ? 'text-(--ui-accent)' : ''}`} data-tip={dirty ? '保存到作品' : '已保存到作品'} aria-label={dirty ? '保存色彩方案到作品' : '色彩方案已保存'} onClick={() => saveProject()} disabled={!dirty}>{dirty ? <Save size={14} /> : <Check size={14} />}</button>
+      </div>
       {page === 'scheme' && <>
-        <div className="flex flex-wrap gap-1.5"><button className={button} disabled={!documentColors.length} onClick={() => { rememberDraft(); setDraft(createColorScheme(documentColors, `${project.name} · 用色`)); setMessage('已收集作品使用的图形颜色。'); }}>收集作品用色</button><button className={button} onClick={() => saveProject(true)}>另存变体</button><button className={button} onClick={saveLibrary}>收藏</button></div>
-        <div className="grid grid-cols-8 gap-1" aria-label="方案色卡">{draft.swatches.map(s => <button key={s.id} className={`aspect-square border ${selected === s.id ? 'border-(--ui-accent) outline-1 outline-(--ui-accent)' : 'border-black/20'}`} style={{ backgroundColor: showOriginal ? s.sourceHex : s.hex, filter: gray ? 'grayscale(1)' : undefined }} title={`${s.name} · ${s.hex}`} aria-label={`使用 ${s.name} ${s.hex}`} onClick={() => { setSelected(s.id); onPick(showOriginal ? s.sourceHex : s.hex); }} />)}</div>
-        <div className="flex justify-between gap-2 text-(--ui-muted)"><label className="flex items-center gap-1"><input type="checkbox" checked={gray} onChange={e => setGray(e.target.checked)} />灰度预览</label><label className="flex items-center gap-1"><input type="checkbox" checked={showOriginal} onChange={e => setShowOriginal(e.target.checked)} />显示参考原色</label></div>
-        <div className="flex justify-between items-center border-b border-(--ui-border) pb-1 text-(--ui-muted)"><span>参考原色 → 制作色</span><button className={smallButton} onClick={() => setDraft(d => ({ ...d, swatches: d.swatches.slice().sort((a, b) => colorLightness(b.hex) - colorLightness(a.hex)) }))}>按明度排序</button></div>
-        <div>{draft.swatches.map((s, index) => <div key={s.id} className={`py-2 border-b border-(--ui-border) ${selected === s.id ? 'border-l-2 border-l-(--ui-accent) pl-1.5' : ''}`}>
-          <div className="flex gap-1 items-center">
-            <button className="w-6 h-6 border border-black/20 shrink-0" style={{ backgroundColor: s.sourceHex }} title={`参考原色 ${s.sourceHex} · 点击使用`} aria-label={`使用参考原色 ${s.sourceHex}`} onClick={() => { setSelected(s.id); onPick(s.sourceHex); }} /><span className="text-(--ui-muted)">→</span>
-            <input type="color" aria-label={`${s.name} 制作色`} value={s.hex} className="w-7 h-6 p-0 border-0 bg-transparent shrink-0 cursor-pointer" onChange={e => editSwatch(s.id, { hex: e.target.value.toUpperCase() })} />
-            <input aria-label={`${s.name} 颜色值`} className={`${field} w-[70px] font-mono`} defaultValue={s.hex} key={s.hex} maxLength={7} onBlur={e => { const value = normalizeColor(e.target.value); if (value) editSwatch(s.id, { hex: value }); else e.target.value = s.hex; }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-            <input aria-label={`颜色 ${index + 1} 名称`} className={`${field} flex-1`} value={s.name} maxLength={80} onChange={e => editSwatch(s.id, { name: e.target.value })} />
+        <div className="flex items-center gap-0.5">
+          <button className={`${button} mr-auto`} disabled={!documentColors.length} onClick={() => { rememberDraft(); setDraft(createColorScheme(documentColors, `${project.name} · 用色`)); setMessage('已收集作品使用的图形颜色。'); }}>收集作品用色</button>
+          <button className={smallButton} data-tip="另存变体" aria-label="另存色彩方案变体" onClick={() => saveProject(true)}><CopyPlus size={13} /></button>
+          <button className={smallButton} data-tip="收藏到本机色卡库" aria-label="收藏色彩方案" onClick={saveLibrary}><Bookmark size={13} /></button>
+          <button className={`${smallButton} ${gray ? 'text-(--ui-accent)' : ''}`} data-tip="灰度预览" aria-label="灰度预览" aria-pressed={gray} onClick={() => setGray(v => !v)}><Contrast size={13} /></button>
+          <button className={`${smallButton} ${showOriginal ? 'text-(--ui-accent)' : ''}`} data-tip="显示参考原色" aria-label="显示参考原色" aria-pressed={showOriginal} onClick={() => setShowOriginal(v => !v)}><ScanEye size={13} /></button>
+          <button className={smallButton} data-tip="按明度排序" aria-label="按明度排序" onClick={() => setDraft(d => ({ ...d, swatches: d.swatches.slice().sort((a, b) => colorLightness(b.hex) - colorLightness(a.hex)) }))}><ArrowUpDown size={13} /></button>
+        </div>
+        <div className="flex items-center justify-between px-1 text-[10px] text-(--ui-muted)"><span>原色 → 制作色</span><span>{draft.swatches.length} 色</span></div>
+        <div aria-label="方案色卡">{draft.swatches.map((s, index) => <div key={s.id} className={`border-l-2 ${selected === s.id ? 'border-(--ui-accent)' : 'border-transparent'}`}>
+          <div className={`flex gap-1 items-center min-h-8 pl-1 ${selected === s.id ? 'bg-(--ui-hover)' : 'hover:bg-(--ui-hover)'}`} onClick={() => setSelected(s.id)}>
+            <button className="w-4 h-6 border border-black/15 shrink-0" style={{ backgroundColor: s.sourceHex, filter: gray ? 'grayscale(1)' : undefined }} data-tip={`参考原色 ${s.sourceHex}`} aria-label={`使用参考原色 ${s.sourceHex}`} onClick={() => { setSelected(s.id); onPick(s.sourceHex); }} />
+            <span className="text-[10px] text-(--ui-muted)">→</span>
+            <button className="w-6 h-6 border border-black/15 shrink-0" style={{ backgroundColor: showOriginal ? s.sourceHex : s.hex, filter: gray ? 'grayscale(1)' : undefined }} data-tip={`${showOriginal ? '参考原色' : '制作色'} ${showOriginal ? s.sourceHex : s.hex} · 点击使用`} aria-label={`使用 ${s.name} ${showOriginal ? s.sourceHex : s.hex}`} onClick={() => { setSelected(s.id); onPick(showOriginal ? s.sourceHex : s.hex); }} />
+            <InlineName label={`颜色 ${index + 1} 名称`} className="min-w-0 flex-1 px-1" value={s.name} maxLength={80} onCommit={name => editSwatch(s.id, { name })} />
+            <span className="max-w-14 truncate text-[10px] text-(--ui-muted)">{PALETTE_ROLES.find(r => r.id === s.role)?.name ?? '其他'}</span>
+            <button className={`${smallButton} ${s.locked ? 'text-(--ui-accent)' : 'opacity-50'}`} data-tip={s.locked ? '解除锁定 · 提取时可替换' : '锁定 · 提取时保留'} aria-label={`${s.name} ${s.locked ? '解除锁定' : '锁定'}`} aria-pressed={s.locked} onClick={e => { e.stopPropagation(); editSwatch(s.id, { locked: !s.locked }); }}>{s.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
           </div>
-          <div className="mt-1 flex gap-1 items-center">
-            <select aria-label={`${s.name} 用途`} className={`${field} flex-1`} value={PALETTE_ROLES.some(r => r.id === s.role) ? s.role : 'other'} onChange={e => editSwatch(s.id, { role: e.target.value })}>{PALETTE_ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-            <span className="w-9 text-right text-(--ui-muted) font-mono">{s.weight ? `${Math.round(s.weight * 100)}%` : '—'}</span>
-            <button className={smallButton} title={s.locked ? '解除锁定：重新提取时可替换' : '锁定：重新提取时保留'} aria-label={`${s.name} ${s.locked ? '解除锁定' : '锁定'}`} aria-pressed={s.locked} onClick={() => editSwatch(s.id, { locked: !s.locked })}>{s.locked ? <Lock size={12} /> : <Unlock size={12} />}</button>
-            <button className={smallButton} aria-label={`${s.name} 上移`} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={12} /></button><button className={smallButton} aria-label={`${s.name} 下移`} disabled={index === draft.swatches.length - 1} onClick={() => move(index, 1)}><ArrowDown size={12} /></button>
-            <button className={smallButton} aria-label={`删除 ${s.name}`} disabled={draft.swatches.length <= 1} onClick={() => setDraft(d => ({ ...d, swatches: d.swatches.filter(c => c.id !== s.id) }))}><Trash2 size={12} /></button>
-          </div>
+          {selected === s.id && <div className="flex gap-1 items-center pl-2 py-1">
+            <input type="color" aria-label={`${s.name} 制作色`} value={s.hex} className="w-6 h-6 p-0 border-0 bg-transparent shrink-0 cursor-pointer" onChange={e => editSwatch(s.id, { hex: e.target.value.toUpperCase() })} />
+            <InlineName label={`${s.name} 颜色值`} className="w-[68px] shrink-0 font-mono text-[10px]" value={s.hex} maxLength={7} onCommit={hex => { const value = normalizeColor(hex); if (value) editSwatch(s.id, { hex: value }); else setMessage('颜色值须为 #RRGGBB 格式。'); }} />
+            <select aria-label={`${s.name} 用途`} className={`${field} flex-1 !text-[10px]`} value={PALETTE_ROLES.some(r => r.id === s.role) ? s.role : 'other'} onChange={e => editSwatch(s.id, { role: e.target.value })}>{PALETTE_ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+            <button className={smallButton} data-tip="上移颜色" aria-label={`${s.name} 上移`} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={12} /></button>
+            <button className={smallButton} data-tip="下移颜色" aria-label={`${s.name} 下移`} disabled={index === draft.swatches.length - 1} onClick={() => move(index, 1)}><ArrowDown size={12} /></button>
+            <button className={smallButton} data-tip="删除颜色" aria-label={`删除 ${s.name}`} disabled={draft.swatches.length <= 1} onClick={() => { setDraft(d => ({ ...d, swatches: d.swatches.filter(c => c.id !== s.id) })); setSelected(null); }}><Trash2 size={12} /></button>
+          </div>}
         </div>)}</div>
-        <button className={`${button} flex gap-1 items-center`} disabled={draft.swatches.length >= 64} onClick={() => setDraft(d => ({ ...d, swatches: [...d.swatches, createColorScheme(['#FFFFFF']).swatches[0]] }))}><Plus size={12} />添加颜色</button>
-        <label className="block text-(--ui-muted)">参考来源<input aria-label="色彩方案参考来源" placeholder="地区、年代、图片来源等" maxLength={400} className={`${field} block w-full mt-1`} value={draft.source ?? ''} onChange={e => setDraft(d => ({ ...d, source: e.target.value || undefined }))} /></label>
-        <details className="border-t border-(--ui-border) pt-2"><summary className="cursor-pointer text-(--ui-muted)">导入、导出与管理</summary><div className="flex flex-wrap gap-1.5 mt-2">
+        <div className="flex items-center justify-between">
+          <button className={`${button} flex gap-1 items-center`} disabled={draft.swatches.length >= 64} onClick={() => { const swatch = createColorScheme(['#FFFFFF']).swatches[0]; setDraft(d => ({ ...d, swatches: [...d.swatches, swatch] })); setSelected(swatch.id); }}><Plus size={12} />添加颜色</button>
+          {selectedSwatch?.weight ? <span className="text-[10px] tabular-nums text-(--ui-muted)">原图占比 {Math.round(selectedSwatch.weight * 100)}%</span> : null}
+        </div>
+        <details className="pt-1"><summary className="cursor-pointer text-(--ui-muted)">来源、导入与导出</summary>
+          <div className="flex items-start gap-2 mt-2 text-(--ui-muted)"><span className="shrink-0 pt-1">参考来源</span><InlineName label="色彩方案参考来源" placeholder="地区、年代、图片来源…" allowEmpty maxLength={400} className="min-w-0 flex-1" value={draft.source ?? ''} onCommit={source => setDraft(d => ({ ...d, source: source || undefined }))} /></div>
+          <div className="flex flex-wrap gap-1.5 mt-2">
           <button className={button} onClick={() => paletteFile.current?.click()}><Upload size={12} className="inline mr-1" />JSON / GPL</button><button className={button} onClick={() => download(JSON.stringify({ version: 1, schemes: [draft] }, null, 2), `${draft.name}.json`)}><Download size={12} className="inline mr-1" />JSON</button><button className={button} onClick={() => download(exportGpl(draft), `${draft.name}.gpl`, 'text/plain')}>GPL</button>
           <button className={button} disabled={!saved.some(s => s.id === draft.id)} onClick={() => { onProjectPalettes(saved.filter(s => s.id !== draft.id)); setMessage('已从作品移除，当前草稿仍可保存。'); }}>从作品移除</button>
           <button className={button} disabled={!library.some(s => s.id === draft.id)} onClick={() => { if (store(library.filter(s => s.id !== draft.id))) setMessage('已取消本机收藏。'); }}>取消收藏</button>
@@ -234,16 +251,17 @@ export const PalettePanel: React.FC<PalettePanelProps> = ({ project, selectedLay
         <div className="flex gap-1.5"><button className={button} onClick={() => imageFile.current?.click()}>导入参考图片</button><button className={button} disabled={!project.reference?.src} onClick={() => project.reference && loadImage(project.reference.src, '作品参考图')}>使用作品参考图</button></div>
         {Object.values(project.fabricAssets??{}).length>0&&<select aria-label="从布料素材取色" className={`${field} w-full`} defaultValue="" onChange={e=>{const asset=project.fabricAssets?.[e.target.value];if(asset)loadImage(asset.src,asset.name);}}><option value="">从布料素材取色…</option>{Object.values(project.fabricAssets??{}).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>}
         {pixels && <>
-          <div className="flex gap-1" role="group" aria-label="参考图操作">{([['crop', '框选区域'], ['pick', '补取颜色'], ['exclude', '排除颜色']] as const).map(([id, text]) => <button key={id} className={`${button} flex-1 ${imageMode === id ? 'border-(--ui-accent)' : ''}`} aria-pressed={imageMode === id} onClick={() => setImageMode(id)}>{text}</button>)}</div>
-          <canvas ref={preview} className="w-full block touch-none border border-(--ui-border)" aria-label="参考图取色区域" style={{ cursor: imageMode === 'crop' ? 'crosshair' : 'copy' }} onPointerDown={e => {
+          <div className="flex gap-1" role="group" aria-label="参考图操作">{([['crop', '框选区域'], ['pick', '补取颜色'], ['exclude', '排除颜色']] as const).map(([id, text]) => <button key={id} className={`${button} flex-1 border-b-2 ${imageMode === id ? 'border-(--ui-accent) text-(--ui-accent)' : 'border-transparent'}`} aria-pressed={imageMode === id} onClick={() => setImageMode(id)}>{text}</button>)}</div>
+          <canvas ref={preview} className="w-full block touch-none" aria-label="参考图取色区域" style={{ cursor: imageMode === 'crop' ? 'crosshair' : 'copy' }} onPointerDown={e => {
             if (e.button !== 0) return; const point = imagePoint(e); if (imageMode !== 'crop') { pickImage(point); return; }
             e.currentTarget.setPointerCapture(e.pointerId); cropStart.current = point; setCrop({ ...point, width: 0, height: 0 });
           }} onPointerMove={e => { if (!cropStart.current) return; const point = imagePoint(e), start = cropStart.current; setCrop({ x: Math.min(point.x, start.x), y: Math.min(point.y, start.y), width: Math.abs(point.x - start.x), height: Math.abs(point.y - start.y) }); }} onPointerUp={e => { if (!cropStart.current) return; cropStart.current = null; if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); setCrop(c => c && (c.width < 2 || c.height < 2) ? null : c); }} onPointerCancel={() => { cropStart.current = null; setCrop(null); }} />
           <div className="flex justify-between text-(--ui-muted)"><span>{crop ? `局部 ${Math.round(crop.width)} × ${Math.round(crop.height)}` : '整张图片'} · {imageName}</span><button onClick={() => setCrop(null)} className="hover:text-(--ui-text)">重置区域</button></div>
           {excluded.length > 0 && <div className="flex flex-wrap gap-1 items-center"><span className="text-(--ui-muted)">排除</span>{excluded.map(c => <button key={c} title={`移除排除色 ${c}`} aria-label={`移除排除色 ${c}`} className="w-5 h-5 border border-(--ui-border)" style={{ background: c }} onClick={() => setExcluded(d => d.filter(v => v !== c))} />)}</div>}
-          <label className="flex gap-2 items-center"><span className="w-16">颜色数量</span><input type="range" aria-label="提取颜色数量" min={4} max={16} value={colorCount} className="flex-1" onChange={e => setColorCount(Number(e.target.value))} /><span className="w-5 font-mono">{colorCount}</span></label>
-          <label className="flex gap-2 items-center"><span className="w-16">相近色合并</span><input type="range" aria-label="相近色合并程度" min={0} max={20} value={mergeDistance} className="flex-1" onChange={e => setMergeDistance(Number(e.target.value))} /><span className="w-5 font-mono">{mergeDistance}</span></label>
-          <button className={`${button} w-full border-(--ui-accent)`} onClick={extract}>从区域提取 · 保留锁定色</button><p className="text-(--ui-muted) leading-relaxed">提取的是照片颜色；在“方案”中整理制作色与用途。框选可以避开背景，排除色会同时排除相近色。</p>
+          <div className="flex items-center justify-between"><span>颜色数量</span><WheelNumber variant="bare" tip="提取颜色数量" min={4} max={16} step={1} dragStep={1} value={colorCount} onChange={setColorCount} /></div>
+          <div className="flex items-center justify-between"><span>相近色合并</span><WheelNumber variant="bare" tip="相近色合并程度" min={0} max={20} step={1} dragStep={1} value={mergeDistance} onChange={setMergeDistance} /></div>
+          <button className={`${button} w-full text-(--ui-accent) border-t border-(--ui-border) pt-2`} onClick={extract}>从区域提取 · 保留锁定色</button>
+          <details className="text-(--ui-muted)"><summary className="cursor-pointer">取色提示</summary><p className="pt-1 leading-relaxed">框选避开背景，排除色会同时排除相近色。提取后在方案中整理制作色与用途。</p></details>
         </>}
         {!pixels && <p className="text-(--ui-muted) leading-relaxed">从照片或插画框选服饰、布料或装饰区域，再提取颜色。小面积的绣线和强调色可以手动补取。</p>}
       </>}
@@ -255,7 +273,7 @@ export const PalettePanel: React.FC<PalettePanelProps> = ({ project, selectedLay
         <div className="border-y border-(--ui-border)">{mappingRows.map(([source, target]) => <div className="flex items-center gap-2 py-1.5" key={source}><span className="w-5 h-5 border border-black/20" style={{ background: source }} /><span className="font-mono text-[10px] w-[58px]">{source}</span><span>→</span><span className="w-5 h-5 border border-black/20" style={{ background: target }} /><select aria-label={`${source} 替换为`} className={`${field} flex-1`} value={target} onChange={e => setMapping(m => ({ ...m, [source]: e.target.value }))}><option value={source}>保持原色</option>{draft.swatches.filter(s => s.hex !== source).map(s => <option value={s.hex} key={s.id}>{s.name} · {s.hex}</option>)}</select></div>)}
           {!mappingRows.length && <p className="py-3 text-(--ui-muted)">{scope === 'selection' && !selectedLayerIds.length ? '先选择需要换色的图层。' : '没有匹配的原色；可以选择按相近色映射。'}</p>}
         </div>
-        <button className={`${button} w-full border-(--ui-accent)`} disabled={!Object.keys(replacements).length || (scope === 'selection' && !selectedLayerIds.length)} onClick={() => { onApply(replacements, scope); setMessage(`已应用 ${Object.keys(replacements).length} 项颜色映射。`); }}>应用到{scope === 'selection' ? '选中图层' : '整个作品'} · {Object.keys(replacements).length} 色</button>
+        <button className={`${button} w-full text-(--ui-accent)`} disabled={!Object.keys(replacements).length || (scope === 'selection' && !selectedLayerIds.length)} onClick={() => { onApply(replacements, scope); setMessage(`已应用 ${Object.keys(replacements).length} 项颜色映射。`); }}>应用到{scope === 'selection' ? '选中图层' : '整个作品'} · {Object.keys(replacements).length} 色</button>
       </>}
       {message && <p role="status" className="border-t border-(--ui-border) pt-2 text-(--ui-muted) leading-relaxed">{message}</p>}
     </div>
