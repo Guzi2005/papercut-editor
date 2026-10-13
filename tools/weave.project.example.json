@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "my-project",
+  "name": "我的项目",
+  "root": ".",
+  "assets": [
+    {
+      "id": "courtyard",
+      "name": "庭院",
+      "documentId": "courtyard-art",
+      "width": 1280,
+      "height": 720,
+      "source": "art_sources/courtyard.weave.json",
+      "svg": "assets/courtyard.svg"
+    }
+  ]
+}

@@ -82,22 +82,15 @@ export function computeDepthTable(project: PapercutProject): {
   slots: DepthSlot[];
   zOf: Record<string, number>;
 } {
-  const maxGroup = Math.max(1, ...project.groups.map((g) => g.layerIds.length));
-  const stride = Math.max(10, Math.ceil((maxGroup + 1) / 10) * 10);
   const slots: DepthSlot[] = [];
   const zOf: Record<string, number> = {};
-  project.rootOrder.forEach((entry, idx) => {
-    const zBase = idx * stride;
-    if (entry.type === 'group') {
-      const grp = project.groups.find((g) => g.id === entry.id);
-      if (!grp) return;
-      grp.layerIds.forEach((lid, j) => (zOf[lid] = zBase + j));
-      slots.push({ id: grp.id, name: grp.name, zBase, layerIds: [...grp.layerIds] });
-    } else if (project.layers[entry.id]) {
-      zOf[entry.id] = zBase;
-      slots.push({ id: entry.id, name: project.layers[entry.id].name, zBase, layerIds: [entry.id] });
-    }
-  });
+  let z = 0;
+  for (const entry of project.rootOrder) {
+    const group = entry.type === 'group' ? project.groups.find(g => g.id === entry.id) : null;
+    const ids = (group ? group.layerIds : entry.type === 'layer' ? [entry.id] : []).filter(id => project.layers[id]);
+    slots.push({id:entry.id,name:group?.name || project.layers[entry.id]?.name || entry.id,zBase:z,layerIds:ids});
+    for (const id of ids) zOf[id] = z++;
+  }
   return { slots, zOf };
 }
 

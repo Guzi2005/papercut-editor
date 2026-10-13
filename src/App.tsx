@@ -1,3 +1,5 @@
+import { reorderStack, flatStack } from './utils/layerStack';
+import { GameAssetBridge } from './components/GameAssetBridge';
 import { StampWorkbench } from './components/StampWorkbench';
 import {createStampDocument,stampFromDocument} from './utils/stampDocument';
 import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS, type StampDefinition, type StampSettings } from './utils/stamps';
@@ -89,7 +91,7 @@ function firstLayerId(p: PapercutProject): string {
 }
 
 function makeDocument(id: string, name: string, project: PapercutProject, zoom = 0.9): DocumentItem {
-  const p = normalizeProject(project);
+  const p = flatStack(normalizeProject(project));
   return { id, name, project: p, history: [p], historyIndex: 0, activeLayerId: firstLayerId(p), zoom };
 }
 
@@ -202,7 +204,8 @@ export default function App() {
       if (snap) {
         const docs = snap.documents.map((d) => ({
           ...d,
-          history: [d.project],
+          project: flatStack(d.project),
+          history: [flatStack(d.project)],
           historyIndex: 0,
         }));
         setDocuments(docs);
@@ -439,6 +442,7 @@ export default function App() {
     const doc = makeDocument(`doc_${Date.now()}`, name || proj.name, proj);
     setDocuments((prev) => [...prev, doc]);
     setActiveDocId(doc.id);
+    return doc.id; // GameAssetBridge
   };
 
   const handleNewDocument = (opts: BlankCanvasOptions) => {
@@ -769,23 +773,7 @@ export default function App() {
     targetId: string,
     position: 'above' | 'below' = 'above'
   ) => {
-    if (sourceId === targetId) return;
-    const rootOrder = project.rootOrder.filter((r) => !(r.type === 'layer' && r.id === sourceId));
-    const groups = project.groups.map((g) => ({
-      ...g,
-      layerIds: g.layerIds.filter((id) => id !== sourceId),
-    }));
-
-    const targetGroup = groups.find((g) => g.layerIds.includes(targetId));
-    if (targetGroup) {
-      const idx = targetGroup.layerIds.indexOf(targetId);
-      targetGroup.layerIds.splice(position === 'above' ? idx + 1 : idx, 0, sourceId);
-    } else {
-      const idx = rootOrder.findIndex((r) => r.type === 'layer' && r.id === targetId);
-      if (idx === -1) rootOrder.push({ type: 'layer', id: sourceId });
-      else rootOrder.splice(position === 'above' ? idx + 1 : idx, 0, { type: 'layer', id: sourceId });
-    }
-    pushHistory({ ...project, rootOrder, groups });
+    pushHistory(reorderStack(project, sourceId, targetId, position));
   };
 
   const handleMoveLayerToGroup = (layerId: string, groupId: string) => {
@@ -830,27 +818,11 @@ export default function App() {
       drawings: [],
     };
 
-    let groups = project.groups;
-    let rootOrder = project.rootOrder;
-    const targetGroupId = groupId ?? (activeLayerId ? findGroupOfLayer(project, activeLayerId)?.id : undefined);
-
-    if (targetGroupId) {
-      groups = groups.map((g) => {
-        if (g.id !== targetGroupId) return g;
-        const ids = [...g.layerIds];
-        const at = activeLayerId ? ids.indexOf(activeLayerId) : -1;
-        if (!groupId && at !== -1) ids.splice(at + 1, 0, newLayerId);
-        else ids.push(newLayerId);
-        return { ...g, layerIds: ids };
-      });
-    } else if (groups[0]) {
-      // Prefer an existing depth group over a root-level orphan when creating into an empty project.
-      groups = groups.map((g, i) => (i === 0 ? { ...g, layerIds: [...g.layerIds, newLayerId] } : g));
-    } else {
-      rootOrder = [...rootOrder, { type: 'layer', id: newLayerId }];
-    }
-
-    pushHistory({ ...project, layers: { ...project.layers, [newLayerId]: newLayer }, groups, rootOrder });
+    const flat = flatStack(project);
+    const rootOrder = [...flat.rootOrder];
+    const at = activeLayerId ? rootOrder.findIndex(r => r.id === activeLayerId) : -1;
+    rootOrder.splice(at < 0 ? rootOrder.length : at + 1, 0, {type:'layer',id:newLayerId});
+    pushHistory({...flat,layers:{...flat.layers,[newLayerId]:newLayer},rootOrder});
     handleSelectLayer(newLayerId);
     setSelectedLayerIds([newLayerId]);
     if (doodle) setCurrentTool('hand_draw');
@@ -1290,7 +1262,7 @@ export default function App() {
     name: d.name,
     width: d.project.width,
     height: d.project.height,
-    project: d.project,
+    project: flatStack(d.project),
   }));
 
   return (
@@ -1310,7 +1282,7 @@ export default function App() {
         setImageDrop({ file, preview });
       }}
     >
-      <TooltipLayer />
+      <GameAssetBridge project={project} documentId={activeDocId} onOpen={openProjectAsDocument} /><TooltipLayer />
       {imageDrop && (
         <div
           className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"

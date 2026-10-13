@@ -16,7 +16,7 @@ import {
 } from '../types/papercut';
 import { getPathBoundingBox } from '../utils/bezierMath';
 import { renderLayerMarkup, BASE_BLOCK } from '../utils/layerSvg';
-import { computeDepthTable, findGroupOfLayer, findItemOfLayer, blocksOfColor, recolorLayer, removeColorBlocks } from '../utils/projectOps';
+import { computeDepthTable, flattenLayerIds, findGroupOfLayer, findItemOfLayer, blocksOfColor, recolorLayer, removeColorBlocks } from '../utils/projectOps';
 import {
   Plus,
   Eye,
@@ -355,7 +355,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   useEffect(() => {
     if (!activeLayerId) return;
     const grp = findGroupOfLayer(project, activeLayerId);
-    if (grp && collapsedGroupIds[grp.id]) {
+    if (grp && (collapsedGroupIds[grp.id] ?? grp.collapsed)) {
       setCollapsedGroupIds((prev) => ({ ...prev, [grp.id]: false }));
     }
     const item = findItemOfLayer(project, activeLayerId);
@@ -484,6 +484,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         }}
         onDragEnd={clearDrag}
         data-row-layer={layer.id}
+        style={{contentVisibility:"auto",containIntrinsicSize:"auto 72px"}}
         onClick={(e) => clickRow(e, layer.id)}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -634,7 +635,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   };
 
   const renderGroup = (group: LayerGroup) => {
-    const isCollapsed = !!collapsedGroupIds[group.id];
+    const isCollapsed = collapsedGroupIds[group.id] ?? group.collapsed;
     const slot = slots.find((s) => s.id === group.id);
     const hint = dropHint?.id === group.id ? dropHint.position : null;
     return (
@@ -668,7 +669,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             clearDrag();
           }}
           onDragEnd={clearDrag}
-          onClick={() => setCollapsedGroupIds((prev) => ({ ...prev, [group.id]: !prev[group.id] }))}
+          onClick={() => setCollapsedGroupIds((prev) => ({ ...prev, [group.id]: !(prev[group.id] ?? group.collapsed) }))}
           onContextMenu={(e) => {
             e.preventDefault();
             setGroupMenu({ x: e.clientX, y: e.clientY, groupId: group.id });
@@ -760,24 +761,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     );
   };
 
+  const stackIds = flattenLayerIds(project);
   const depthTab = (
-    <div className="space-y-1.5">
-      {rootOrder
-        .slice()
-        .reverse()
-        .map((entry) => {
-          if (entry.type === 'group') {
-            const g = groups.find((gg) => gg.id === entry.id);
-            return g ? renderGroup(g) : null;
-          }
-          const l = layers[entry.id];
-          return l ? renderLayerRow(l, 'depth') : null;
-        })}
+    <div className="space-y-1" aria-label="图层顺序：上方在前">
+      <p className="text-[10px] text-(--ui-muted) px-2 py-1">上方在前 · 拖动部件调整遮挡；物件归属不变</p>
+      {stackIds.slice().reverse().map(id => renderLayerRow(layers[id], 'depth'))}
     </div>
   );
 
   // ---------- Items tab ----------
-  const unassigned = Object.keys(layers).filter((id) => !findItemOfLayer(project, id));
+  const unassigned = stackIds.slice().reverse().filter((id) => !findItemOfLayer(project, id));
 
   const itemsTab = (
     <div className="space-y-2">
@@ -794,7 +787,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       </div>
 
       {items.map((item) => {
-        const expanded = expandedItemIds[item.id] ?? true;
+        const expanded = expandedItemIds[item.id] ?? false;
         const isSelectedItem =
           item.partIds.length === selectedLayerIds.length && item.partIds.every((p) => selectedSet.has(p));
         const partsByDepth = item.partIds
@@ -965,9 +958,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       })}
 
       {unassigned.length > 0 && (
-        <div className="text-[10px] text-(--ui-faint) px-1" data-tip="未归组的纸片导出时合并为「场景杂项」">
-          {unassigned.length} 张纸片未归组
-        </div>
+        <details className="rounded-xl border border-(--ui-border) p-2">
+          <summary className="cursor-pointer">未归属物件（{unassigned.length}）</summary>
+          {unassigned.map(id => renderLayerRow(layers[id], 'items'))}
+        </details>
       )}
     </div>
   );
@@ -1186,7 +1180,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   /** Neighbour in the same stack (group or root), so touch users can reorder without drag and drop. */
   const neighbour = (layerId: string, dir: 1 | -1): string | null => {
     const grp = groups.find((g) => g.layerIds.includes(layerId));
-    const ids = grp ? grp.layerIds : rootOrder.filter((r) => r.type === 'layer').map((r) => r.id);
+    const ids = stackIds;
     const i = ids.indexOf(layerId);
     return ids[i + dir] ?? null;
   };
@@ -1208,33 +1202,27 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           resizing ? 'bg-(--ui-accent)/60' : 'hover:bg-(--ui-accent)/35'
         }`}
       />
-      <div className="h-11 px-2 border-b border-(--ui-divider) flex items-center gap-1">
+      <div className="min-h-11 py-1 px-2 border-b border-(--ui-divider) flex flex-wrap items-center gap-1">
         {([
-          { id: 'depth', label: '深度', icon: LayersIcon },
-          { id: 'items', label: `物件（${items.length}）`, icon: Box },
+          { id: 'depth', label: '图层', icon: LayersIcon },
+          { id: 'items', label: `Item（${items.length}）`, icon: Box },
           { id: 'style', label: '风格', icon: Palette },
         ] as const).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            data-tip={t.label}
-            className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+            data-tip={t.label} aria-label={t.label} aria-pressed={tab === t.id}
+            className={`relative px-2 h-8 flex items-center gap-1 justify-center rounded-lg transition-colors ${
               tab === t.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
             }`}
           >
-            <t.icon className="w-4 h-4" />
+            <t.icon className="w-4 h-4 shrink-0" /><span className="text-[10px] whitespace-nowrap">{t.label}</span>
           </button>
         ))}
         <div className="flex-1" />
         {tab === 'depth' && (
           <>
-            <button
-              onClick={onAddGroup}
-              className="p-1.5 rounded-lg text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)"
-              data-tip="新建深度层 (图层组)"
-            >
-              <FolderPlus className="w-4 h-4" />
-            </button>
+
             <button
               onClick={() => onAddLayer(undefined, 'doodle')}
               className="p-1.5 rounded-lg text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)"
