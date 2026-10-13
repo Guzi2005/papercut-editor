@@ -1,3 +1,5 @@
+import {transformLiveStrokes,normalizeLiveStamps,detachChangedLiveStamps} from './liveStamps';
+import {normalizeOutfits,isWardrobeCategory} from './wardrobe';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,6 +8,8 @@
 import { Layer, PapercutItem, PapercutProject } from '../types/papercut';
 import { Transform, applyTransform, linearPart, matrixScale, transformPathD } from './pathTransform';
 import { BASE_BLOCK } from './layerSvg';
+import { normalizeFabricAsset, normalizeFabricFill, transformFabric } from './fabric';
+import { validateColorSchemes } from './palettes';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -22,6 +26,8 @@ export function transformLayer(layer: Layer, m: Transform): Layer {
   });
   return {
     ...layer,
+    fabric: layer.fabric ? transformFabric(layer.fabric, m) : undefined,
+    liveStamps:transformLiveStrokes(layer,m),
     baseShape: {
       ...layer.baseShape,
       type: layer.baseShape.type === 'full' ? 'freeform' : layer.baseShape.type,
@@ -95,8 +101,25 @@ export function computeDepthTable(project: PapercutProject): {
 }
 
 /** Drops dangling references and fills defaults for projects authored before items existed. */
-export function normalizeProject(p: PapercutProject): PapercutProject {
-  const layers = p.layers || {};
+export function normalizeProject(p: PapercutProject, recoverMetadata = false): PapercutProject {
+  let colorSchemes = p.colorSchemes;
+  if(colorSchemes!==undefined){
+    try{colorSchemes=validateColorSchemes(colorSchemes);}catch(error){
+      if(!recoverMetadata)throw error;
+      // A damaged optional scheme must not prevent every drawing in the workspace from opening.
+      colorSchemes=Array.isArray(colorSchemes)?colorSchemes.slice(0,100).flatMap(scheme=>{try{return validateColorSchemes([scheme]);}catch{return [];}}):[];
+    }
+  }
+  const fabricAssets = Object.fromEntries(Object.entries(p.fabricAssets || {}).flatMap(([id, value]) => {
+    const asset = normalizeFabricAsset(value);
+    return asset && asset.id === id ? [[id, asset]] : [];
+  }));
+  const layers = Object.fromEntries(Object.entries(p.layers || {}).map(([id, layer]) => {
+    const next=layer.liveStamps?detachChangedLiveStamps({...layer,liveStamps:normalizeLiveStamps(layer.liveStamps)}):layer;
+    if (!layer.fabric) return [id, next];
+    const fabric = normalizeFabricFill(layer.fabric);
+    return [id, { ...next, fabric: fabric && fabricAssets[fabric.assetId] ? fabric : undefined }];
+  }));
   const groups = (p.groups || []).map((g) => ({
     ...g,
     layerIds: g.layerIds.filter((id) => layers[id]),
@@ -109,14 +132,18 @@ export function normalizeProject(p: PapercutProject): PapercutProject {
       ...it,
       partIds: it.partIds.filter((id) => layers[id]),
       sockets: it.sockets || [],
+      ...(it.wardrobeCategory!==undefined?{wardrobeCategory:isWardrobeCategory(it.wardrobeCategory)?it.wardrobeCategory:undefined}:{}),
     }))
     .filter((it) => it.partIds.length > 0);
   return {
     ...p,
     layers,
+    fabricAssets,
+    colorSchemes,
     groups,
     rootOrder,
     items,
+    outfits:p.outfits?normalizeOutfits(p.outfits,items):undefined,
     shadowStrength: p.shadowStrength ?? 0.5,
   };
 }
@@ -154,6 +181,7 @@ export function transformBlocks(layer: Layer, ids: string[], m: Transform): Laye
   return {
     ...layer,
     baseShape: base ? moved.baseShape : layer.baseShape,
+    fabric: base ? moved.fabric : layer.fabric,
     cutouts: pick(layer.cutouts, moved.cutouts),
     positiveElements: pick(layer.positiveElements, moved.positiveElements),
     drawings: layer.drawings && moved.drawings ? pick(layer.drawings, moved.drawings) : layer.drawings,

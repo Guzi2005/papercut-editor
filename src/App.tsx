@@ -1,3 +1,12 @@
+import {attachLiveStampStroke,detachChangedLiveStamps,regenerateLiveStampLayer,expandLiveStampStroke,type LiveStampStroke} from './utils/liveStamps';
+import {createWardrobeTemplate,assignWardrobeCategory} from './utils/wardrobe';
+import {PalettePanel} from './components/PalettePanel';
+import {FabricPanel} from './components/FabricPanel';
+import {SaveStampDialog} from './components/SaveStampDialog';
+import {applySchemeColors} from './utils/schemeApply';
+import {fitFabricTransform} from './utils/fabric';
+import {layerContent} from './utils/layerContent';
+import type {FabricAsset,FabricFill} from './types/papercut';
 import { reorderStack, flatStack } from './utils/layerStack';
 import { GameAssetBridge } from './components/GameAssetBridge';
 import { StampWorkbench } from './components/StampWorkbench';
@@ -134,7 +143,14 @@ export default function App() {
   const [stampOpen,setStampOpen]=useState(false);
   const [stampEdit,setStampEdit]=useState<{docId:string;returnId:string;definition:StampDefinition}|null>(null);
   const [stampEditMessage,setStampEditMessage]=useState('');
-  const selectTool=(tool:ToolType)=>{setCurrentTool(tool);if(tool==='stamp')setStampOpen(true);};
+  const [liveStampEdit,setLiveStampEdit]=useState<{layerId:string;strokeId:string}|null>(null);
+  const [liveStampPath,setLiveStampPath]=useState<{layerId:string;strokeId:string}|null>(null);
+  const [panelRequest,setPanelRequest]=useState<{tab:'materials'|'colors';materialTab?:'stamp'|'fabric'|'outfit';key:number}>();
+  const [isSaveStampOpen,setIsSaveStampOpen]=useState(false);
+  const [fabricAdjust,setFabricAdjust]=useState(false);
+  const [selectedBlocks,setSelectedBlocks]=useState<BlockSelection>({});
+  const openMaterials=(materialTab:'stamp'|'fabric'|'outfit'='stamp')=>{setPanelRequest({tab:'materials',materialTab,key:Date.now()});setPanelOpen(true);};
+  const selectTool=(tool:ToolType)=>{setCurrentTool(tool);setFabricAdjust(false);setLiveStampPath(null);if(tool==='stamp')openMaterials();};
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const toolMounted = useRef(false);
   useEffect(() => {
@@ -182,6 +198,14 @@ export default function App() {
   const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
   const compact = useMediaQuery(COMPACT_QUERY);
   const [panelOpen, setPanelOpen] = useState(false);
+  useEffect(()=>{
+    setFabricAdjust(false);
+    setLiveStampPath(null);
+    setLiveStampEdit(null);
+    setStampOpen(false);
+    setIsSaveStampOpen(false);
+    setSelectedBlocks({});
+  },[activeDocId]);
   const [fitSignal, setFitSignal] = useState(0);
   const lastFitZoomRef = useRef<number | null>(null);
 
@@ -360,6 +384,7 @@ export default function App() {
 
   const pushHistory = useCallback(
     (newProject: PapercutProject) => {
+      newProject={...newProject,layers:Object.fromEntries(Object.entries(newProject.layers).map(([id,layer])=>[id,detachChangedLiveStamps(layer)]))};
       setDocuments((prevDocs) =>
         prevDocs.map((doc) => {
           if (doc.id !== activeDocId) return doc;
@@ -462,10 +487,10 @@ export default function App() {
     setIsNewCanvasOpen(false);
   };
 
-  const startStampEdit=()=>{
+  const startStampEdit=(definition=stampDefinition)=>{
     if(stampEdit){setActiveDocId(stampEdit.docId);return;}
-    const doc=makeDocument(newId('motif_doc'),`图章原稿 · ${stampDefinition.name}`,createStampDocument(stampDefinition),1.3);
-    setStampEdit({docId:doc.id,returnId:activeDocId,definition:structuredClone(stampDefinition)});
+    const doc=makeDocument(newId('motif_doc'),`图章原稿 · ${definition.name}`,createStampDocument(definition),1.3);
+    setStampEdit({docId:doc.id,returnId:activeDocId,definition:structuredClone(definition)});
     setDocuments(d=>[...d,doc]);setActiveDocId(doc.id);setSelectedLayerIds([doc.activeLayerId]);
     setCurrentTool('select');setBrushSettings(s=>({...s,mode:'positive',brushColor:'#D90B20'}));setStampOpen(false);setStampEditMessage('');
   };
@@ -656,6 +681,31 @@ export default function App() {
     };
   }, []);
 
+  const handleApplyScheme=(mapping:Record<string,string>,scope:'selection'|'document')=>{
+    const ids=scope==='document'?Object.keys(project.layers):selectedLayerIds;
+    if(ids.length)pushHistory(applySchemeColors(project,mapping,ids));
+  };
+  const handleUseFabric=(asset:FabricAsset)=>{
+    const layer=project.layers[activeLayerId];
+    if(layer&&(layer.locked||findGroupOfLayer(project,layer.id)?.locked))return;
+    const w=Math.min(320,project.width*.6),h=Math.min(w*asset.height/asset.width,project.height*.8),x=(project.width-w)/2,y=(project.height-h)/2;
+    const bounds=layer&&layer.kind!=='doodle'&&layer.baseShape.d?layerContent({...layer,drawings:[],positiveElements:[]}).bounds:null;
+    if(layer&&layer.kind!=='doodle'){
+      const baseShape=bounds?layer.baseShape:{type:'rect' as const,d:`M ${x} ${y} h ${w} v ${h} h ${-w} Z`};
+      pushHistory({...project,layers:{...project.layers,[layer.id]:{...layer,baseShape,fabric:{assetId:asset.id,transform:fitFabricTransform(asset,bounds??{x,y,width:w,height:h}),repeat:'single',opacity:1}}}});
+    }else{
+      const id=newId('fabric_layer'),created:Layer={id,name:asset.name,kind:'paper',color:'#F6EEE2',texture:'smooth',grain:0,opacity:1,blendMode:'normal',visible:true,locked:false,baseShape:{type:'rect',d:`M ${x} ${y} h ${w} v ${h} h ${-w} Z`},cutouts:[],positiveElements:[],fabric:{assetId:asset.id,transform:fitFabricTransform(asset,{x,y,width:w,height:h}),repeat:'single',opacity:1}};
+      pushHistory({...project,layers:{...project.layers,[id]:created},rootOrder:[...project.rootOrder,{type:'layer',id}]});setDocuments(docs=>docs.map(d=>d.id===activeDocId?{...d,activeLayerId:id}:d));setSelectedLayerIds([id]);
+    }
+    setCurrentTool('select');setFabricAdjust(false);
+  };
+  const handleUpdateFabric=(fill:FabricFill|undefined)=>{const layer=project.layers[activeLayerId];if(!layer||layer.locked||findGroupOfLayer(project,layer.id)?.locked)return;pushHistory({...project,layers:{...project.layers,[layer.id]:{...layer,fabric:fill}}});if(!fill)setFabricAdjust(false);};
+  const captureLayerIds=selectionScope==='color'?Object.keys(selectedBlocks).filter(id=>selectedBlocks[id]?.length):selectedLayerIds;
+  const canEditMaterialLayer=(layer:Layer|undefined|null)=>!!layer&&!layer.locked&&!findGroupOfLayer(project,layer.id)?.locked;
+  const editLiveStamp=(stroke:LiveStampStroke)=>{if(!canEditMaterialLayer(activeLayer)||!activeLayer)return;setStampDefinition(stroke.definition);setStampSettings(structuredClone(stroke.settings));setLiveStampEdit({layerId:activeLayer.id,strokeId:stroke.id});setStampOpen(true);setCurrentTool('select');};
+  const applyLiveStamp=()=>{if(!liveStampEdit)return;const layer=project.layers[liveStampEdit.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampEdit.strokeId,{definition:stampDefinition,settings:stampSettings})}});setStampOpen(false);setLiveStampEdit(null);};
+  const useStampMaterial=(definition:StampDefinition)=>{setLiveStampEdit(null);setStampDefinition(definition);setStampSettings({...DEFAULT_STAMP_SETTINGS,...definition.settings});setCurrentTool('stamp');setFabricAdjust(false);if(compact)setPanelOpen(false);};
+
   // ---------- Layer content edits ----------
   const updateActiveLayer = (fn: (layer: Layer) => Layer) => {
     if (!activeLayerId || !project.layers[activeLayerId]) return;
@@ -667,16 +717,16 @@ export default function App() {
     updateActiveLayer((layer) => ({ ...layer, cutouts: [...layer.cutouts, cutout] }));
   };
 
-  const handleStamp=(paths:CutoutPath[])=>{
+  const handleStamp=(paths:CutoutPath[],stroke?:LiveStampStroke)=>{
     if(!paths.length)return;
     const layer=project.layers[activeLayerId];
     if(layer){
       if(layer.locked||findGroupOfLayer(project,layer.id)?.locked||!layer.visible)return;
       const next=layer.kind==='doodle'?{...layer,drawings:[...(layer.drawings??[]),...paths.map(p=>({id:p.id,d:p.d,color:p.fillColor??layer.color,opacity:1,strokeWidth:1,brushType:'pen' as const,fill:true}))]}:{...layer,positiveElements:[...layer.positiveElements,...paths]};
-      pushHistory({...project,layers:{...project.layers,[layer.id]:next}});
+      pushHistory({...project,layers:{...project.layers,[layer.id]:stroke?attachLiveStampStroke(next,stroke):next}});
     }else{
       const id=newId('layer'),created:Layer={id,name:stampDefinition.name+' · 图章',kind:'paper',color:paths[0].fillColor??'#2E58D6',texture:'xuan',grain:.25,opacity:1,blendMode:'normal',visible:true,locked:false,baseShape:{type:'freeform',d:''},cutouts:[],positiveElements:paths};
-      pushHistory({...project,layers:{...project.layers,[id]:created},rootOrder:[...project.rootOrder,{type:'layer',id}]});
+      pushHistory({...project,layers:{...project.layers,[id]:stroke?attachLiveStampStroke(created,stroke):created},rootOrder:[...project.rootOrder,{type:'layer',id}]});
       setDocuments(docs=>docs.map(d=>d.id===activeDocId?{...d,activeLayerId:id}:d));
       setSelectedLayerIds([id]);
     }
@@ -925,15 +975,30 @@ export default function App() {
     const source = project.layers[layerId];
     if (!source) return;
     const dupId = newId('layer');
-    const reId = <T extends { id: string }>(c: T): T => ({ ...c, id: newId('cut') });
-    const duplicated: Layer = {
+    const liveStamps = structuredClone(detachChangedLiveStamps(source).liveStamps ?? []);
+    const pathIds = new Map<string, string>();
+    for (const stroke of liveStamps) {
+      const previousId = stroke.id;
+      stroke.id = newId('stamp');
+      stroke.pathIds = stroke.pathIds.map((id) => {
+        // Generated cache ids include their stroke id, so future regeneration keeps these ids.
+        const nextId = id.includes(previousId) ? id.replace(previousId, stroke.id) : newId('cut');
+        pathIds.set(id, nextId);
+        return nextId;
+      });
+      stroke.cacheHashes = undefined;
+    }
+    const reId = <T extends { id: string }>(c: T): T => ({ ...c, id: pathIds.get(c.id) ?? newId('cut') });
+    let duplicated: Layer = {
       ...source,
       id: dupId,
       name: `${source.name} 副本`,
       cutouts: source.cutouts.map(reId),
       positiveElements: source.positiveElements.map(reId),
-      drawings: (source.drawings || []).map((d) => ({ ...d, id: newId('drw') })),
+      drawings: (source.drawings || []).map(reId),
+      liveStamps: [],
     };
+    for (const stroke of liveStamps) duplicated = attachLiveStampStroke(duplicated, stroke);
 
     const rootOrder = [...project.rootOrder];
     const groups = project.groups.map((g) => {
@@ -955,6 +1020,10 @@ export default function App() {
   const handleMergeDown = (layerId: string): { layerId: string; names: [string, string] } | null => {
     const upper = project.layers[layerId];
     if (!upper || upper.locked) return null;
+    if (upper.fabric) {
+      setSaveBanner({ id: Date.now(), text: '图片布料需要保留独立图层，暂时不能向下合并。可将多个图层收为同一个物件。', error: true });
+      return null;
+    }
     const grp = findGroupOfLayer(project, layerId);
     const ids = grp ? grp.layerIds : project.rootOrder.filter((r) => r.type === 'layer').map((r) => r.id);
     const i = ids.indexOf(layerId);
@@ -1030,8 +1099,8 @@ export default function App() {
     if (ids.length === 0) return;
     let pivot = { x: project.width / 2, y: project.height / 2 };
     const boxes = ids
-      .map((id) => (document.querySelector(`g[data-layer-id="${id}"]`) as SVGGElement | null)?.getBBox())
-      .filter((b): b is DOMRect => !!b && b.width > 0);
+      .map((id) => project.layers[id] ? layerContent(project.layers[id]).bounds : null)
+      .filter((b): b is NonNullable<typeof b> => !!b && b.width > 0);
     if (boxes.length > 0) {
       const minX = Math.min(...boxes.map((b) => b.x));
       const maxX = Math.max(...boxes.map((b) => b.x + b.width));
@@ -1381,8 +1450,9 @@ export default function App() {
         onQuickDownloadPng={handleQuickDownloadPng}
       />
 
+      {liveStampPath&&<div className="flex gap-4 items-center px-3 py-1 border-b border-(--ui-border) text-xs">纹样路径 · 拖节点，双击线加点，Alt 点节点删除<button onClick={()=>setLiveStampPath(null)}>结束路径调整</button></div>}
       <ToolOptions
-        onOpenStamp={() => setStampOpen(true)}
+        onOpenStamp={() => setStampOpen(true)} onOpenMaterials={()=>openMaterials()} onCaptureStamp={()=>setIsSaveStampOpen(true)} canCaptureStamp={captureLayerIds.length>0}
         currentTool={currentTool}
         brushSettings={brushSettings}
         onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
@@ -1402,7 +1472,7 @@ export default function App() {
           carveMode={brushSettings.mode}
           onChangeCarveMode={(mode) => {
             setBrushSettings((prev) => ({ ...prev, mode }));
-            setCurrentTool('willow_leaf');
+            if(!['willow_leaf','geom_shape','pen_knife','freehand'].includes(currentTool))setCurrentTool('willow_leaf');
           }}
           eraseMode={brushSettings.eraseMode === 'wipe' ? 'wipe' : 'hole'}
           onChangeEraseMode={(eraseMode) => setBrushSettings((prev) => ({ ...prev, mode: 'erase', eraseMode }))}
@@ -1431,6 +1501,8 @@ export default function App() {
           <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
             stampDefinition={stampDefinition} stampSettings={stampSettings} onStamp={handleStamp}
+            liveStampPath={liveStampPath&&canEditMaterialLayer(project.layers[liveStampPath.layerId])?project.layers[liveStampPath.layerId]?.liveStamps?.find(s=>s.id===liveStampPath.strokeId):undefined} onLiveStampPathCommit={points=>{if(!liveStampPath)return;const layer=project.layers[liveStampPath.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampPath.strokeId,{points})}});}}
+            fabricAdjust={fabricAdjust && currentTool==='select'} onFabricCommit={handleUpdateFabric} onBlockSelectionChange={setSelectedBlocks}
             onCommitVectorLayer={(layer) => pushHistory({...project, layers: {...project.layers, [layer.id]: layer}})}
             project={project}
             activeLayerId={activeLayerId}
@@ -1464,7 +1536,7 @@ export default function App() {
             flash={flash}
           />
           {toolMenu && (
-            <ToolQuickMenu
+            <ToolQuickMenu onCaptureStamp={()=>setIsSaveStampOpen(true)} canCaptureStamp={captureLayerIds.length>0}
               x={toolMenu.x}
               y={toolMenu.y}
               currentTool={currentTool}
@@ -1490,6 +1562,7 @@ export default function App() {
           <div className="absolute inset-0 z-30 bg-black/30" onPointerDown={() => setPanelOpen(false)} />
         )}
         <div
+          inert={compact&&!panelOpen}
           className={
             compact
               ? `absolute top-0 right-0 bottom-0 z-40 flex shadow-2xl transition-transform duration-200 ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`
@@ -1497,6 +1570,9 @@ export default function App() {
           }
         >
           <LayersPanel
+          panelRequest={panelRequest}
+          colorPanel={<PalettePanel key={activeDocId} project={project} selectedLayerIds={selectedLayerIds} onPick={hex=>changeBrushColor(hex,true)} onApply={handleApplyScheme} onProjectPalettes={colorSchemes=>handleUpdateProject({colorSchemes})}/>}
+          materialPanel={<FabricPanel request={panelRequest?.materialTab?{tab:panelRequest.materialTab,key:panelRequest.key}:undefined} activeStampId={stampDefinition.id} project={project} layer={activeLayer} onImport={asset=>handleUpdateProject({fabricAssets:{...project.fabricAssets,[asset.id]:asset}})} onUse={handleUseFabric} onUpdate={handleUpdateFabric} onUseStamp={useStampMaterial} onEditStamp={d=>{useStampMaterial(d);startStampEdit(d);}} onCapture={()=>setIsSaveStampOpen(true)} canCapture={captureLayerIds.length>0} adjusting={fabricAdjust} onAdjust={v=>{setFabricAdjust(v);if(v){setCurrentTool('select');if(compact)setPanelOpen(false);}}} selectedItem={selectedItem} onItemCategory={wardrobeCategory=>{if(selectedItem)try{pushHistory(assignWardrobeCategory(project,selectedItem.id,wardrobeCategory));}catch(e){setSaveBanner({id:Date.now(),text:e instanceof Error?e.message:'无法归类',error:true});}}} onWardrobeUpdate={pushHistory} onCreateTemplate={()=>{const template=createWardrobeTemplate(),id=openProjectAsDocument(template,'套装模板');setDocuments(docs=>docs.map(d=>d.id===id?{...d,activeLayerId:'wardrobe_clothes'}:d));setCurrentTool('select');setFabricAdjust(false);setLiveStampPath(null);openMaterials('outfit');}} onEditLiveStamp={editLiveStamp} onEditLivePath={stroke=>{if(activeLayer&&canEditMaterialLayer(activeLayer)){setLiveStampPath({layerId:activeLayer.id,strokeId:stroke.id});setCurrentTool('select');setStampOpen(false);setFabricAdjust(false);if(compact)setPanelOpen(false);}}} onExpandLiveStamp={id=>{if(activeLayer&&canEditMaterialLayer(activeLayer))pushHistory({...project,layers:{...project.layers,[activeLayer.id]:expandLiveStampStroke(activeLayer,id)}});}}/>}
           project={project}
           activeLayerId={activeLayerId}
           selectedLayerIds={selectedLayerIds}
@@ -1544,7 +1620,8 @@ export default function App() {
       {isExportModalOpen && (
         <ExportModal project={project} onClose={() => setIsExportModalOpen(false)} />
       )}
-      <div style={{display:stampOpen?'contents':'none'}}><StampWorkbench definition={stampDefinition} settings={stampSettings} onDefinition={setStampDefinition} onSettings={setStampSettings} activeLayer={activeLayer} onEditCanvas={startStampEdit} onClose={()=>setStampOpen(false)}/></div>
+      <div style={{display:stampOpen?'contents':'none'}}><StampWorkbench hideLibrary onApplyStroke={liveStampEdit?applyLiveStamp:undefined} definition={stampDefinition} settings={stampSettings} onDefinition={setStampDefinition} onSettings={setStampSettings} activeLayer={activeLayer} onEditCanvas={()=>startStampEdit()} onClose={()=>{setStampOpen(false);setLiveStampEdit(null);}}/></div>
+      {isSaveStampOpen&&<SaveStampDialog project={project} layerIds={captureLayerIds} blockSelection={selectionScope==='color'?selectedBlocks:undefined} onSave={d=>{setIsSaveStampOpen(false);useStampMaterial(d);openMaterials();}} onClose={()=>setIsSaveStampOpen(false)}/>}
       {isNewCanvasOpen && <NewCanvasDialog onClose={() => setIsNewCanvasOpen(false)} onCreate={handleNewDocument} />}
       {isGodotModalOpen && (
         <GodotExportModal project={project} onClose={() => setIsGodotModalOpen(false)} />

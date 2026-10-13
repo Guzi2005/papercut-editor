@@ -131,7 +131,7 @@ export async function loadWorkspace(): Promise<WorkspaceSnapshot | null> {
       }
     }
     if (!result || !Array.isArray(result.documents) || result.documents.length === 0) return null;
-    const documents = result.documents.map((d) => ({ ...d, project: normalizeProject(d.project) }));
+    const documents = result.documents.map((d) => ({ ...d, project: normalizeProject(d.project, true) }));
     written.clear();
     // Records already on disk match what is loaded, so the first save can skip them.
     if (!legacyPending) documents.forEach((d) => written.set(d.id, d));

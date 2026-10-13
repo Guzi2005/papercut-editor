@@ -23,3 +23,11 @@ test('all sixteen classic examples survive shared-canvas editing round trip',()=
   const examples=BUILTIN_STAMPS.filter(d=>d.group==='白俄罗斯几何纹样');assert.equal(examples.length,16);
   for(const def of examples){const result=stampFromDocument(createStampDocument(def),def);assert.ok(result.parts.length);assert.ok(result.parts.every(p=>!p.d.includes('NaN')));}
 });
+
+test('applying a motif canvas cannot silently discard image fabric',()=>{
+  const def=BUILTIN_STAMPS[0],p=createStampDocument(def),l=p.layers.layer_base_paper;
+  l.baseShape={type:'rect',d:'M 0 0 H 256 V 256 H 0 Z'};
+  l.fabric={assetId:'photo',transform:[1,0,0,1,0,0],repeat:'single',opacity:1};
+  assert.throws(()=>stampFromDocument(p,def),/图片布料/);
+  assert.equal(l.fabric.assetId,'photo');
+});

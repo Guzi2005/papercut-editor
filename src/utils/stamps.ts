@@ -155,7 +155,10 @@ export function validateStampLibrary(value:unknown):StampDefinition[]{
     return {settings:v.settings ? normalizeStampSettings(v.settings) : undefined,id:typeof v.id==='string'?v.id:`stamp_${i}`,name:v.name.slice(0,80),parts};
   });
 }
-export function saveStampLibrary(library:StampDefinition[]):void {localStorage.setItem(KEY,JSON.stringify(library));}
+export function saveStampLibrary(library:StampDefinition[]):void {
+  localStorage.setItem(KEY,JSON.stringify(library));
+  if(typeof window!=='undefined')window.dispatchEvent(new Event('papercut-stamps-changed'));
+}
 
 export function normalizeStampSettings(value:Partial<StampSettings>):StampSettings {
   const s={...DEFAULT_STAMP_SETTINGS};

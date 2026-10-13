@@ -5,6 +5,8 @@
 
 import type { SymmetrySettings } from '../utils/symmetry';
 import type { PathCap, StrokeStyle } from '../utils/strokePath';
+import type { ColorScheme } from '../utils/palettes';
+import type {LiveStampStroke} from '../utils/liveStamps';
 
 export interface Point {
   x: number;
@@ -123,6 +125,8 @@ export interface LayerDrawStroke {
 }
 
 export interface Layer {
+  liveStamps?: LiveStampStroke[];
+  fabric?: FabricFill;
   id: string;
   name: string;
   /** doodle 涂鸦图层：没有纸，只承载手绘笔迹，笔迹不受纸片边界裁切 */
@@ -184,6 +188,7 @@ export interface ItemSocket {
  * (例如柜台后板在家具层、柜台前挡在前景层)，导出到 Godot 时成为一个场景。
  */
 export interface PapercutItem {
+  wardrobeCategory?: 'clothes' | 'shoes' | 'headwear';
   id: string;
   name: string; // 全名
   shortName?: string; // 简称：部件图层名的第一段，空时用全名
@@ -300,6 +305,9 @@ export interface BrushSettings {
 }
 
 export interface PapercutProject {
+  outfits?: OutfitDefinition[];
+  fabricAssets?: Record<string,FabricAsset>;
+  colorSchemes?: ColorScheme[];
   id: string;
   name: string;
   width: number;
@@ -316,4 +324,26 @@ export interface PapercutProject {
   shadowBlend?: ShadowBlend; // 投影合成模式
   canvasBg?: CanvasBackground; // 画布背景（缺省为方格纸透明底）
   paperMode?: PaperMode; // 剪贴模式
+}
+
+export interface OutfitDefinition {
+  id:string;
+  name:string;
+  clothes:string[];
+  shoes:string[];
+  headwear:string[];
+}
+
+export interface FabricAsset {
+  id:string;
+  name:string;
+  src:string;
+  width:number;
+  height:number;
+}
+export interface FabricFill {
+  assetId:string;
+  transform:[number,number,number,number,number,number];
+  repeat:'single'|'tile'|'mirror';
+  opacity:number;
 }

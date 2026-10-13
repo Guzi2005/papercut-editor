@@ -5,7 +5,7 @@ import {transformPathD,scaleAbout} from './pathTransform';
 import {flattenLayerIds,isLayerRendered} from './projectOps';
 import {layerContent} from './layerContent';
 import {normalizeHex} from './color';
-import clipping from 'polygon-clipping';
+import {polygonOperation} from './polygonOps';
 import {shapeOf,multiD} from './pathfinder';
 
 export function createStampDocument(def:StampDefinition):PapercutProject {
@@ -19,8 +19,10 @@ export function createStampDocument(def:StampDefinition):PapercutProject {
 /** Preserve the tile's whitespace, centre and scale, including freehand strokes. */
 export function stampFromDocument(p:PapercutProject,def:StampDefinition):StampDefinition {
   const clip=shapeOf(`M 0 0 H ${p.width} V ${p.height} H 0 Z`);
-  const parts=flattenLayerIds(p).filter(id=>isLayerRendered(p,id)&&p.layers[id].opacity>0).flatMap(id=>layerContent(p.layers[id]).pieces).flatMap((part,i)=>{
-    const shape=clipping.intersection(shapeOf(part.d),clip);if(!shape.length)return [];
+  const visible=flattenLayerIds(p).filter(id=>isLayerRendered(p,id)&&p.layers[id].opacity>0);
+  if(visible.some(id=>p.layers[id].fabric&&p.layers[id].baseShape?.d))throw new Error('图片布料还不能转为矢量图章。请移除布料填充，或保留此原稿作为布片素材。');
+  const parts=visible.flatMap(id=>layerContent(p.layers[id]).pieces).flatMap((part,i)=>{
+    const shape=polygonOperation('intersection',shapeOf(part.d),clip);if(!shape.length)return [];
     return [{id:`part_${i}`,d:transformPathD(multiD(shape),[100/p.width,0,0,100/p.height,0,0]),color:normalizeHex(part.color)??'#000000'}];
   });
   if(parts.length>200)throw new Error('当前图案超过 200 个色块，请合并或精简后再应用。原稿仍保留。');

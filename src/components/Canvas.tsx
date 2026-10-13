@@ -1,3 +1,5 @@
+import {LiveStampPathOverlay} from './LiveStampPathOverlay';
+import {FabricAdjustOverlay} from './FabricAdjustOverlay';
 import { StampPainter } from './StampPainter';
 import type { StampDefinition, StampSettings } from '../utils/stamps';
 import { layerContent } from '../utils/layerContent';
@@ -90,9 +92,14 @@ export interface PointInfo {
 }
 
 interface CanvasProps {
+  liveStampPath?:import('../utils/liveStamps').LiveStampStroke;
+  onLiveStampPathCommit?:(points:Point[])=>void;
+  fabricAdjust?:boolean;
+  onFabricCommit?:(fill:import('../types/papercut').FabricFill)=>void;
+  onBlockSelectionChange?:(selection:BlockSelection)=>void;
   stampDefinition: StampDefinition;
   stampSettings: StampSettings;
-  onStamp: (paths: CutoutPath[]) => void;
+  onStamp: (paths: CutoutPath[],stroke?:import('../utils/liveStamps').LiveStampStroke) => void;
   project: PapercutProject;
   onCommitVectorLayer: (layer: Layer) => void;
   activeLayerId: string | null;
@@ -202,7 +209,7 @@ function unionBBox(boxes: BBox[]): BBox | null {
 
 export const Canvas: React.FC<CanvasProps> = ({
   project,
-  stampDefinition, stampSettings, onStamp,
+  stampDefinition, stampSettings, onStamp, fabricAdjust, onFabricCommit, onBlockSelectionChange, liveStampPath, onLiveStampPathCommit,
   onCommitVectorLayer,
   activeLayerId,
   currentTool,
@@ -318,6 +325,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   // Colour-block selection: pieces inside layers rather than whole layers.
   const colorScope = currentTool === 'select' && selectionScope === 'color';
   const [blockSel, setBlockSel] = useState<BlockSelection>({});
+  useEffect(()=>{onBlockSelectionChange?.(blockSel);},[blockSel,onBlockSelectionChange]);
   const blockCount = Object.values(blockSel).reduce((n, a) => n + a.length, 0);
   const blockMode = colorScope && blockCount > 0;
   const lastBlockClick = useRef<{ t: number; key: string }>({ t: 0, key: '' });
@@ -349,7 +357,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const shadowOpts = useMemo(
     () => projectShadowOptions(project),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project.shadowStrength, project.shadowSoftness, project.shadowBlend, project.paperMode]
+    [project.shadowStrength, project.shadowSoftness, project.shadowBlend, project.paperMode, project.fabricAssets]
   );
 
   // Hold-to-pan key (Space by default, configurable)
@@ -1825,6 +1833,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             className="absolute inset-0 w-full h-full overflow-visible"
             style={{ pointerEvents: 'none', willChange: 'transform' }}
           >
+            {liveStampPath&&!isSpacePressed&&onLiveStampPathCommit&&<LiveStampPathOverlay key={liveStampPath.id} stroke={liveStampPath} onCommit={onLiveStampPathCommit}/>}
+            {fabricAdjust&&!isSpacePressed&&activeLayer?.fabric&&!activeLocked&&onFabricCommit&&<FabricAdjustOverlay layer={activeLayer} assets={project.fabricAssets} onCommit={onFabricCommit}/>}
             {currentTool === 'stamp' && <StampPainter definition={stampDefinition} settings={stampSettings} width={project.width} height={project.height} panHeld={isSpacePressed} disabled={activeLocked || (!!activeLayer && !isLayerRendered(project,activeLayer.id))} onCommit={onStamp}/>}
             {currentTool === 'vector_edit' && activeLayer && <VectorEditor
               key={project.id + ':' + activeLayer.id}

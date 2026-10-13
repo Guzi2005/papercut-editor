@@ -1,18 +1,19 @@
-import clipping, { type MultiPolygon } from 'polygon-clipping';
+import { type MultiPolygon } from 'polygon-clipping';
 import type { Layer, LayerDrawStroke, Point } from '../types/papercut';
 import { BASE_BLOCK, paperSequence, strokeReach } from './layerSvg';
 import { shapeOf, multiD } from './pathfinder';
 import { parseVectorPath } from './vectorPath';
 import { strokeOutline } from './strokePath';
+import {polygonOperation} from './polygonOps';
 
 export interface ContentBounds { x:number; y:number; width:number; height:number }
 interface ContentBlock { id:string; color:string; shape:MultiPolygon; opacity:number }
 interface LayerContent { pieces:{id:string;d:string;color:string}[]; colors:string[]; bounds:ContentBounds|null; blocks:Map<string,ContentBounds> }
 const cache = new WeakMap<Layer,LayerContent>();
 const empty:MultiPolygon=[];
-const union=(a:MultiPolygon,b:MultiPolygon)=>clipping.union(a,b);
-const subtract=(a:MultiPolygon,b:MultiPolygon)=>a.length&&b.length?clipping.difference(a,b):a;
-const intersect=(a:MultiPolygon,b:MultiPolygon)=>a.length&&b.length?clipping.intersection(a,b):empty;
+const union=(a:MultiPolygon,b:MultiPolygon)=>polygonOperation('union',a,b);
+const subtract=(a:MultiPolygon,b:MultiPolygon)=>a.length&&b.length?polygonOperation('difference',a,b):a;
+const intersect=(a:MultiPolygon,b:MultiPolygon)=>a.length&&b.length?polygonOperation('intersection',a,b):empty;
 function bounds(shape:MultiPolygon):ContentBounds|null {
   const points=shape.flat(2);
   if(!points.length)return null;
@@ -52,7 +53,7 @@ export function layerContent(layer:Layer):LayerContent {
     }
   }
   const hasPaper=blocks.some(b=>b.shape.length>0);
-  const paper=layer.drawings?.length&&hasPaper?clipping.union(...blocks.map(b=>b.shape) as [MultiPolygon,...MultiPolygon[]]):empty;
+  const paper=layer.drawings?.length&&hasPaper?polygonOperation('union',...blocks.map(b=>b.shape)):empty;
   for(const d of layer.drawings??[]) {
     if(d.opacity<=0||!d.d)continue;
     const raw=drawingShape(d);
@@ -67,7 +68,7 @@ export function layerContent(layer:Layer):LayerContent {
     const b=blocks[i],rawBox=bounds(b.shape);if(!rawBox)continue;
     // Most repeating stamps are disjoint. Avoid repeatedly unioning the whole layer.
     const occluders=covered.filter(c=>overlaps(rawBox,c.box)).map(c=>c.shape);
-    const visible=occluders.length?clipping.difference(b.shape,...occluders):b.shape,visibleBox=bounds(visible);
+    const visible=occluders.length?polygonOperation('difference',b.shape,...occluders):b.shape,visibleBox=bounds(visible);
     if(visibleBox){pieces.unshift({id:b.id,d:multiD(visible),color:b.color});blockBounds.set(b.id,visibleBox);if(!colors.includes(b.color))colors.push(b.color);
       if(!box)box=visibleBox;else {const x=Math.min(box.x,visibleBox.x),y=Math.min(box.y,visibleBox.y);box={x,y,width:Math.max(box.x+box.width,visibleBox.x+visibleBox.width)-x,height:Math.max(box.y+box.height,visibleBox.y+visibleBox.height)-y};}
     }

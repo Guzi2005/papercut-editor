@@ -107,7 +107,7 @@ interface ToolDefinition {
 }
 
 export const TOOLS: ToolDefinition[] = [
-  {id:'stamp',name:'图章',shortName:'图章',hotkey:'',description:'单击盖印 · 拖动铺纹样 · 图章工作台',icon:Stamp},
+  {id:'stamp',name:'纹样',shortName:'纹样',hotkey:'',description:'素材盖印 · 织带 · 笔刷设置',icon:Stamp},
   {
     id: 'select',
     name: '选择',

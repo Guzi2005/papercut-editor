@@ -69,6 +69,9 @@ const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
 interface ToolOptionsProps {
   currentTool: ToolType;
   onOpenStamp?: () => void;
+  onOpenMaterials?:()=>void;
+  onCaptureStamp?:()=>void;
+  canCaptureStamp?:boolean;
   brushSettings: BrushSettings;
   onChangeBrushSettings: (newSettings: Partial<BrushSettings>) => void;
   onSelectTool?: (tool: ToolType) => void;
@@ -146,7 +149,7 @@ const IconButton: React.FC<{
 
 export const ToolOptions: React.FC<ToolOptionsProps> = ({
   currentTool,
-  onOpenStamp,
+  onOpenStamp, onOpenMaterials, onCaptureStamp, canCaptureStamp,
   onSelectTool,
   brushSettings,
   onChangeBrushSettings,
@@ -199,7 +202,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
   return (
     <div className="relative z-30 h-10 pointer-coarse:h-12 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
-      {currentTool === 'stamp' && <><button onClick={onOpenStamp} className="px-3 py-1 border border-(--ui-border) hover:bg-(--ui-hover)">图章工作台</button><span className="text-(--ui-muted)">图章 / 织带 · 单击盖印或拖动绘制 · 一笔一撤销</span></>}
+      {currentTool === 'stamp' && <><button onClick={onOpenStamp} className="px-3 py-1 border border-(--ui-border) hover:bg-(--ui-hover)">笔刷设置</button><button onClick={onOpenMaterials}>素材库</button><span className="text-(--ui-muted)">图章 / 织带 · 单击盖印或拖动绘制 · 一笔一撤销</span></>}
       {isVectorTool(currentTool) && <>
         <VectorModes tool={currentTool} onSelect={onSelectTool ?? (() => {})} />
         {currentTool === 'vector_edit' ? <div id="vector-options" className="min-w-0 flex-1" /> : <span className="text-(--ui-muted) truncate">选择切口 · 拖动锚点调整轮廓</span>}
@@ -217,6 +220,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
               <PaintBucket className="w-3.5 h-3.5" />
             </IconButton>
           </Segmented>
+          <button disabled={!canCaptureStamp} onClick={onCaptureStamp} className="border border-(--ui-border) px-2 py-1 disabled:opacity-30">收为图章</button>
           <IconButton
             active={!!brushSettings.selectLasso}
             tip={brushSettings.selectLasso ? '圈选：拖动圈画选中（Shift 加选）' : '点选：单击选中，空白处拖动圈选'}

@@ -64,6 +64,9 @@ import { TextureButton } from './TextureButton';
 import { isLight, layerColors, normalizeHex, projectColors } from '../utils/color';
 
 interface LayersPanelProps {
+  materialPanel?: React.ReactNode;
+  colorPanel?: React.ReactNode;
+  panelRequest?: {tab:'materials'|'colors';key:number};
   project: PapercutProject;
   activeLayerId: string | null;
   selectedLayerIds: string[];
@@ -112,7 +115,7 @@ const WIDTH_KEY = 'weave.panelWidth';
 const MIN_W = 240;
 const maxWidth = () => Math.max(MIN_W, Math.min(640, Math.round(window.innerWidth * 0.5)));
 
-type PanelTab = 'depth' | 'items' | 'style';
+type PanelTab = 'depth' | 'items' | 'style' | 'materials' | 'colors';
 
 const PATTERN_OPTIONS: { id: PatternType | 'none'; label: string }[] = [
   { id: 'none', label: '无' },
@@ -221,8 +224,8 @@ function measureVisible(layer: Layer, rough: Box4): Promise<Box4 | null> {
   });
 }
 
-const LayerThumb = React.memo(function LayerThumb({ layer, w, h }: { layer: Layer; w: number; h: number }) {
-  const html = useMemo(() => renderLayerMarkup(layer, { idPrefix: 'th_', shadow: 0, grain: false }), [layer]);
+const LayerThumb = React.memo(function LayerThumb({ layer, w, h, assets }: { layer: Layer; w: number; h: number; assets?:PapercutProject['fabricAssets'] }) {
+  const html = useMemo(() => renderLayerMarkup(layer, { idPrefix: 'th_', shadow: 0, grain: false, fabricAssets:assets }), [layer,assets]);
   const rough = useMemo(() => roughLayerBounds(layer, w, h), [layer, w, h]);
   const [measured, setMeasured] = useState<Box4 | null | undefined>(() => visibleBoundsCache.get(layer));
   useEffect(() => {
@@ -292,7 +295,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   onChangeBrushColor,
   currentTool,
   brushSettings,
-  selectedItem,
+  selectedItem, materialPanel, colorPanel, panelRequest,
 }) => {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -326,6 +329,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const { layers, groups, rootOrder } = project;
   const items = project.items || [];
   const [tab, setTab] = useState<PanelTab>('depth');
+  useEffect(()=>{if(panelRequest)setTab(panelRequest.tab);},[panelRequest]);
   const [editing, setEditing] = useState<{ kind: 'layer' | 'group' | 'item' | 'socket'; id: string; parent?: string } | null>(null);
   const [editingName, setEditingName] = useState('');
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Record<string, boolean>>({});
@@ -346,6 +350,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   }, [layers, mergeNamePick]);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(listRef.current)listRef.current.scrollTop=0;},[tab]);
 
   const activeLayer = activeLayerId ? layers[activeLayerId] : null;
   const { zOf, slots } = useMemo(() => computeDepthTable(project), [project]);
@@ -509,7 +514,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         )}
         {draggable && <GripVertical className="w-3 h-3 text-(--ui-faint) shrink-0 cursor-grab pointer-coarse:hidden" />}
         <div className="w-8 h-8 rounded-md bg-[#FAF8F2]/95 p-0.5 shrink-0 overflow-hidden">
-          <LayerThumb layer={layer} w={project.width} h={project.height} />
+          <LayerThumb layer={layer} w={project.width} h={project.height} assets={project.fabricAssets}/>
         </div>
         <div className="flex-1 min-w-0">
           {isEditing('layer', layer.id) ? (
@@ -968,20 +973,10 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   // ---------- Style tab ----------
   const ref = project.reference;
-  const documentColors = useMemo(() => (tab === 'style' ? projectColors(project) : []), [project, tab]);
+  const documentColors = useMemo(() => (tab === 'colors' ? projectColors(project) : []), [project, tab]);
   const styleTab = (
     <div className="space-y-3">
-      <ColorStudio
-        color={brushColor}
-        onChange={onChangeBrushColor}
-        recent={recentColors}
-        documentColors={documentColors}
-        paperColor={activeLayer?.color}
-        onApplyToPaper={activeLayer && activeLayer.kind !== 'doodle' ? (hex) => onUpdateLayer(activeLayer.id, { color: hex }) : undefined}
-        colorNotes={colorNotes}
-        onUpdateColorNote={onUpdateColorNote}
-        width={width}
-      />
+
 
       <div className="pt-2 border-t border-(--ui-divider) text-[10px] text-(--ui-muted)">颗粒与参考图</div>
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1066,7 +1061,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
     onUpdateLayer(activeLayer.id, { pattern: { ...base, ...updates } });
   };
 
-  const dock = activeLayer && tab !== 'style' && (
+  const dock = activeLayer && (tab === 'depth' || tab === 'items') && (
     <div className="p-2.5 border-t border-(--ui-divider) bg-(--ui-panel-2) space-y-1.5 shrink-0">
       <div className="flex items-center gap-2">
         <label className="relative w-6 h-6 rounded-md border border-white/30 shrink-0 cursor-pointer overflow-hidden" style={{ backgroundColor: activeLayer.color }} data-tip="纸色">
@@ -1205,15 +1200,16 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       <div className="min-h-11 py-1 px-2 border-b border-(--ui-divider) flex flex-wrap items-center gap-1">
         {([
           { id: 'depth', label: '图层', icon: LayersIcon },
-          { id: 'items', label: `Item（${items.length}）`, icon: Box },
-          { id: 'style', label: '风格', icon: Palette },
+          { id: 'materials', label: '素材', icon: Box },
+          { id: 'colors', label: '色彩', icon: Palette },
+          { id: 'style', label: '参考', icon: Scan },
         ] as const).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            data-tip={t.label} aria-label={t.label} aria-pressed={tab === t.id}
-            className={`relative px-2 h-8 flex items-center gap-1 justify-center rounded-lg transition-colors ${
-              tab === t.id ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
+            data-tip={t.label} aria-label={t.label} aria-pressed={tab === t.id || (t.id === 'depth' && tab === 'items')}
+            className={`relative px-2 h-8 flex items-center gap-1 justify-center transition-colors ${
+              (tab === t.id || (t.id === 'depth' && tab === 'items')) ? 'border-b border-(--ui-accent) text-(--ui-strong)'  : 'text-(--ui-muted) hover:bg-(--ui-raised) hover:text-(--ui-strong)'
             }`}
           >
             <t.icon className="w-4 h-4 shrink-0" /><span className="text-[10px] whitespace-nowrap">{t.label}</span>
@@ -1272,7 +1268,19 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       </div>
 
       <div ref={listRef} className="flex-1 overflow-y-auto p-2">
-        {tab === 'depth' ? depthTab : tab === 'items' ? itemsTab : styleTab}
+        {(tab === 'depth'||tab === 'items')&&<nav className="flex gap-3 border-b border-(--ui-divider) pb-2 mb-2"><button aria-pressed={tab==='depth'} onClick={()=>setTab('depth')}>图层</button><button aria-pressed={tab==='items'} onClick={()=>setTab('items')}>物件（{items.length}）</button></nav>}
+        {tab === 'depth' ? depthTab : tab === 'items' ? itemsTab : tab === 'materials' ? materialPanel : tab === 'colors' ? null : styleTab}
+        <div hidden={tab!=='colors'}><div className="space-y-4">{colorPanel}<details><summary className="cursor-pointer text-(--ui-muted)">取色器与当前画笔</summary>      <ColorStudio
+        color={brushColor}
+        onChange={onChangeBrushColor}
+        recent={recentColors}
+        documentColors={documentColors}
+        paperColor={activeLayer?.color}
+        onApplyToPaper={activeLayer && activeLayer.kind !== 'doodle' ? (hex) => onUpdateLayer(activeLayer.id, { color: hex }) : undefined}
+        colorNotes={colorNotes}
+        onUpdateColorNote={onUpdateColorNote}
+        width={width}
+      /></details></div></div>
       </div>
 
       {dock}

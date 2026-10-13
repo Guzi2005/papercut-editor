@@ -34,6 +34,8 @@ interface ToolQuickMenuProps {
   onChangeSelectionScope: (scope: 'part' | 'item' | 'color') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
+  onCaptureStamp?:()=>void;
+  canCaptureStamp?:boolean;
   onClose: () => void;
   /** Present when summoned on the canvas: pick the colour there or a layer covering the point. */
   here?: PointInfo;
@@ -57,7 +59,7 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
   onChangeSelectionScope,
   selectedCount,
   onCreateItemFromSelection,
-  onClose,
+  onClose, onCaptureStamp, canCaptureStamp,
   here,
   onPickColor,
   onPickLayer,
@@ -107,6 +109,7 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
       entries: [
         { key: 'lasso', label: '圈选', icon: icon(Lasso), active: !!bs.selectLasso, stay: true, run: () => set({ selectLasso: !bs.selectLasso }) },
         { key: 'lock', label: lock ? '锁定长宽比' : '自由长宽比', icon: icon(lock ? Link2 : Unlink2), active: lock, stay: true, run: () => set({ lockAspect: !lock }) },
+        { key: 'capture', label:'收为图章…', icon:icon(Box), disabled:!canCaptureStamp, run:()=>onCaptureStamp?.() },
         { key: 'group', label: '打组为物件', icon: icon(Group), disabled: selectedCount === 0, run: onCreateItemFromSelection },
       ],
     });

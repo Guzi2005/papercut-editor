@@ -81,6 +81,11 @@ const q = (s: string) => JSON.stringify(s);
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
 const vec2 = (x: number, y: number) => `Vector2(${num(x)}, ${num(y)})`;
 
+/** SVG getBBox ignores masks, so fabric pixels must not contribute to the paper's extent. */
+export function godotMeasurementMarkup(project: PapercutProject, layerId: string): string {
+  return renderLayerMarkup({ ...project.layers[layerId], fabric: undefined }, { idPrefix: 'gm_', grain: false, shadow: 0 });
+}
+
 function measureLayers(project: PapercutProject, layerIds: string[]): Record<string, DOMRect | null> {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -89,7 +94,7 @@ function measureLayers(project: PapercutProject, layerIds: string[]): Record<str
   svg.setAttribute('height', String(project.height));
   svg.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;';
   svg.innerHTML = layerIds
-    .map((id) => renderLayerMarkup(project.layers[id], { idPrefix: 'gm_', grain: false, shadow: 0 }))
+    .map((id) => godotMeasurementMarkup(project, id))
     .join('');
   document.body.appendChild(svg);
   const out: Record<string, DOMRect | null> = {};
@@ -128,7 +133,7 @@ function blendBakedMarkup(
   parts.push('<defs>');
   parts.push(
     `<mask id="${clipId}" mask-type="alpha" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="-20000" y="-20000" width="40000" height="40000">` +
-      renderLayerMarkup(solid, { idPrefix: 'bkm_', grain: false, shadow: 0 }) +
+      renderLayerMarkup(solid, { idPrefix: 'bkm_', grain: false, shadow: 0, fabricAssets: project.fabricAssets }) +
       `</mask>`
   );
   const shadowOpts = projectShadowOptions(project, shadow);
@@ -137,15 +142,23 @@ function blendBakedMarkup(
   }
   parts.push('</defs>');
   if (shadow > 0) {
-    parts.push(`<g filter="url(#${shadowId})">${renderLayerMarkup(solid, { idPrefix: 'bks_', grain: false, shadow: 0 })}</g>`);
+    parts.push(`<g filter="url(#${shadowId})">${renderLayerMarkup(solid, { idPrefix: 'bks_', grain: false, shadow: 0, fabricAssets: project.fabricAssets })}</g>`);
   }
   parts.push(`<g mask="url(#${clipId})"><g style="isolation:isolate">`);
   belowIds.forEach((bid, i) => {
     parts.push(renderLayerMarkup(project.layers[bid], { idPrefix: `bkb${i}_`, grain, ...shadowOpts }));
   });
-  parts.push(renderLayerMarkup(layer, { idPrefix: 'gx_', grain, shadow: 0 }));
+  parts.push(renderLayerMarkup(layer, { idPrefix: 'gx_', grain, shadow: 0, fabricAssets: project.fabricAssets }));
   parts.push('</g></g>');
   return parts.join('');
+}
+
+/** Exact markup passed to PNG rasterization, including shared fabric in plain and blended parts. */
+export function godotPartMarkup(project: PapercutProject, layerId: string, belowIds: string[], grain: boolean, shadow: number): string {
+  const layer = project.layers[layerId];
+  return !!layer.blendMode && layer.blendMode !== 'normal' && belowIds.length > 0
+    ? blendBakedMarkup(project, layerId, belowIds, grain, shadow)
+    : renderLayerMarkup(layer, { idPrefix: 'gx_', grain, ...projectShadowOptions(project, shadow) });
 }
 
 async function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
@@ -238,10 +251,7 @@ export async function buildGodotExport(
       const w = Math.ceil(b.width + lpad * 2);
       const h = Math.ceil(b.height + lpad * 2);
       assertTextureBudget(w, h, s, layer.name);
-      const markup =
-        blended && below.length > 0
-          ? blendBakedMarkup(project, pid, below, options.bakeGrain, shadow)
-          : renderLayerMarkup(layer, { idPrefix: 'gx_', grain: options.bakeGrain, ...projectShadowOptions(project, shadow) });
+      const markup = godotPartMarkup(project, pid, below, options.bakeGrain, shadow);
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w * s}" height="${h * s}">${markup}</svg>`;
       const canvas = await rasterizeSvg(svg, w * s, h * s);
       const png = await canvasToPng(canvas);
@@ -319,6 +329,7 @@ export async function buildGodotExport(
       english_name: english || undefined,
       scene: scenePath,
       pivot: item.pivot,
+      wardrobeCategory:item.wardrobeCategory,
       sockets: item.sockets.map((so) => ({ name: so.name, x: so.x - item.pivot.x, y: so.y - item.pivot.y })),
       parts: manifestParts,
     });
@@ -363,6 +374,8 @@ export async function buildGodotExport(
     textureScale: s,
     depthSlots: slots.map((sl) => ({ id: sl.id, name: sl.name, zBase: sl.zBase })),
     items: manifestItems,
+    colorSchemes:project.colorSchemes??[],
+    outfits:(project.outfits??[]).map(o=>({...o,...Object.fromEntries((['clothes','shoes','headwear'] as const).map(category=>[category,o[category].filter(id=>exportItems.some(i=>i.id===id))]))})),
     exportedAt: new Date().toISOString(),
   };
   files[`${zipBase}/manifest.json`] = strToU8(JSON.stringify(manifest, null, 2));

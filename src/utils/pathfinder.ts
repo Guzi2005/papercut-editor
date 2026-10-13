@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import polygonClipping, { MultiPolygon, Ring } from 'polygon-clipping';
+import { type MultiPolygon, type Ring } from 'polygon-clipping';
 import { CutoutPath, Layer, PapercutProject, Point } from '../types/papercut';
 import { f } from './bezierMath';
 import { BASE_BLOCK, paperSequence, splitSubpaths } from './layerSvg';
 import { IDENTITY, transformPathD } from './pathTransform';
 import { BlockSelection, flattenLayerIds } from './projectOps';
+import {polygonOperation} from './polygonOps';
 
 export type PathfinderOp = 'unite' | 'minusFront' | 'intersect' | 'exclude' | 'trim' | 'divide';
 
@@ -77,14 +78,14 @@ export function shapeOf(d: string): MultiPolygon {
   const parts = splitSubpaths(d)
     .map((piece) => {
       const rings = flatten(piece);
-      return rings.length ? polygonClipping.union(rings) : EMPTY;
+      return rings.length ? polygonOperation('union',[rings]) : EMPTY;
     })
     .filter((m) => m.length);
-  return parts.length ? polygonClipping.union(EMPTY, ...parts) : EMPTY;
+  return parts.length ? polygonOperation('union',EMPTY, ...parts) : EMPTY;
 }
 
-const union = (...g: MultiPolygon[]) => (g.length ? polygonClipping.union(EMPTY, ...g) : EMPTY);
-const minus = (a: MultiPolygon, ...b: MultiPolygon[]) => (a.length && b.length ? polygonClipping.difference(a, ...b) : a);
+const union = (...g: MultiPolygon[]) => (g.length ? polygonOperation('union',EMPTY, ...g) : EMPTY);
+const minus = (a: MultiPolygon, ...b: MultiPolygon[]) => (a.length && b.length ? polygonOperation('difference',a, ...b) : a);
 const area = (m: MultiPolygon) =>
   m.reduce((s, poly) => s + poly.reduce((t, ring, k) => {
     let a = 0;
@@ -185,8 +186,8 @@ export function applyPathfinder(project: PapercutProject, sel: BlockSelection, o
   const results = new Map<Block, MultiPolygon[]>();
 
   if (op === 'unite') results.set(top, [union(...blocks.map((b) => b.shape))]);
-  else if (op === 'intersect') results.set(top, [blocks.slice(1).reduce((acc, b) => (acc.length ? polygonClipping.intersection(acc, b.shape) : acc), back.shape)]);
-  else if (op === 'exclude') results.set(top, [polygonClipping.xor(EMPTY, ...blocks.map((b) => b.shape))]);
+  else if (op === 'intersect') results.set(top, [blocks.slice(1).reduce((acc, b) => (acc.length ? polygonOperation('intersection',acc, b.shape) : acc), back.shape)]);
+  else if (op === 'exclude') results.set(top, [polygonOperation('xor',EMPTY, ...blocks.map((b) => b.shape))]);
   else if (op === 'minusFront') results.set(back, [minus(back.shape, ...blocks.slice(1).map((b) => b.shape))]);
   else {
     blocks.forEach((b, i) => {
@@ -197,7 +198,7 @@ export function applyPathfinder(project: PapercutProject, sel: BlockSelection, o
       }
       let frags: MultiPolygon[] = [visible];
       blocks.slice(0, i).forEach((lower) => {
-        frags = frags.flatMap((fr) => [polygonClipping.intersection(fr, lower.shape), minus(fr, lower.shape)]);
+        frags = frags.flatMap((fr) => [polygonOperation('intersection',fr, lower.shape), minus(fr, lower.shape)]);
       });
       results.set(b, frags.flatMap(pieces));
     });

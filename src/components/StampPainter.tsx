@@ -1,6 +1,7 @@
+import {createLiveStampStroke,type LiveStampStroke} from '../utils/liveStamps';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
 import type {CutoutPath,Point} from '../types/papercut';
-import {ribbonDecorPaths,stampStrokePaths,stampColorVariants,placementColorIndex,stampPlacements,type StampDefinition,type StampSettings,type StampPlacement} from '../utils/stamps';
+import {ribbonDecorPaths,stampColorVariants,placementColorIndex,stampPlacements,type StampDefinition,type StampSettings,type StampPlacement} from '../utils/stamps';
 
 export function StampInstances({definition,settings,placements}:{definition:StampDefinition;settings:StampSettings;placements:StampPlacement[]}) {
   const id='stamp-'+useId().replace(/[^a-z0-9_-]/gi,'');
@@ -13,7 +14,7 @@ export function StampStrokePreview({definition,settings,points,seed=17}:{definit
   return <g pointerEvents="none">{base.map(p=><path key={p.id} d={p.d} fill={p.fillColor}/>)}<StampInstances definition={definition} settings={settings} placements={stampPlacements(points,settings,seed)}/></g>;
 }
 
-export function StampPainter({definition,settings,width,height,panHeld=false,disabled=false,onCommit}:{definition:StampDefinition;settings:StampSettings;width:number;height:number;panHeld?:boolean;disabled?:boolean;onCommit:(paths:CutoutPath[])=>void}) {
+export function StampPainter({definition,settings,width,height,panHeld=false,disabled=false,onCommit}:{definition:StampDefinition;settings:StampSettings;width:number;height:number;panHeld?:boolean;disabled?:boolean;onCommit:(paths:CutoutPath[],stroke?:LiveStampStroke)=>void}) {
   const root=useRef<SVGGElement>(null),gesture=useRef<{points:Point[];seed:number;pointer:number}|null>(null);
   const [preview,setPreview]=useState<StampPlacement[]>([]);
   const [previewPoints,setPreviewPoints]=useState<Point[]>([]);
@@ -27,7 +28,7 @@ export function StampPainter({definition,settings,width,height,panHeld=false,dis
     const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;
     e.stopPropagation();const end=point(e),last=g.points.at(-1)!;if(Math.hypot(end.x-last.x,end.y-last.y)>.3&&g.points.length<4096)g.points.push(end);cancel();
     if(root.current?.hasPointerCapture(e.pointerId))root.current.releasePointerCapture(e.pointerId);
-    onCommit(stampStrokePaths(definition,settings,g.points,g.seed,`stamp_${Date.now().toString(36)}_${g.seed.toString(36)}`));
+    const result=createLiveStampStroke(definition,settings,g.points,g.seed,`stamp_${Date.now().toString(36)}_${g.seed.toString(36)}`);onCommit(result.paths,result.stroke);
   };
   return <g ref={root} tabIndex={-1} onPointerDown={e=>{
     if(e.button!==0||panHeld||disabled)return;e.stopPropagation();e.preventDefault();root.current?.focus();root.current?.setPointerCapture(e.pointerId);

@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CutoutPath, Layer, LayerPattern, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
+import { CutoutPath, FabricAsset, Layer, LayerPattern, PaperMode, PapercutProject, ShadowBlend } from '../types/papercut';
 import { surfaceOverlayMarkup } from './paperSurface';
+import { fabricFillMarkup } from './fabric';
 
 export interface LayerRenderOptions {
   /** Prefix for def ids so several renders can share one DOM without collisions. */
@@ -21,6 +22,8 @@ export interface LayerRenderOptions {
   grain?: boolean;
   /** Omit the element id (the canvas wraps each layer in its own hit-test group). */
   interactive?: boolean;
+  /** Shared raster assets referenced by fabric-filled paper layers. */
+  fabricAssets?: Record<string, FabricAsset>;
 }
 
 export const escapeAttr = (s: string) =>
@@ -47,6 +50,7 @@ export function projectShadowOptions(project: PapercutProject, strength = projec
     paperMode: mode,
     shadowSoftness: project.shadowSoftness ?? (mode === 'hard' ? 0 : 0.5),
     shadowBlend: project.shadowBlend ?? 'multiply',
+    fabricAssets: project.fabricAssets,
   };
 }
 
@@ -209,6 +213,12 @@ export function renderLayerMarkup(layer: Layer, opts: LayerRenderOptions): strin
   if (base) {
     body.push(`<g mask="url(#${maskId})" data-element-id="${BASE_BLOCK}">`);
     body.push(fillPaths(base, escapeAttr(layer.color)));
+    const fabricAsset = layer.fabric && opts.fabricAssets?.[layer.fabric.assetId];
+    if (layer.fabric && fabricAsset) {
+      const cloth = fabricFillMarkup(fabricAsset, layer.fabric, `${pid}_fabric`, splitSubpaths(base));
+      if (cloth.defs) defs.push(cloth.defs);
+      body.push(cloth.body);
+    }
     if (layer.pattern) {
       splitSubpaths(base).forEach((d) => body.push(`<path d="${d}" fill="url(#${patId})" opacity="${layer.pattern!.opacity}"/>`));
     }

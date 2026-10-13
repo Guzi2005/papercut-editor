@@ -10,8 +10,8 @@ export function exportStreet(p: PapercutProject): string {
   for(const id of flattenLayerIds(p)) {
     if(!isLayerRendered(p,id))continue;
     const l=p.layers[id];
-    if(l.cutouts.length||l.positiveElements.length||l.pattern||l.stroke?.enabled||l.surface||l.blendMode!=='normal'||l.drawings?.some(d=>d.blur)|| (l.drawings?.length&&!l.unclippedDrawings&&l.kind!=='doodle')) {
-      out.push(renderLayerMarkup(l,{idPrefix:'game_',paperMode:'vector',grain:false,shadow:0}));continue;
+    if(l.fabric||l.cutouts.length||l.positiveElements.length||l.pattern||l.stroke?.enabled||l.surface||l.blendMode!=='normal'||l.drawings?.some(d=>d.blur)|| (l.drawings?.length&&!l.unclippedDrawings&&l.kind!=='doodle')) {
+      out.push(renderLayerMarkup(l,{idPrefix:'game_',paperMode:'vector',grain:false,shadow:0,fabricAssets:p.fabricAssets}));continue;
     }
     out.push(`<g id="${escapeAttr(id)}" opacity="${l.opacity}">`);
     if(l.kind!=='doodle'&&l.baseShape.d)out.push(`<path d="${escapeAttr(l.baseShape.d)}" fill="${escapeAttr(l.color)}"/>`);
