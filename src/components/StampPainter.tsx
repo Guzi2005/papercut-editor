@@ -1,15 +1,15 @@
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
 import type {CutoutPath,Point} from '../types/papercut';
-import {ribbonBasePaths,stampStrokePaths,prepareStamp,stampPlacements,type StampDefinition,type StampSettings,type StampPlacement} from '../utils/stamps';
+import {ribbonDecorPaths,stampStrokePaths,stampColorVariants,placementColorIndex,stampPlacements,type StampDefinition,type StampSettings,type StampPlacement} from '../utils/stamps';
 
 export function StampInstances({definition,settings,placements}:{definition:StampDefinition;settings:StampSettings;placements:StampPlacement[]}) {
   const id='stamp-'+useId().replace(/[^a-z0-9_-]/gi,'');
-  const parts=useMemo(()=>prepareStamp(definition,settings),[definition,settings]);
-  return <g pointerEvents="none"><defs><g id={id}>{parts.map(p=><path key={p.id} d={p.d} fill={p.color}/>)}</g></defs>{placements.map((p,i)=><use key={i} href={`#${id}`} transform={`translate(${p.x} ${p.y}) rotate(${p.angle*180/Math.PI}) scale(${p.scale}) translate(-50 -50)`}/>)}</g>;
+  const variants=useMemo(()=>stampColorVariants(definition,settings),[definition,settings]);
+  return <g pointerEvents="none"><defs>{variants.map((parts,i)=><g key={i} id={`${id}_${i}`}>{parts.map(p=><path key={p.id} d={p.d} fill={p.color}/>)}</g>)}</defs>{placements.map((p,i)=><use key={i} href={`#${id}_${placementColorIndex(p,settings,variants.length)}`} transform={`translate(${p.x} ${p.y}) rotate(${p.angle*180/Math.PI}) scale(${p.scale}) translate(-50 -50)`}/>)}</g>;
 }
 
 export function StampStrokePreview({definition,settings,points,seed=17}:{definition:StampDefinition;settings:StampSettings;points:Point[];seed?:number}) {
-  const base=useMemo(()=>ribbonBasePaths(points,settings,'preview'),[points,settings]);
+  const base=useMemo(()=>ribbonDecorPaths(points,settings,'preview'),[points,settings]);
   return <g pointerEvents="none">{base.map(p=><path key={p.id} d={p.d} fill={p.fillColor}/>)}<StampInstances definition={definition} settings={settings} placements={stampPlacements(points,settings,seed)}/></g>;
 }
 
@@ -18,7 +18,7 @@ export function StampPainter({definition,settings,width,height,panHeld=false,dis
   const [preview,setPreview]=useState<StampPlacement[]>([]);
   const [previewPoints,setPreviewPoints]=useState<Point[]>([]);
   const [hover,setHover]=useState<Point|null>(null);
-  const base=useMemo(()=>ribbonBasePaths(previewPoints,settings,'gesture'),[previewPoints,settings]);
+  const base=useMemo(()=>ribbonDecorPaths(previewPoints,settings,'gesture'),[previewPoints,settings]);
   const cancel=()=>{gesture.current=null;setPreview([]);setPreviewPoints([]);};
   useEffect(()=>{cancel();setHover(null);},[definition,settings,disabled,panHeld]);
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&gesture.current){e.preventDefault();e.stopImmediatePropagation();cancel();}};window.addEventListener('keydown',key,true);window.addEventListener('blur',cancel);return()=>{window.removeEventListener('keydown',key,true);window.removeEventListener('blur',cancel);};},[]);

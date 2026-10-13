@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BUILTIN_STAMPS,DEFAULT_STAMP_SETTINGS as defaults,stampPlacements,prepareStamp,placedStampPaths,validateStampLibrary,normalizeStampSettings,ribbonBasePaths,stampStrokePaths} from '../src/utils/stamps';
+import {BUILTIN_STAMPS,DEFAULT_STAMP_SETTINGS as defaults,stampPlacements,prepareStamp,placedStampPaths,validateStampLibrary,normalizeStampSettings,ribbonBasePaths,stampStrokePaths,ribbonDecorPaths,stampColorVariants,placementColorIndex} from '../src/utils/stamps';
 import {createBlankCanvas} from '../src/utils/presetTemplates';
 import {layerContent} from '../src/utils/layerContent';
 
@@ -80,4 +80,41 @@ test('old libraries default to stamp mode while ribbon recipes round-trip all ba
   assert.equal(recipe.settings!.mode,'ribbon');assert.equal(recipe.settings!.ribbonWidth,92);assert.equal(recipe.settings!.ribbonFill,false);assert.equal(recipe.settings!.ribbonEdgeColor,'#445566');
   assert.equal(normalizeStampSettings({ribbonWidth:999,ribbonEdge:-5}).ribbonWidth,400);
   assert.equal(normalizeStampSettings({ribbonWidth:999,ribbonEdge:-5}).ribbonEdge,0);
+});
+
+
+test('multiple rows stay symmetric, follow bends and stagger by half a repeat',()=>{
+  const s={...defaults,mode:'ribbon' as const,size:20,ribbonRows:3,ribbonRowGap:1};
+  const straight=stampPlacements([{x:0,y:0},{x:100,y:0}],s,1);
+  assert.equal(straight.length,18);
+  assert.deepEqual(straight.filter(p=>p.column===0).map(p=>[p.x,p.y]),[[0,-20],[0,0],[0,20]]);
+  const vertical=stampPlacements([{x:0,y:0},{x:0,y:100}],s,1);
+  assert.ok(Math.abs(vertical.find(p=>p.row===0)!.x-20)<1e-6);
+  const staggered=stampPlacements([{x:0,y:0},{x:100,y:0}],{...s,ribbonStagger:true},1);
+  assert.equal(staggered.find(p=>p.row===1)!.x,10);
+  const long=stampPlacements([{x:0,y:0},{x:1e6,y:0}],{...s,ribbonRows:6},1);
+  assert.equal(long.length,300);for(let row=0;row<6;row++)assert.equal(long.filter(p=>p.row===row).length,50);
+});
+test('selvage stitches are finite editable vectors and work without a filled band',()=>{
+  for(const selvage of ['dash','cross','zigzag'] as const){
+    const s={...defaults,mode:'ribbon' as const,selvage,ribbonFill:false};
+    for(const points of [[{x:40,y:40}],[{x:40,y:40},{x:140,y:40}],[{x:40,y:40},{x:140,y:40},{x:140,y:140}]]){
+      const paths=ribbonDecorPaths(points,s,'stitch');assert.equal(paths.length,1);assert.equal(paths[0].fillColor,s.selvageColor);assert.ok(paths[0].d&&!/NaN|Infinity/.test(paths[0].d));
+    }
+  }
+  assert.equal(ribbonDecorPaths([{x:0,y:0},{x:100,y:0}],{...defaults,mode:'ribbon',selvage:'cross'},'band').length,3);
+});
+test('skip colours change only the selected original ink and follow column row or checker sequence',()=>{
+  const def=BUILTIN_STAMPS[0],s={...defaults,mode:'ribbon' as const,skipColorMode:'column' as const,skipColorSource:'#2E58D6',skipColors:['#FF0000','#00FF00']};
+  const variants=stampColorVariants(def,s);
+  assert.equal(variants[0][0].color,'#FF0000');assert.equal(variants[1][0].color,'#00FF00');assert.equal(variants[0][1].color,variants[1][1].color);
+  const at={x:0,y:0,scale:1,angle:0,row:1,column:2};
+  assert.equal(placementColorIndex(at,s,2),0);
+  assert.equal(placementColorIndex(at,{...s,skipColorMode:'row'},2),1);
+  assert.equal(placementColorIndex(at,{...s,skipColorMode:'checker'},2),1);
+  assert.equal(placementColorIndex(at,{...s,skipColorEvery:2},2),1);
+  const [saved]=validateStampLibrary([{...def,settings:{...s,ribbonRows:3,ribbonStagger:true,selvage:'cross'}}]);
+  assert.equal(saved.settings!.ribbonRows,3);assert.equal(saved.settings!.selvage,'cross');assert.deepEqual(saved.settings!.skipColors,s.skipColors);
+  assert.equal(normalizeStampSettings({ribbonRows:99,skipColors:['invalid']}).ribbonRows,6);
+  assert.deepEqual(normalizeStampSettings({skipColors:['invalid']}).skipColors,defaults.skipColors);
 });
