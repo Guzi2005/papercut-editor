@@ -2,9 +2,12 @@ import type { CutoutPath, Layer, LayerDrawStroke, Point } from '../types/papercu
 import { applyToPoint, isWarp, multiply, transformPathD, type Matrix, type Transform } from './pathTransform';
 import { normalizeStampSettings, stampStrokePaths, validateStampLibrary, type StampDefinition, type StampSettings } from './stamps';
 import {normalizeHex} from './color';
+import {applySymmetry,conjugateSymmetry} from './symmetry';
 
 /** An immutable motif version and local brush recipe, plus placement and editable native cache. */
 export interface LiveStampStroke {
+  /** Captured copy transforms; subsequent axis changes affect new strokes only. */
+  symmetryMatrices?:Matrix[];
   id: string;
   definition: StampDefinition;
   settings: StampSettings;
@@ -50,20 +53,28 @@ function fingerprint(path: CutoutPath | LayerDrawStroke): string {
 const nativePaths = (layer: LiveStampLayer): (CutoutPath | LayerDrawStroke)[] => layer.kind === 'doodle'
   ? layer.drawings ?? [] : [...layer.positiveElements, ...layer.cutouts];
 const asDrawing = (path: CutoutPath): LayerDrawStroke => ({
-  id: path.id, d: path.d, color: path.fillColor || '#000000', opacity: 1, strokeWidth: 1, brushType: 'pen', fill: true,
+  id: path.id, d: path.d, symmetrySource:path.symmetrySource, color: path.fillColor || '#000000', opacity: 1, strokeWidth: 1, brushType: 'pen', fill: true,
 });
 const hashesOf = (paths: (CutoutPath | LayerDrawStroke)[]) => Object.fromEntries(paths.map(path => [path.id, fingerprint(path)]));
 
 function generate(stroke: LiveStampStroke): CutoutPath[] {
   const paths = stampStrokePaths(stroke.definition, stroke.settings, stroke.points, stroke.seed, stroke.id).map(path=>({...path,fillColor:stroke.colorMap?.[normalizeHex(path.fillColor??'')??'']??path.fillColor}));
-  return stroke.transform ? paths.map(path => ({ ...path, d: transformPathD(path.d, stroke.transform!) })) : paths;
+  const matrices=stroke.symmetryMatrices&&stroke.transform?conjugateSymmetry(stroke.symmetryMatrices,stroke.transform):stroke.symmetryMatrices;
+  return paths.map(path=>{
+    const sourceD=stroke.transform?transformPathD(path.d,stroke.transform):path.d;
+    // Transform the entire baked result in one pass so unchanged recipes regenerate exact native geometry.
+    const baked=stroke.symmetryMatrices&&stroke.symmetryMatrices.length>1?applySymmetry(path.d,stroke.symmetryMatrices):path.d;
+    return {...path,d:stroke.transform?transformPathD(baked,stroke.transform):baked,
+      ...(matrices&&matrices.length>1?{symmetrySource:{d:sourceD,matrices}}:{})};
+  });
 }
 
-export function createLiveStampStroke(definition: StampDefinition, settings: StampSettings, points: Point[], seed: number, id: string): { stroke: LiveStampStroke; paths: CutoutPath[] } {
+export function createLiveStampStroke(definition: StampDefinition, settings: StampSettings, points: Point[], seed: number, id: string,matrices?:Matrix[]): { stroke: LiveStampStroke; paths: CutoutPath[] } {
   if (!validId(id) || !validPoints(points)) throw new Error('纹样笔画路径无效');
   const stroke: LiveStampStroke = {
     id, definition: copyDefinition(definition), settings: normalizeStampSettings(settings),
     points: clonePoints(points), seed: seedOf(seed), pathIds: [],
+    symmetryMatrices:matrices&&matrices.length>1?matrices.map(m=>[...m] as Matrix):undefined,
   };
   const generated = generate(stroke), time = Date.now();
   // All native pieces belong to one operation, before a subsequent cut or appliqué.
@@ -204,7 +215,8 @@ export function normalizeLiveStamps(value: unknown): LiveStampStroke[] {
       const cacheHashes = input.cacheHashes && typeof input.cacheHashes === 'object'
         ? Object.fromEntries(Object.entries(input.cacheHashes).filter(([id, hash]) => input.pathIds.includes(id) && typeof hash === 'string' && /^[0-9]+:[a-z0-9]+$/.test(hash))) as Record<string, string> : undefined;
       const colorMap=input.colorMap&&typeof input.colorMap==='object'?Object.fromEntries(Object.entries(input.colorMap).flatMap(([from,to])=>{const f=normalizeHex(from),t=typeof to==='string'?normalizeHex(to):null;return f&&t?[[f,t]]:[];})):undefined;
-      result.push({ id: input.id, definition, settings: normalizeStampSettings(input.settings ?? {}), points: clonePoints(input.points), seed: seedOf(input.seed), pathIds: [...input.pathIds], transform, cacheHashes,colorMap });
+      const symmetryMatrices=Array.isArray(input.symmetryMatrices)&&input.symmetryMatrices.length<=64&&input.symmetryMatrices.every((m:unknown)=>Array.isArray(m)&&m.length===6&&m.every((n:unknown)=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1e9))?input.symmetryMatrices.map((m:Matrix)=>[...m] as Matrix):undefined;
+      result.push({ id: input.id, definition, settings: normalizeStampSettings(input.settings ?? {}), points: clonePoints(input.points), seed: seedOf(input.seed), pathIds: [...input.pathIds], transform, cacheHashes,colorMap,symmetryMatrices });
       usedIds.add(input.id);
     } catch { /* A malformed recipe never prevents its cached native shapes from opening. */ }
   }

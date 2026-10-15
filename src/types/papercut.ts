@@ -7,6 +7,7 @@ import type { SymmetrySettings } from '../utils/symmetry';
 import type { PathCap, StrokeStyle } from '../utils/strokePath';
 import type { ColorScheme } from '../utils/palettes';
 import type {LiveStampStroke} from '../utils/liveStamps';
+import type { Matrix } from '../utils/pathTransform';
 
 export interface Point {
   x: number;
@@ -27,6 +28,7 @@ export type CutoutType =
   | 'custom_polygon';
 
 export interface CutoutPath {
+  symmetrySource?: SymmetrySource;
   vectorNodeModes?: VectorNodeMode[][];
   id: string;
   name: string;
@@ -52,7 +54,14 @@ export type BaseShapeType =
 
 export type VectorNodeMode = 'corner' | 'smooth' | 'symmetric';
 
+/** Editable source geometry and its baked symmetry instances, in document coordinates. */
+export interface SymmetrySource {
+  d: string;
+  matrices: Matrix[];
+}
+
 export interface BaseShape {
+  symmetrySource?: SymmetrySource;
   vectorNodeModes?: VectorNodeMode[][];
   type: BaseShapeType;
   d: string; // SVG path for outer paper boundary
@@ -110,6 +119,7 @@ export type DrawBrushType = 'pencil' | 'pen' | 'airbrush' | 'willow';
 export type PencilHardness = 1 | 2 | 3 | 4 | 5;
 
 export interface LayerDrawStroke {
+  symmetrySource?: SymmetrySource;
   vectorNodeModes?: VectorNodeMode[][];
   id: string;
   brushType: DrawBrushType;
@@ -218,6 +228,16 @@ export interface LayerGroup {
   layerIds: string[];
 }
 
+/** Editing membership only; render order remains in rootOrder, independent of groups and items. */
+export interface DrawingGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  visible: boolean;
+  locked: boolean;
+  layerIds: string[];
+}
+
 export type RootItem =
   | { type: 'group'; id: string }
   | { type: 'layer'; id: string };
@@ -239,6 +259,7 @@ export type ToolType =
   | 'freehand' // 别名兼容
   | 'hand_draw' // 手绘 (铅笔/钢笔/喷枪，附属于剪纸图层蒙版)
   | 'stamp' // 图章与纹样散布
+  | 'vector_pen' // 钢笔：点击落点，拖动拉出贝塞尔切线
   | 'vector_edit' // 矢量绘图：精细贝塞尔编辑
   | 'anchor_edit'; // 锚点调整 (自由拖动顶点变形)
 
@@ -305,6 +326,8 @@ export interface BrushSettings {
 }
 
 export interface PapercutProject {
+  drawingGroups?: DrawingGroup[];
+  symmetry?: SymmetrySettings;
   outfits?: OutfitDefinition[];
   fabricAssets?: Record<string,FabricAsset>;
   colorSchemes?: ColorScheme[];

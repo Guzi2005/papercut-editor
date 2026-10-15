@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Matrix, IDENTITY, rotateAbout, transformPathD } from './pathTransform';
+import { Matrix, IDENTITY, rotateAbout, transformPathD, multiply } from './pathTransform';
 
 export type SymmetryKind = 'none' | 'mirror' | 'rotate';
 
@@ -16,9 +16,22 @@ export interface SymmetrySettings {
   /** Centre in canvas units; undefined means the canvas centre. */
   cx?: number;
   cy?: number;
+  /** Guides remain available across drawing, selecting, and vector tools. */
+  visible?: boolean;
+  locked?: boolean;
 }
 
-export const DEFAULT_SYMMETRY: SymmetrySettings = { kind: 'none', count: 1, angle: 90 };
+export const DEFAULT_SYMMETRY: SymmetrySettings = { kind: 'none', count: 1, angle: 90, visible: true, locked: false };
+
+export function normalizeSymmetry(value:unknown):SymmetrySettings|undefined {
+  if(!value||typeof value!=='object')return;
+  const s=value as Partial<SymmetrySettings>;
+  if(!['none','mirror','rotate'].includes(s.kind??''))return;
+  const bounded=(v:unknown,fallback:number,min:number,max:number)=>typeof v==='number'&&Number.isFinite(v)?Math.min(max,Math.max(min,v)):fallback;
+  return {kind:s.kind!,count:Math.round(bounded(s.count,s.kind==='rotate'?2:1,s.kind==='rotate'?2:1,s.kind==='mirror'?4:12)),
+    angle:bounded(s.angle,90,-360,360),cx:typeof s.cx==='number'&&Number.isFinite(s.cx)?Math.min(1e6,Math.max(-1e6,s.cx)):undefined,
+    cy:typeof s.cy==='number'&&Number.isFinite(s.cy)?Math.min(1e6,Math.max(-1e6,s.cy)):undefined,visible:s.visible!==false,locked:s.locked===true};
+}
 
 /** Reflection across the line through (cx, cy) at `deg` degrees. */
 export function reflectAcross(deg: number, cx: number, cy: number): Matrix {
@@ -52,6 +65,14 @@ export function symmetryMatrices(s: SymmetrySettings, width: number, height: num
 export function applySymmetry(d: string, matrices: Matrix[]): string {
   if (!d || matrices.length <= 1) return d;
   return matrices.map((m) => (m === IDENTITY ? d : transformPathD(d, m))).join(' ');
+}
+
+/** Keep a copy relationship in world coordinates after an affine object transform. */
+export function conjugateSymmetry(matrices:Matrix[],transform:Matrix):Matrix[] {
+  const [a,b,c,d,e,f]=transform,det=a*d-b*c;
+  if(Math.abs(det)<1e-12)return [IDENTITY];
+  const inverse:Matrix=[d/det,-b/det,-c/det,a/det,(c*f-d*e)/det,(b*e-a*f)/det];
+  return matrices.map(copy=>multiply(transform,multiply(copy,inverse)));
 }
 
 /** Axis lines (mirror) or spokes (rotate) for the on-canvas guide, as [x1,y1,x2,y2]. */

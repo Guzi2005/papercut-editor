@@ -4,6 +4,9 @@ import { StampPainter } from './StampPainter';
 import type { StampDefinition, StampSettings } from '../utils/stamps';
 import { layerContent } from '../utils/layerContent';
 import { VectorEditor } from './VectorEditor';
+import { VectorPen } from './VectorPen';
+import { cutoutAnchors, editableStroke, reviseCutoutAnchors } from '../utils/vectorAnchors';
+import { serializeVectorPath, type VectorPath } from '../utils/vectorPath';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -56,6 +59,8 @@ import {
 } from '../utils/pathTransform';
 import {
   findGroupOfLayer,
+  findDrawingGroupOfLayer,
+  getLayerEffectiveState,
   findItemOfLayer,
   isLayerRendered,
   flattenLayerIds,
@@ -69,7 +74,7 @@ import { Check, X } from 'lucide-react';
 import { useMediaQuery, COARSE_QUERY } from '../hooks/useMediaQuery';
 import { Keymap, bindingHas, comboFromKeyEvent, comboFromPointer, comboFromWheel } from '../utils/keymap';
 import { WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
-import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY } from '../utils/symmetry';
+import { applySymmetry, symmetryCenter, symmetryGuides, symmetryMatrices, DEFAULT_SYMMETRY, type SymmetrySettings } from '../utils/symmetry';
 import { splitSubpaths } from '../utils/layerSvg';
 import { ShortcutHints } from './ShortcutHints';
 import { PathfinderBar } from './PathfinderBar';
@@ -78,7 +83,7 @@ import { CanvasBackdrop } from './CanvasBackdrop';
 import { DEFAULT_STROKE, StrokeStyle, strokeOutline } from '../utils/strokePath';
 import { drawingPreviewStyle, type DrawingPreviewMode } from '../utils/drawingPreview';
 
-export type SelectionScope = 'part' | 'item' | 'color';
+export type SelectionScope = 'part' | 'item' | 'group' | 'color';
 
 export interface FlashRequest {
   key: number;
@@ -93,6 +98,7 @@ export interface PointInfo {
 }
 
 interface CanvasProps {
+  onSymmetryChange?: (settings:SymmetrySettings,commit?:boolean)=>void;
   drawingPreviewMode?: DrawingPreviewMode;
   liveStampPath?:import('../utils/liveStamps').LiveStampStroke;
   onLiveStampPathCommit?:(points:Point[])=>void;
@@ -211,6 +217,7 @@ function unionBBox(boxes: BBox[]): BBox | null {
 
 export const Canvas: React.FC<CanvasProps> = ({
   project,
+  onSymmetryChange,
   drawingPreviewMode = 'outline',
   stampDefinition, stampSettings, onStamp, fabricAdjust, onFabricCommit, onBlockSelectionChange, liveStampPath, onLiveStampPathCommit,
   onCommitVectorLayer,
@@ -246,6 +253,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 }) => {
   const [flashing, setFlashing] = useState<FlashRequest | null>(null);
   const [vectorPreview, setVectorPreview] = useState<Layer | null>(null);
+  const [vectorPick,setVectorPick]=useState<{layerId:string;targetId:string}|null>(null);
   useEffect(() => {
     if (!flash) return;
     setFlashing(flash);
@@ -318,6 +326,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [editableAnchors, setEditableAnchors] = useState<Point[]>([]);
   const [hasDraggedAnchor, setHasDraggedAnchor] = useState(false);
   const [isDraggingAnchor, setIsDraggingAnchor] = useState(false);
+  const anchorDragStart = useRef<Point|null>(null);
 
   // Select tool state: live preview matrix + pivot/socket drag positions
   const dragRef = useRef<DragState | null>(null);
@@ -353,10 +362,11 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const activeLayer = activeLayerId ? project.layers[activeLayerId] : null;
   const activeGroup = activeLayerId ? findGroupOfLayer(project, activeLayerId) : null;
-  const activeLocked = !!activeLayer && (activeLayer.locked || !!activeGroup?.locked);
+  const activeLocked = !!activeLayerId && getLayerEffectiveState(project,activeLayerId).locked;
   const activeHidden = !!activeLayerId && !isLayerRendered(project, activeLayerId);
   const activeDoodle = activeLayer?.kind === 'doodle';
-  const editingStroke = currentTool === 'anchor_edit' && selectedCutoutId ? activeLayer?.cutouts.find((c) => c.id === selectedCutoutId)?.stroke : undefined;
+  const editingCutout = currentTool === 'anchor_edit' && selectedCutoutId ? activeLayer?.cutouts.find((c) => c.id === selectedCutoutId) : undefined;
+  const editingStroke = editingCutout ? editableStroke(editingCutout) : undefined;
   const shadowOpts = useMemo(
     () => projectShadowOptions(project),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -403,7 +413,8 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     if (currentTool !== 'select') return;
     const onKey = (e: KeyboardEvent) => {
-      if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"]'))return;
+      if(e.defaultPrevented || (e.target as Element|null)?.closest('[data-layers-panel]'))return;
+      if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"],[data-property-control]'))return;
       if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -439,10 +450,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (!selectedCutoutId && activeLayer && activeLayer.cutouts.length > 0) {
         const lastCutout = activeLayer.cutouts[activeLayer.cutouts.length - 1];
         setSelectedCutoutId(lastCutout.id);
-        const anchors =
-          lastCutout.points && lastCutout.points.length > 0
-            ? lastCutout.points
-            : extractAnchorPointsFromD(lastCutout.d);
+        const anchors = cutoutAnchors(lastCutout);
         setEditableAnchors(anchors);
       }
     } else {
@@ -457,10 +465,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (currentTool === 'anchor_edit' && selectedCutoutId && activeLayer) {
       const cutout = activeLayer.cutouts.find((c) => c.id === selectedCutoutId);
       if (cutout) {
-        const anchors =
-          cutout.points && cutout.points.length > 0
-            ? cutout.points
-            : extractAnchorPointsFromD(cutout.d);
+        const anchors = cutoutAnchors(cutout);
         setEditableAnchors(anchors);
       }
     }
@@ -795,6 +800,10 @@ export const Canvas: React.FC<CanvasProps> = ({
   };
 
   const expandToScope = (layerId: string): string[] => {
+    if(selectionScope === 'group') {
+      const group=findDrawingGroupOfLayer(project,layerId);
+      if(group)return [...group.layerIds];
+    }
     if (selectionScope === 'item') {
       const item = findItemOfLayer(project, layerId);
       if (item) return [...item.partIds];
@@ -1106,7 +1115,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         const m = computeTransform(st, pt, e.shiftKey, e.ctrlKey || e.metaKey);
         const canMove = (id: string) => {
           const l = project.layers[id];
-          return l && !l.locked && !findGroupOfLayer(project, id)?.locked;
+          return l && !getLayerEffectiveState(project,id).locked;
         };
         if (colorScope) {
           const sel = Object.fromEntries(Object.entries(blockSel).filter(([lid]) => canMove(lid)));
@@ -1171,12 +1180,22 @@ export const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
-    if ((e.target as Element).closest?.('[data-handle="sym-center"]')) {
-      setSymDragging(true);
+    const axisHandle=(e.target as Element).closest?.('[data-handle="sym-center"], [data-handle="sym-angle"]');
+    if (axisHandle && !symmetry.locked) {
+      setSymDragging(axisHandle.getAttribute('data-handle')==='sym-angle'?'angle':'center');
       return;
     }
 
-    if (currentTool === 'vector_edit' || currentTool === 'stamp') return;
+    if (currentTool === 'vector_edit') {
+      const hitId=layerIdFromTarget(e.target);
+      if(hitId && !getLayerEffectiveState(project,hitId).locked){
+        const element=(e.target as Element).closest?.('[data-element-id]');
+        const id=element?.getAttribute('data-element-id')??topBlockAt(project.layers[hitId],pt.x,pt.y);
+        onPickLayer(hitId);setVectorPick({layerId:hitId,targetId:id===BASE_BLOCK?'base':id??'base'});
+      }
+      return;
+    }
+    if (currentTool === 'vector_pen' || currentTool === 'stamp') return;
 
     if (currentTool === 'select') {
       handleSelectDown(e, pt);
@@ -1185,6 +1204,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     // 1. Anchor Edit Tool
     if (currentTool === 'anchor_edit') {
+      if(!activeLayer || activeLocked || activeHidden)return;
       if (selectedCutoutId && editableAnchors.length > 0) {
         const hitIdx = editableAnchors.findIndex(
           (a) => Math.hypot(a.x - pt.x, a.y - pt.y) < 18 / zoom
@@ -1193,6 +1213,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           setActiveAnchorIndex(hitIdx);
           setIsDraggingAnchor(true);
           setHasDraggedAnchor(false);
+          anchorDragStart.current=editableAnchors[hitIdx];
           document.body.style.cursor = 'grabbing';
           return;
         }
@@ -1201,7 +1222,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (activeLayer) {
         for (let i = activeLayer.cutouts.length - 1; i >= 0; i--) {
           const cutout = activeLayer.cutouts[i];
-          const anchors = cutout.points || extractAnchorPointsFromD(cutout.d);
+          const anchors = cutoutAnchors(cutout);
           const hitIdx = anchors.findIndex(
             (a) => Math.hypot(a.x - pt.x, a.y - pt.y) < 22 / zoom
           );
@@ -1211,6 +1232,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             setActiveAnchorIndex(hitIdx);
             setIsDraggingAnchor(true);
             setHasDraggedAnchor(false);
+            anchorDragStart.current=anchors[hitIdx];
             document.body.style.cursor = 'grabbing';
             return;
           }
@@ -1285,17 +1307,14 @@ export const Canvas: React.FC<CanvasProps> = ({
 
       // Anchor dragging in anchor_edit mode
       if (currentTool === 'anchor_edit' && activeAnchorIndex !== null && selectedCutoutId) {
+        if(anchorDragStart.current && Math.hypot(pt.x-anchorDragStart.current.x,pt.y-anchorDragStart.current.y)*zoom<2)return;
         const nextAnchors = [...editableAnchors];
         nextAnchors[activeAnchorIndex] = pt;
         setEditableAnchors(nextAnchors);
         setHasDraggedAnchor(true);
 
         const editing = activeLayer?.cutouts.find((c) => c.id === selectedCutoutId);
-        const newD = editing?.stroke ? strokeOutline(nextAnchors, editing.stroke) : rebuildPathFromPoints(nextAnchors);
-        onUpdateCutout(selectedCutoutId, {
-          d: newD,
-          points: nextAnchors,
-        });
+        if(editing)onUpdateCutout(selectedCutoutId,reviseCutoutAnchors(editing,nextAnchors));
         return;
       }
 
@@ -1346,6 +1365,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         document.body.style.userSelect = '';
         setIsDraggingAnchor(false);
         setActiveAnchorIndex(null);
+        anchorDragStart.current=null;
         if (hasDraggedAnchor) {
           onCommitCutoutEdit?.();
           setHasDraggedAnchor(false);
@@ -1371,6 +1391,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               brushType: 'willow',
               d: withSymmetry(leafD),
+              symmetrySource: symmetryMetadata(leafD),
               color: brushSettings.brushColor,
               opacity: brushSettings.drawOpacity ?? 0.85,
               strokeWidth: 0,
@@ -1397,6 +1418,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               id: `drw_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
               brushType,
               d: withSymmetry(drawD),
+              symmetrySource: symmetryMetadata(drawD),
               color: brushSettings.brushColor,
               opacity: finalOpacity,
               strokeWidth,
@@ -1480,6 +1502,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           playDiscardSwoosh();
         }
       } else if (baseD && activeLayer && canCarve) {
+        const sourceD=baseD;
         baseD = withSymmetry(baseD);
         const isHole = decideHole(activeLayer, baseD, cutoutPoints ?? strokePoints, startPoint);
         const toolNames: Record<string, string> = {
@@ -1499,6 +1522,7 @@ export const Canvas: React.FC<CanvasProps> = ({
               ? 'geom_shape'
               : 'pen_knife',
           d: baseD,
+          symmetrySource: symmetryMetadata(sourceD),
           isHole,
           fillColor: isHole ? undefined : brushSettings.brushColor,
           createdAt: Date.now(),
@@ -1546,21 +1570,23 @@ export const Canvas: React.FC<CanvasProps> = ({
     currentPoint,
     strokePoints,
     brushSettings,
+    project.symmetry,
     onAddCutout,
     onRemoveCutouts,
     onAddDrawingStroke,
     zoom,
   ]);
 
-  const symmetry = brushSettings.symmetry ?? DEFAULT_SYMMETRY;
+  const symmetry = project.symmetry ?? brushSettings.symmetry ?? DEFAULT_SYMMETRY;
   const symMats = useMemo(
     () => symmetryMatrices(symmetry, project.width, project.height),
     [symmetry, project.width, project.height]
   );
   const withSymmetry = (d: string) => applySymmetry(d, symMats);
+  const symmetryMetadata = (d:string) => symMats.length>1?{d,matrices:symMats.map(m=>[...m] as Matrix)}:undefined;
 
   // 刻纸/贴花/剪除 belong to the 剪纸 tool; 几何 and 笔刀 always carve by 刻纸's own judgement.
-  const carveMode = currentTool === 'willow_leaf' ? brushSettings.mode : 'cutout';
+  const carveMode = currentTool === 'willow_leaf' || currentTool === 'vector_pen' ? brushSettings.mode : 'cutout';
   const decideHole = (layer: Layer, d: string, pts: Point[], start: Point) =>
     carveMode === 'positive' ? false : carveMode === 'erase' ? true : classifyCarve(layer, d, pts, start) === 'hole';
 
@@ -1571,7 +1597,8 @@ export const Canvas: React.FC<CanvasProps> = ({
     const open = brushSettings.geomShapeType === 'path';
     if (!open && pts.length < 3) return;
     const stroke = open ? pathStyle(pts.length) : undefined;
-    const d = withSymmetry(stroke ? strokeOutline(pts, stroke) : `M ${pts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`);
+    const sourceD=stroke ? strokeOutline(pts, stroke) : `M ${pts.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`;
+    const d = withSymmetry(sourceD);
     if (!d) return;
     const isHole = decideHole(activeLayer, d, pts, pts[0]);
     onAddCutout({
@@ -1580,6 +1607,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       type: 'geom_shape',
       geomType: open ? 'path' : 'polyline',
       d,
+      symmetrySource: symmetryMetadata(sourceD),
       isHole,
       fillColor: isHole ? undefined : brushSettings.brushColor,
       createdAt: Date.now(),
@@ -1595,6 +1623,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   pendingRef.current = polylinePoints;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"],[data-property-control]'))return;
       if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       if (pendingRef.current.length === 0) return;
       if (e.key === 'Enter') {
@@ -1619,7 +1648,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
   }, [currentTool, multiPoint]);
 
-  const [symDragging, setSymDragging] = useState(false);
+  const [symDragging, setSymDragging] = useState<'center'|'angle'|null>(null);
   const symmetryRef = useRef(symmetry);
   symmetryRef.current = symmetry;
   useEffect(() => {
@@ -1627,20 +1656,29 @@ export const Canvas: React.FC<CanvasProps> = ({
     const onMove = (e: PointerEvent) => {
       const p = clientToCanvas(e.clientX, e.clientY);
       const snap = 8 / zoom;
-      let x = Math.round(p.x);
-      let y = Math.round(p.y);
-      if (Math.abs(x - project.width / 2) < snap) x = project.width / 2;
-      if (Math.abs(y - project.height / 2) < snap) y = project.height / 2;
-      onChangeBrushSettings({ symmetry: { ...symmetryRef.current, cx: x, cy: y } });
+      let next:SymmetrySettings;
+      if(symDragging==='angle') {
+        const center=symmetryCenter(symmetryRef.current,project.width,project.height);
+        let angle=Math.atan2(p.y-center.y,p.x-center.x)*180/Math.PI;
+        if(e.ctrlKey||e.shiftKey)angle=Math.round(angle/15)*15;
+        next={...symmetryRef.current,angle:Math.round(angle*10)/10};
+      } else {
+        let x = Math.round(p.x), y = Math.round(p.y);
+        if (Math.abs(x - project.width / 2) < snap) x = project.width / 2;
+        if (Math.abs(y - project.height / 2) < snap) y = project.height / 2;
+        next={...symmetryRef.current,cx:x,cy:y};
+      }
+      symmetryRef.current=next;
+      if(onSymmetryChange)onSymmetryChange(next,false);else onChangeBrushSettings({symmetry:next});
     };
-    const onUp = () => setSymDragging(false);
+    const onUp = () => {setSymDragging(null);onSymmetryChange?.(symmetryRef.current,true);};
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [symDragging, clientToCanvas, zoom, project.width, project.height, onChangeBrushSettings]);
+  }, [symDragging, clientToCanvas, zoom, project.width, project.height, onChangeBrushSettings,onSymmetryChange]);
 
   const drawingTool = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand', 'hand_draw'].includes(currentTool);
   const canPreviewDrawing = !!activeLayer && !activeLocked && !activeHidden && (!activeDoodle || currentTool === 'hand_draw');
@@ -1652,8 +1690,21 @@ export const Canvas: React.FC<CanvasProps> = ({
       ? strokeOutline(pendingShapePoints, pathStyle(pendingShapePoints.length))
       : `M ${pendingShapePoints.map((p) => `${f(p.x)} ${f(p.y)}`).join(' L ')} Z`
   );
-  const symGuides = drawingTool ? symmetryGuides(symmetry, project.width, project.height) : [];
+  const symGuides = symmetry.visible!==false ? symmetryGuides(symmetry, project.width, project.height) : [];
   const symCenter = symmetryCenter(symmetry, project.width, project.height);
+  const axisAngle=symmetry.angle*Math.PI/180;
+  const symAngleHandle={x:symCenter.x+Math.cos(axisAngle)*52/zoom,y:symCenter.y+Math.sin(axisAngle)*52/zoom};
+  const commitPen=(path:VectorPath,closed:boolean)=>{
+    if(!activeLayer||activeLocked||activeHidden)return;
+    const sourceD=serializeVectorPath(path),d=withSymmetry(sourceD);
+    const vectorNodeModes=path.map(c=>c.nodes.map(n=>n.mode??'corner'));
+    if(!closed||activeDoodle){
+      onAddDrawingStroke?.({id:`drw_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,brushType:'pen',d,color:brushSettings.brushColor,opacity:brushSettings.drawOpacity??1,strokeWidth:closed?0:brushSettings.pathWidth??6,strokeLinecap:'round',strokeLinejoin:'round',fill:closed,vectorNodeModes,symmetrySource:symmetryMetadata(sourceD)});
+    }else{
+      const pts=path.flatMap(c=>c.nodes.map(({x,y})=>({x,y}))),isHole=decideHole(activeLayer,d,pts,pts[0]);
+      onAddCutout({id:`cut_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,name:`钢笔路径 ${activeLayer.cutouts.length+1}`,type:'custom_polygon',d,isHole,fillColor:isHole?undefined:brushSettings.brushColor,createdAt:Date.now(),vectorNodeModes,symmetrySource:symmetryMetadata(sourceD)});
+    }
+  };
 
   // Live preview geometry, evaluated from refs inside the animation-frame flush
   previewFnRef.current = (pts: Point[], cur: Point): string => withSymmetry(previewShape(pts, cur));
@@ -1814,7 +1865,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           >
             <CanvasBackdrop bg={project.canvasBg} width={project.width} height={project.height} zoom={zoom} />
 
-            {ref && !ref.onTop && referenceNode}
+            {ref && referenceNode}
 
             {/* Isolated so blend modes mix only between paper layers, never with the notepad backing */}
             <g style={{ isolation: 'isolate' }}>
@@ -1836,7 +1887,6 @@ export const Canvas: React.FC<CanvasProps> = ({
               ))}
             </g>
 
-            {ref && ref.onTop && referenceNode}
 
           </svg>
 
@@ -1848,11 +1898,16 @@ export const Canvas: React.FC<CanvasProps> = ({
           >
             {liveStampPath&&!isSpacePressed&&onLiveStampPathCommit&&<LiveStampPathOverlay key={liveStampPath.id} stroke={liveStampPath} onCommit={onLiveStampPathCommit}/>}
             {fabricAdjust&&!isSpacePressed&&activeLayer?.fabric&&!activeLocked&&onFabricCommit&&<FabricAdjustOverlay layer={activeLayer} assets={project.fabricAssets} onCommit={onFabricCommit}/>}
-            {currentTool === 'stamp' && <StampPainter definition={stampDefinition} settings={stampSettings} width={project.width} height={project.height} panHeld={isSpacePressed} disabled={activeLocked || (!!activeLayer && !isLayerRendered(project,activeLayer.id))} onCommit={onStamp}/>}
+            {currentTool === 'stamp' && <StampPainter definition={stampDefinition} settings={stampSettings} width={project.width} height={project.height} matrices={symMats} panHeld={isSpacePressed} disabled={activeLocked || (!!activeLayer && !isLayerRendered(project,activeLayer.id))} onCommit={onStamp}/>}
+            {currentTool === 'vector_pen' && <VectorPen key={project.id+':'+activeLayerId} width={project.width} height={project.height} zoom={zoom} color={brushSettings.brushColor} strokeWidth={brushSettings.pathWidth??6} matrices={symMats} previewMode={drawingPreviewMode} disabled={!activeLayer||activeLocked||activeHidden} panHeld={isSpacePressed} onCommit={commitPen}/>}
+            {currentTool==='vector_edit' && !isSpacePressed && renderLayerOrder.filter(l=>l.id!==activeLayerId&&!getLayerEffectiveState(project,l.id).locked).map(l=><g key={l.id} data-layer-id={l.id}>
+              {[...(l.kind==='doodle'?[]:[{id:'base',d:l.baseShape.d}]),...l.positiveElements,...l.cutouts,...(l.drawings??[])].map(p=><path key={p.id} d={p.d} fill="none" stroke="transparent" strokeWidth={10/zoom} pointerEvents="stroke" onPointerDown={e=>{if(e.button!==0)return;e.stopPropagation();onPickLayer(l.id);setVectorPick({layerId:l.id,targetId:p.id});}}/>)}
+            </g>)}
             {currentTool === 'vector_edit' && activeLayer && <VectorEditor
               key={project.id + ':' + activeLayer.id}
               layer={activeLayer} zoom={zoom} disabled={activeLocked || !isLayerRendered(project, activeLayer.id)}
               panHeld={isSpacePressed} onCommit={onCommitVectorLayer} onPreview={setVectorPreview}
+              requestedTarget={vectorPick?.layerId===activeLayer.id?vectorPick.targetId:null}
             />}
             {/* Direct clickable hit area for cutouts when in anchor_edit mode */}
             {activeLayer && currentTool === 'anchor_edit' && isLayerRendered(project, activeLayer.id) && (
@@ -1874,10 +1929,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         setSelectedCutoutId(c.id);
-                        const anchors =
-                          c.points && c.points.length > 0
-                            ? c.points
-                            : extractAnchorPointsFromD(c.d);
+                        const anchors = cutoutAnchors(c);
                         setEditableAnchors(anchors);
                       }}
                     />
@@ -1942,12 +1994,9 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             {/* Click-placed shape in progress */}
             {currentTool === 'geom_shape' && multiPoint && polylinePoints.length > 0 && canPreviewDrawing && pendingShapeD && (
-              <path
-                data-drawing-preview={drawingPreviewMode}
-                d={pendingShapeD}
-                {...shapePreviewStyle}
-                pointerEvents="none"
-              />
+              <g data-drawing-preview={drawingPreviewMode} {...shapePreviewStyle} pointerEvents="none">
+                {splitSubpaths(pendingShapeD).map((d,i)=><path key={i} d={d}/>)}
+              </g>
             )}
 
             {lasso && lasso.length > 1 && (
@@ -2171,19 +2220,21 @@ export const Canvas: React.FC<CanvasProps> = ({
                       pointerEvents="all"
                       data-tip={editingStroke ? '双击切换尖角 / 曲线' : undefined}
                       onDoubleClick={(e) => {
-                        if (!editingStroke || !selectedCutoutId) return;
+                        if (!editingStroke || !selectedCutoutId || !editingCutout || activeLocked || activeHidden) return;
                         e.stopPropagation();
                         const smooth = editableAnchors.map((_, i) => (i === idx ? !editingStroke.smooth[i] : !!editingStroke.smooth[i]));
                         const stroke = { ...editingStroke, smooth };
-                        onUpdateCutout(selectedCutoutId, { stroke, d: strokeOutline(editableAnchors, stroke) }, true);
+                        onUpdateCutout(selectedCutoutId, { ...reviseCutoutAnchors({...editingCutout,stroke},editableAnchors),stroke }, true);
                         playCrispClick();
                       }}
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
+                        if(activeLocked||activeHidden)return;
                         setActiveAnchorIndex(idx);
                         setIsDraggingAnchor(true);
                         setHasDraggedAnchor(false);
+                        anchorDragStart.current=pt;
                         document.body.style.cursor = 'grabbing';
                         document.body.style.userSelect = 'none';
                       }}
@@ -2243,10 +2294,13 @@ export const Canvas: React.FC<CanvasProps> = ({
                     pointerEvents="none"
                   />
                 ))}
-                <g data-handle="sym-center" pointerEvents="all" className="cursor-move">
+                <g data-handle="sym-center" pointerEvents={symmetry.locked?'none':'all'} className={symmetry.locked?'':'cursor-move'}>
                   <circle cx={symCenter.x} cy={symCenter.y} r={(coarse ? 14 : 8) / zoom} fill="#FBFBFC" fillOpacity={0.9} stroke="#EB8E88" strokeWidth={2 / zoom} />
                   <circle cx={symCenter.x} cy={symCenter.y} r={2 / zoom} fill="#EB8E88" />
                 </g>
+                {!symmetry.locked && symmetry.kind==='mirror' && <g data-handle="sym-angle" pointerEvents="all" className="cursor-crosshair">
+                  <circle cx={symAngleHandle.x} cy={symAngleHandle.y} r={5/zoom} fill="white" stroke="#EB8E88" strokeWidth={1.5/zoom}/>
+                </g>}
               </g>
             )}
 
@@ -2293,7 +2347,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             const editable = Object.fromEntries(
               Object.entries(blockSel).filter(([lid]) => {
                 const l = project.layers[lid];
-                return l && !l.locked && !findGroupOfLayer(project, lid)?.locked;
+                return l && !getLayerEffectiveState(project,lid).locked;
               })
             );
             const next = onPathfinder(editable, op);

@@ -4,7 +4,10 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, Check, Pipette, PaintBucket, Plus } from 'lucide-react';
+import { ArrowLeftRight, Pipette, PaintBucket, Plus } from 'lucide-react';
+import { InlineName } from './InlineName';
+import { WheelNumber } from './WheelNumber';
+import { beginPropertyGesture } from '../utils/propertyGesture';
 import { FOLK_PALETTE } from '../utils/presetTemplates';
 import { HSV, hexToHsv, hexToRgb, hsvToHex, isLight, mixHex, normalizeHex, rgbToHex } from '../utils/color';
 
@@ -49,6 +52,7 @@ function useDrag(fn: (x: number, y: number, rect: DOMRect, end: boolean) => void
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     const rect = el.getBoundingClientRect();
+    const gesture = beginPropertyGesture('scrub');
     const send = (ev: PointerEvent | React.PointerEvent, end: boolean) => ref.current(ev.clientX - rect.left, ev.clientY - rect.top, rect, end);
     send(e, false);
     const move = (ev: PointerEvent) => send(ev, false);
@@ -57,6 +61,7 @@ function useDrag(fn: (x: number, y: number, rect: DOMRect, end: boolean) => void
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      gesture.end();
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
@@ -99,24 +104,9 @@ type Channel = { key: string; label: string; max: number; value: number; track: 
 
 const ChannelSlider: React.FC<{ ch: Channel; onChange: (hex: string, commit: boolean) => void }> = ({ ch, onChange }) => {
   const drag = useDrag((x, _y, rect, end) => onChange(ch.set(Math.round(Math.min(1, Math.max(0, x / rect.width)) * ch.max)), end));
-  const boxRef = useRef<HTMLDivElement>(null);
-  const chRef = useRef(ch);
-  chRef.current = ch;
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const c = chRef.current;
-      const step = e.shiftKey ? 10 : 1;
-      onChange(c.set(Math.min(c.max, Math.max(0, Math.round(c.value) + (e.deltaY < 0 ? step : -step)))), true);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [onChange]);
   const t = ch.value / ch.max;
   return (
-    <div ref={boxRef} className="flex items-center gap-2" data-tip={`${ch.label} · 拖动或滚轮调节`}>
+    <div className="flex items-center gap-2" data-tip={`${ch.label} · 拖动或滚轮调节`}>
       <span className="w-3 text-[10px] font-semibold text-(--ui-muted)">{ch.label}</span>
       <div onPointerDown={drag} className="relative flex-1 h-3.5 rounded-full cursor-pointer touch-none border border-(--ui-border)" style={{ background: ch.track }}>
         <span
@@ -124,7 +114,8 @@ const ChannelSlider: React.FC<{ ch: Channel; onChange: (hex: string, commit: boo
           style={{ left: `${t * 100}%` }}
         />
       </div>
-      <span className="w-7 text-right font-mono text-[10px] text-(--ui-text)">{Math.round(ch.value)}</span>
+      <WheelNumber value={Math.round(ch.value)} min={0} max={ch.max} tip={`${ch.label} 色彩通道`}
+        onChange={value => onChange(ch.set(value), true)} className="shrink-0" />
     </div>
   );
 };
@@ -145,11 +136,9 @@ export const ColorStudio: React.FC<ColorStudioProps> = ({
   const [sub, setSub] = useState<string>(() => load(SUB_KEY, '#F7F4EB'));
   const [swatches, setSwatches] = useState<string[]>(() => load(SWATCH_KEY, []));
   const [mode, setMode] = useState<'hsv' | 'rgb'>('hsv');
-  const [hexDraft, setHexDraft] = useState(color);
-  const [editingNote, setEditingNote] = useState<{ hex: string; text: string } | null>(null);
+  const [editingNote, setEditingNote] = useState<string | null>(null);
 
   useEffect(() => {
-    setHexDraft(color);
     if (hsvToHex(hsv) !== normalizeHex(color)) setHsv(hexToHsv(color));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [color]);
@@ -255,19 +244,8 @@ export const ColorStudio: React.FC<ColorStudioProps> = ({
             <ArrowLeftRight className="w-3 h-3" />
           </button>
         </div>
-        <input
-          value={hexDraft}
-          onChange={(e) => setHexDraft(e.target.value)}
-          onBlur={() => {
-            const h = normalizeHex(hexDraft);
-            if (h) pick(h);
-            else setHexDraft(color);
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          spellCheck={false}
-          className="min-w-0 flex-1 h-7 px-2 rounded-lg bg-(--ui-input) border border-(--ui-border) font-mono text-[11px] text-(--ui-strong) uppercase outline-none focus:border-(--ui-accent)"
-          data-tip="十六进制色值"
-        />
+        <InlineName value={cur ?? color} onCommit={pick} normalize={normalizeHex} maxLength={9}
+          label="十六进制色值" className="min-w-0 flex-1 h-7 font-mono text-[11px] text-(--ui-strong) uppercase" />
         {canEyedrop && (
           <button onClick={eyedropper} data-tip="吸管：从屏幕任意处取色" className="h-7 w-7 flex items-center justify-center rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong)">
             <Pipette className="w-3.5 h-3.5" />
@@ -420,23 +398,13 @@ export const ColorStudio: React.FC<ColorStudioProps> = ({
                   active={normalizeHex(c.hex) === cur}
                   tip={`${name} ${c.hex}`}
                   onClick={() => pick(c.hex)}
-                  onDoubleClick={() => setEditingNote({ hex: c.hex, text: name })}
+                  onDoubleClick={() => setEditingNote(c.hex)}
                 />
-                {editingNote?.hex === c.hex && (
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 bg-(--ui-panel) border border-(--ui-accent) rounded-lg p-1 shadow-2xl flex items-center gap-1 min-w-[130px]">
-                    <input
-                      type="text"
-                      value={editingNote.text}
-                      autoFocus
-                      onChange={(e) => setEditingNote({ hex: c.hex, text: e.target.value })}
-                      onBlur={() => {
-                        if (editingNote.text.trim()) onUpdateColorNote?.(c.hex, editingNote.text.trim());
-                        setEditingNote(null);
-                      }}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                      className="px-2 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[10px] rounded outline-none w-full border border-(--ui-border)"
-                    />
-                    <Check className="w-3 h-3 text-(--ui-accent)" />
+                {editingNote === c.hex && (
+                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-50 bg-(--ui-panel) border border-(--ui-border-strong) p-1 shadow-xl flex items-center min-w-[130px]">
+                    <InlineName value={name} label="色卡备注" initialEditing allowEmpty
+                      onCommit={note => onUpdateColorNote?.(c.hex, note)} onEditingEnd={() => setEditingNote(null)}
+                      className="text-[10px] w-full" />
                   </div>
                 )}
               </div>

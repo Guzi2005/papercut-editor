@@ -6,7 +6,7 @@
 import { zipSync, strToU8, Zippable } from 'fflate';
 import { PapercutItem, PapercutProject } from '../types/papercut';
 import { projectShadowOptions, renderLayerMarkup, shadowFilterMarkup, strokeReach } from './layerSvg';
-import { computeDepthTable, flattenLayerIds, findItemOfLayer } from './projectOps';
+import { computeDepthTable, flattenLayerIds, findItemOfLayer,isLayerRendered } from './projectOps';
 import { rasterizeSvg } from './svgExporter';
 import { serializeProject, PROJECT_FILE_EXT } from './storage';
 import { assertTextureBudget, checkGodotExport, normalizeResourceRoot } from './godotPreflight';
@@ -188,8 +188,7 @@ export async function buildGodotExport(
     const l = project.layers[id];
     if (!l) return false;
     if (options.includeHidden) return true;
-    const g = project.groups.find((gg) => gg.layerIds.includes(id));
-    return l.visible && (g ? g.visible : true);
+    return isLayerRendered(project,id);
   };
 
   const exportItems: PapercutItem[] = (project.items || [])

@@ -11,6 +11,7 @@ import {normalizeHex} from '../utils/color';
 import {InlineName} from './InlineName';
 import {WheelNumber} from './WheelNumber';
 import {motifMode} from '../utils/materialLibrary';
+import {PROPERTY_GESTURE_EVENT,type PropertyGestureDetail} from '../utils/propertyGesture';
 
 const field='w-full min-w-0 bg-transparent border-b border-(--ui-border) px-1 py-1 text-xs outline-none focus:border-(--ui-accent)';
 const action='inline-flex h-7 w-7 shrink-0 items-center justify-center text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong) disabled:opacity-30 focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--ui-accent)';
@@ -28,9 +29,21 @@ export function StampWorkbench({definition,settings,onDefinition,onSettings,acti
   const shown=[...BUILTIN_STAMPS,...library].filter(d=>(group==='全部'||(group==='我的图章'?!d.builtin:(d.group??'基础纹样')===group))&&d.name.includes(query));
   const [position,setPosition]=useState({x:Math.max(8,window.innerWidth-598),y:94});
   const [trials,setTrials]=useState<CutoutPath[][]>([]),[message,setMessage]=useState(''),[parameterUndo,setParameterUndo]=useState<StampSettings|null>(null);
+  const currentSettings=useRef(settings);currentSettings.current=settings;
+  const parameterGesture=useRef<{id:string;before:StampSettings;changed:boolean}|null>(null);
+  useEffect(()=>{
+    const event=(event:Event)=>{
+      const detail=(event as CustomEvent<PropertyGestureDetail>).detail;
+      if(detail.phase==='begin'){parameterGesture.current={id:detail.id,before:structuredClone(currentSettings.current),changed:false};return;}
+      const gesture=parameterGesture.current;if(!gesture||gesture.id!==detail.id)return;
+      if(gesture.changed&&detail.phase==='end')setParameterUndo(gesture.before);
+      parameterGesture.current=null;
+    };
+    window.addEventListener(PROPERTY_GESTURE_EVENT,event);return()=>window.removeEventListener(PROPERTY_GESTURE_EVENT,event);
+  },[]);
   const moving=useRef<{x:number;y:number;px:number;py:number}|null>(null),file=useRef<HTMLInputElement>(null);
   const palette=[...new Set(definition.parts.map(p=>p.color))];
-  const set=(patch:Partial<StampSettings>)=>{setParameterUndo(structuredClone(settings));onSettings({...settings,...patch});};
+  const set=(patch:Partial<StampSettings>)=>{if(parameterGesture.current)parameterGesture.current.changed=true;else setParameterUndo(structuredClone(settings));onSettings({...settings,...patch});};
   const choose=(next:StampDefinition)=>{if(dirty)drafts.current.set(definition.id,{...definition,settings:structuredClone(settings)});const selected=drafts.current.get(next.id)??next;onDefinition(structuredClone(selected));if((selected.settings?.mode??settings.mode)==='stamp'&&tab==='weave')setTab('brush');onSettings({...DEFAULT_STAMP_SETTINGS,...(!selected.settings?{mode:settings.mode,ribbonWidth:settings.ribbonWidth,ribbonFill:settings.ribbonFill,ribbonColor:settings.ribbonColor,ribbonEdge:settings.ribbonEdge,ribbonEdgeColor:settings.ribbonEdgeColor,ribbonRows:settings.ribbonRows,ribbonRowGap:settings.ribbonRowGap,ribbonStagger:settings.ribbonStagger,selvage:settings.selvage,selvageWidth:settings.selvageWidth,selvageDepth:settings.selvageDepth,selvageSpacing:settings.selvageSpacing,selvageInset:settings.selvageInset,selvageColor:settings.selvageColor,skipColorMode:settings.skipColorMode,skipColorEvery:settings.skipColorEvery,skipColorSource:settings.skipColorSource,skipColors:settings.skipColors}:{}),...selected.settings});setParameterUndo(null);setMessage(drafts.current.has(next.id)?'已恢复尚未保存的编辑。':'');};
   const persist=(next:StampDefinition[])=>{try{saveStampLibrary(next);setLibrary(next);return true;}catch{setMessage('本地存储空间不足，请导出备份图章库。');return false;}};
   const save=(copy=false)=>{if(!definition.parts.length&&!(settings.mode==='ribbon'&&settings.ribbonFill)){setMessage('先添加图案或从图层采集。');return;}const saved={...definition,settings:structuredClone(settings),builtin:false,id:copy||definition.builtin||library.some(d=>d.id===definition.id&&motifMode(d)!==settings.mode)?`user_${Date.now()}`:definition.id};const next=[...library.filter(s=>s.id!==saved.id),saved];if(next.length>100){setMessage('图章库最多 100 个图章，请先导出备份。');return;}try{validateStampLibrary([saved]);}catch{setMessage('图案过于复杂或含无效路径，请精简到 200 个色块以内。');return;}if(persist(next)){drafts.current.delete(saved.id);onDefinition(saved);setGroup('我的图章');setQuery('');setMessage('已保存到我的图章，可导出备份。');}};

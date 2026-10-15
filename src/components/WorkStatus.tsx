@@ -6,7 +6,7 @@
 import React from 'react';
 import { Box, EyeOff, Lock } from 'lucide-react';
 import { BrushSettings, PapercutItem, PapercutProject, ToolType } from '../types/papercut';
-import { findGroupOfLayer, findItemOfLayer, isLayerRendered } from '../utils/projectOps';
+import { findDrawingGroupOfLayer, findItemOfLayer, isLayerRendered,getLayerEffectiveState } from '../utils/projectOps';
 import { TOOLS } from './Toolbar';
 import { DRAW_BRUSHES, GEOM_SHAPES, KNIFE_TIPS } from './ToolOptions';
 import { isLight } from '../utils/color';
@@ -45,11 +45,11 @@ export const WorkStatus: React.FC<{
   selectedItem: PapercutItem | null;
   brushColor: string;
 }> = ({ project, activeLayerId, currentTool, brushSettings, selectedLayerIds, selectedItem, brushColor }) => {
-  const tool = TOOLS.find((t) => t.id === (currentTool === 'freehand' ? 'pen_knife' : currentTool === 'anchor_edit' ? 'vector_edit' : currentTool));
+  const tool = TOOLS.find((t) => t.id === (currentTool === 'freehand' ? 'pen_knife' : currentTool === 'anchor_edit'||currentTool==='vector_pen' ? 'vector_edit' : currentTool));
   const layer = activeLayerId ? project.layers[activeLayerId] : null;
-  const group = layer ? findGroupOfLayer(project, layer.id) : null;
+  const group = layer ? findDrawingGroupOfLayer(project, layer.id) : null;
   const item = layer ? findItemOfLayer(project, layer.id) : null;
-  const locked = !!layer && (layer.locked || !!group?.locked);
+  const locked = !!layer && getLayerEffectiveState(project,layer.id).locked;
   const hidden = !!layer && !isLayerRendered(project, layer.id);
   const doodle = layer?.kind === 'doodle';
   const carving = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand'].includes(currentTool);

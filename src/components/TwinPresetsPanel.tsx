@@ -7,6 +7,7 @@ import React from 'react';
 import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { TwinPreset, TwinPart, DEFAULT_TWIN_PRESETS } from '../utils/twinPresets';
 import { newId } from '../utils/projectOps';
+import { InlineName } from './InlineName';
 
 const blankPart = (): TwinPart => ({ suffix: '片', place: 'above' });
 
@@ -44,12 +45,8 @@ export const TwinPresetsPanel: React.FC<{
       {value.map((preset) => (
         <div key={preset.id} className="rounded-lg border border-(--ui-border) bg-(--ui-raised) p-2 space-y-1.5">
           <div className="flex items-center gap-1">
-            <input
-              value={preset.name}
-              onChange={(e) => update(preset.id, { name: e.target.value })}
-              className="flex-1 h-6 px-1.5 rounded-md bg-(--ui-input) border border-(--ui-border) text-[11px] text-(--ui-strong) outline-none focus:border-(--ui-accent)"
-              data-tip="预设名称"
-            />
+            <InlineName value={preset.name} onCommit={name => update(preset.id, { name })}
+              label="预设名称" className="flex-1 h-6 text-[11px] text-(--ui-strong)" />
             <button
               onClick={() => onChange(value.filter((p) => p.id !== preset.id))}
               className="p-1 rounded-md text-(--ui-faint) hover:text-red-400 hover:bg-red-950/40"
@@ -60,12 +57,8 @@ export const TwinPresetsPanel: React.FC<{
           </div>
           {preset.parts.map((part, i) => (
             <div key={i} className="flex items-center gap-1">
-              <input
-                value={part.suffix}
-                onChange={(e) => updatePart(preset.id, i, { suffix: e.target.value })}
-                className="flex-1 h-6 px-1.5 rounded-md bg-(--ui-input) border border-(--ui-border) text-[11px] text-(--ui-strong) outline-none focus:border-(--ui-accent)"
-                data-tip="图层名后缀"
-              />
+              <InlineName value={part.suffix} onCommit={suffix => updatePart(preset.id, i, { suffix })}
+                label="图层名后缀" className="flex-1 h-6 text-[11px] text-(--ui-strong)" />
               <button
                 onClick={() => updatePart(preset.id, i, { place: part.place === 'above' ? 'below' : 'above' })}
                 className={`h-6 px-1.5 rounded-md border text-[10px] flex items-center gap-0.5 ${

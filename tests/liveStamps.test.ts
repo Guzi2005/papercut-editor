@@ -5,6 +5,8 @@ import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS } from '../src/utils/stamps';
 import { attachLiveStampStroke, createLiveStampStroke, detachChangedLiveStamps, expandLiveStampStroke, liveStampWorldPoints, normalizeLiveStamps, regenerateLiveStampLayer, transformLiveStrokes, type LiveStampLayer } from '../src/utils/liveStamps';
 import { multiply, rotateAbout, scaleAbout, transformPathD, translate } from '../src/utils/pathTransform';
 import { paperSequence } from '../src/utils/layerSvg';
+import {applySymmetry,symmetryMatrices} from '../src/utils/symmetry';
+import {transformLayer} from '../src/utils/projectOps';
 
 function example(kind: 'paper' | 'doodle' = 'paper') {
   const { stroke, paths } = createLiveStampStroke(BUILTIN_STAMPS[0], { ...DEFAULT_STAMP_SETTINGS, size: 40 }, [{ x: 50, y: 50 }, { x: 250, y: 50 }], 73, 'live_1');
@@ -94,4 +96,23 @@ test('live stroke metadata round-trips and malformed recipes never discard cache
   assert.deepEqual(detachChangedLiveStamps({ ...layer, liveStamps: restored }).liveStamps?.length, 1);
   assert.deepEqual(normalizeLiveStamps([{ ...stroke, points: [{ x: Infinity, y: 0 }] }, { ...stroke, transform: [1, 0, 0, 0, 0, 0] }]), []);
   assert.equal(normalizeLiveStamps([stroke, stroke]).length, 1);
+});
+
+test('mirrored ribbon recipes retain editable source geometry through regeneration and object transforms',()=>{
+  const matrices=symmetryMatrices({kind:'mirror',count:1,angle:90,cx:200,cy:100},400,200);
+  const {stroke,paths}=createLiveStampStroke(BUILTIN_STAMPS[0],{...DEFAULT_STAMP_SETTINGS,size:40},[{x:50,y:50},{x:150,y:50}],73,'mirror_ribbon',matrices);
+  const base={...createBlankCanvas().layers.layer_base_paper,baseShape:{type:'freeform' as const,d:''},cutouts:[],positiveElements:paths};
+  const layer=attachLiveStampStroke(base,stroke);
+  assert.ok(paths.every(p=>p.symmetrySource&&p.d===applySymmetry(p.symmetrySource.d,p.symmetrySource.matrices)));
+  const moved=transformLayer(layer,rotateAbout(Math.PI/3,100,100));
+  const regenerated=regenerateLiveStampLayer(moved,stroke.id,{});
+  assert.deepEqual(regenerated.positiveElements.map(p=>p.d),moved.positiveElements.map(p=>p.d));
+  for(let i=0;i<paths.length;i++){
+    const a=regenerated.positiveElements[i],b=moved.positiveElements[i];
+    assert.ok(a.symmetrySource&&b.symmetrySource);
+    const nums=(d:string)=>d.match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi)!.map(Number);
+    const aa=nums(a.d),bb=nums(b.d);assert.equal(aa.length,bb.length);
+    assert.ok(aa.every((n,j)=>Math.abs(n-bb[j])<.01));
+  }
+  const restored=normalizeLiveStamps(JSON.parse(JSON.stringify([stroke])))[0];assert.deepEqual(restored.symmetryMatrices,matrices);
 });

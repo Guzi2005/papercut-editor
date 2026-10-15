@@ -72,17 +72,53 @@ export function serializeVectorPath(path: VectorPath): string {
   }).join(' ');
 }
 
-export function splitSegment(contour: VectorContour, index: number): void {
+export function splitSegment(contour: VectorContour, index: number, parameter = .5): void {
   const a = contour.nodes[index], b = contour.nodes[(index+1)%contour.nodes.length];
   if (!a || !b || (!contour.closed && index === contour.nodes.length-1)) return;
+  const t = Math.max(.001, Math.min(.999, parameter));
   let n: VectorNode;
   if (a.outgoing || b.incoming) {
-    const ab = mix(a,a.outgoing ?? a), bc = mix(a.outgoing ?? a,b.incoming ?? b), cd = mix(b.incoming ?? b,b);
-    const abc = mix(ab,bc), bcd = mix(bc,cd);
-    n = {...mix(abc,bcd), incoming:abc, outgoing:bcd, mode:'smooth'};
+    const ab = mix(a,a.outgoing ?? a,t), bc = mix(a.outgoing ?? a,b.incoming ?? b,t), cd = mix(b.incoming ?? b,b,t);
+    const abc = mix(ab,bc,t), bcd = mix(bc,cd,t);
+    n = {...mix(abc,bcd,t), incoming:abc, outgoing:bcd, mode:'smooth'};
     a.outgoing = ab; b.incoming = cd;
-  } else n = mix(a,b);
+  } else n = mix(a,b,t);
   contour.nodes.splice(index+1,0,n);
+}
+
+export function segmentPoint(a: VectorNode, b: VectorNode, t: number): Point {
+  if(!a.outgoing && !b.incoming)return mix(a,b,t);
+  const u=1-t, c=a.outgoing ?? a, d=b.incoming ?? b;
+  return {x:u*u*u*a.x+3*u*u*t*c.x+3*u*t*t*d.x+t*t*t*b.x,y:u*u*u*a.y+3*u*u*t*c.y+3*u*t*t*d.y+t*t*t*b.y};
+}
+
+/** A coarse search followed by local refinement handles loops without assuming a monotonic curve. */
+export function nearestSegmentParameter(a: VectorNode, b: VectorNode, point: Point): number {
+  const distance=(t:number)=>{const p=segmentPoint(a,b,t);return (p.x-point.x)**2+(p.y-point.y)**2;};
+  let best=0, minimum=Infinity;
+  for(let i=0;i<=64;i++){const t=i/64,d=distance(t);if(d<minimum){minimum=d;best=t;}}
+  let lo=Math.max(0,best-1/64),hi=Math.min(1,best+1/64);
+  for(let i=0;i<24;i++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;if(distance(a)<distance(b))hi=b;else lo=a;}
+  return Math.max(.001,Math.min(.999,(lo+hi)/2));
+}
+
+/** Move the grabbed location exactly by delta, distributing movement between both cubic handles. */
+export function bendSegment(a: VectorNode,b: VectorNode,t:number,delta:Point):void {
+  const u=1-t,w1=3*u*u*t,w2=3*u*t*t,denom=w1*w1+w2*w2;
+  if(denom<1e-9)return;
+  // A straight SVG segment has a linear cubic parameterisation, avoiding a jump when dragging begins.
+  const c=a.outgoing ?? mix(a,b,1/3),d=b.incoming ?? mix(a,b,2/3);
+  a.outgoing={x:c.x+delta.x*w1/denom,y:c.y+delta.y*w1/denom};
+  b.incoming={x:d.x+delta.x*w2/denom,y:d.y+delta.y*w2/denom};
+  a.mode='corner';b.mode='corner';
+}
+
+/** Moving a simple-mode node carries its handles; changing tools never reconstructs its curve. */
+export function moveVectorNode(node:VectorNode,position:Point):void {
+  const dx=position.x-node.x,dy=position.y-node.y;
+  node.x=position.x;node.y=position.y;
+  if(node.incoming)node.incoming={x:node.incoming.x+dx,y:node.incoming.y+dy};
+  if(node.outgoing)node.outgoing={x:node.outgoing.x+dx,y:node.outgoing.y+dy};
 }
 
 export function setNodeMode(c: VectorContour, index: number, mode: NodeMode): void {

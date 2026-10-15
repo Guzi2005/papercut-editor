@@ -2,33 +2,35 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CornerDownRight, Minus, Plus, Spline, Unlink, MoveHorizontal } from 'lucide-react';
 import type { Layer, Point } from '../types/papercut';
-import { moveHandle, parseVectorPath, segmentD, serializeVectorPath, setNodeMode, splitSegment, type NodeMode, type VectorPath } from '../utils/vectorPath';
+import { bendSegment, moveHandle, nearestSegmentParameter, parseVectorPath, segmentD, serializeVectorPath, setNodeMode, splitSegment, type NodeMode, type VectorPath } from '../utils/vectorPath';
+import {applySymmetry} from '../utils/symmetry';
+import type {Matrix} from '../utils/pathTransform';
 
-type Target = { id: string; label: string; d: string; modes?: NodeMode[][]; kind: 'base'|'cutout'|'positive'|'drawing' };
+type Target = { id: string; label: string; d: string; symmetrySource?:{d:string;matrices:Matrix[]}; modes?: NodeMode[][]; kind: 'base'|'cutout'|'positive'|'drawing' };
 type Address = { contour: number; node: number };
-type Drag = { pointer: number; start: Point; source: VectorPath; selected: Address[]; at: Address; side?: 'incoming'|'outgoing'; moved: boolean };
+type Drag = { pointer: number; start: Point; source: VectorPath; selected: Address[]; at: Address; side?: 'incoming'|'outgoing'; moved: boolean; segment?:number; createHandles?:boolean };
 const same = (a: Address, b: Address) => a.contour === b.contour && a.node === b.node;
 const targetsFor = (layer: Layer): Target[] => [
-  ...(layer.kind !== 'doodle' && layer.baseShape.d ? [{id:'base',label:'纸片外轮廓',d:layer.baseShape.d,modes:layer.baseShape.vectorNodeModes,kind:'base' as const}] : []),
-  ...layer.positiveElements.map(p => ({id:p.id,label:`贴花 · ${p.name}`,d:p.d,modes:p.vectorNodeModes,kind:'positive' as const})),
-  ...layer.cutouts.map(p => ({id:p.id,label:`切口 · ${p.name}`,d:p.d,modes:p.vectorNodeModes,kind:'cutout' as const})),
-  ...(layer.drawings ?? []).map((p,i) => ({id:p.id,label:`笔迹 ${i+1}`,d:p.d,modes:p.vectorNodeModes,kind:'drawing' as const})),
+  ...(layer.kind !== 'doodle' && layer.baseShape.d ? [{id:'base',label:'纸片外轮廓',d:layer.baseShape.d,symmetrySource:layer.baseShape.symmetrySource,modes:layer.baseShape.vectorNodeModes,kind:'base' as const}] : []),
+  ...layer.positiveElements.map(p => ({id:p.id,label:`贴花 · ${p.name}`,d:p.d,symmetrySource:p.symmetrySource,modes:p.vectorNodeModes,kind:'positive' as const})),
+  ...layer.cutouts.map(p => ({id:p.id,label:`切口 · ${p.name}`,d:p.d,symmetrySource:p.symmetrySource,modes:p.vectorNodeModes,kind:'cutout' as const})),
+  ...(layer.drawings ?? []).map((p,i) => ({id:p.id,label:`笔迹 ${i+1}`,d:p.d,symmetrySource:p.symmetrySource,modes:p.vectorNodeModes,kind:'drawing' as const})),
 ];
 
-export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPreview}: {
-  layer: Layer; zoom: number; disabled: boolean; panHeld: boolean; onCommit: (layer: Layer) => void; onPreview: (layer: Layer | null) => void;
+export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPreview,requestedTarget}: {
+  layer: Layer; zoom: number; disabled: boolean; panHeld: boolean; onCommit: (layer: Layer) => void; onPreview: (layer: Layer | null) => void;requestedTarget?:string|null;
 }) {
   const targets = useMemo(() => targetsFor(layer), [layer]);
   const [targetId, setTargetId] = useState('base');
   const target = targets.find(t => t.id === targetId) ?? targets[0];
   const parsed = useMemo(() => {
     try {
-      const path=parseVectorPath(target?.d ?? '');
+      const path=parseVectorPath(target?.symmetrySource?.d ?? target?.d ?? '');
       path.forEach((c,ci)=>c.nodes.forEach((n,ni)=>{ n.mode=target?.modes?.[ci]?.[ni] ?? n.mode; }));
       return {path,error:''};
     }
     catch { return {path:[] as VectorPath,error:'此路径暂不支持精细编辑'}; }
-  }, [target?.d,target?.modes]);
+  }, [target?.d,target?.modes,target?.symmetrySource]);
   const [draft, setDraft] = useState<VectorPath | null>(null);
   const [selection, setSelection] = useState<Address[]>([]);
   const [context, setContext] = useState<{x:number;y:number}|null>(null);
@@ -43,14 +45,16 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
   const updateDraft = (p: VectorPath | null) => { draftRef.current = p; setDraft(p); onPreview(p ? buildLayer(p) : null); };
   const cancel = () => { drag.current = null; updateDraft(null); };
   useEffect(() => { cancel(); }, [target?.d, target?.id, disabled]);
+  useEffect(()=>{if(requestedTarget){setTargetId(requestedTarget);setSelection([]);}},[requestedTarget]);
   useEffect(() => () => onPreview(null), [onPreview]);
   const buildLayer = (next: VectorPath): Layer => {
     if (!target) return layer;
-    const d = serializeVectorPath(next);
+    const sourceD = serializeVectorPath(next),symmetrySource=target.symmetrySource?{...target.symmetrySource,d:sourceD}:undefined;
+    const d = symmetrySource?applySymmetry(sourceD,symmetrySource.matrices):sourceD;
     const vectorNodeModes=next.map(c=>c.nodes.map(n=>n.mode ?? 'corner'));
     let updated = layer;
-    const revise = <T extends {id:string;d:string}>(p: T): T => p.id === target.id ? {...p,d,vectorNodeModes,points:undefined,geomType:undefined,stroke:undefined} : p;
-    if (target.kind === 'base') updated = {...layer,baseShape:{type:'freeform',d,vectorNodeModes}};
+    const revise = <T extends {id:string;d:string}>(p: T): T => p.id === target.id ? {...p,d,symmetrySource,vectorNodeModes,points:undefined,geomType:undefined,stroke:undefined} : p;
+    if (target.kind === 'base') updated = {...layer,baseShape:{type:'freeform',d,symmetrySource,vectorNodeModes}};
     if (target.kind === 'cutout') updated = {...layer,cutouts:layer.cutouts.map(revise)};
     if (target.kind === 'positive') updated = {...layer,positiveElements:layer.positiveElements.map(revise)};
     if (target.kind === 'drawing') updated = {...layer,drawings:layer.drawings?.map(revise)};
@@ -69,7 +73,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
   const remove = () => {
     mutate(p => p.forEach((c,ci) => {
       const remaining = c.nodes.filter((_,i) => !selected.some(a => a.contour === ci && a.node === i));
-      if (remaining.length >= (c.closed ? 3 : 2)) c.nodes = remaining;
+      if (remaining.length >= 2) c.nodes = remaining;
     }));
     setSelection([]);
   };
@@ -83,7 +87,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
   }));
   const coords = (e: {clientX:number;clientY:number}): Point => {
     const matrix = root.current?.getScreenCTM();
-    return matrix ? new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse()) : {x:0,y:0};
+    if(!matrix)return {x:0,y:0};const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};
   };
   const begin = (e: React.PointerEvent, at: Address, side?: 'incoming'|'outgoing') => {
     if (e.button === 2) { e.stopPropagation(); return; }
@@ -95,7 +99,13 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
     setSelection(next); setContext(null);
     if (!next.length) return;
     root.current?.setPointerCapture(e.pointerId);
-    drag.current = {pointer:e.pointerId,start:coords(e),source:structuredClone(path),selected:next,at,side,moved:false};
+    drag.current = {pointer:e.pointerId,start:coords(e),source:structuredClone(path),selected:next,at,side,moved:false,createHandles:e.altKey&&!side};
+  };
+  const beginSegment=(e:React.PointerEvent,at:Address)=>{
+    if(e.button!==0||panHeld||disabled)return;
+    e.stopPropagation();e.preventDefault();setContext(null);setSelection([at]);root.current?.setPointerCapture(e.pointerId);
+    const start=coords(e),contour=path[at.contour],a=contour.nodes[at.node],b=contour.nodes[(at.node+1)%contour.nodes.length];
+    drag.current={pointer:e.pointerId,start,source:structuredClone(path),selected:[at],at,moved:false,segment:nearestSegmentParameter(a,b,start)};
   };
   const move = (e: React.PointerEvent) => {
     const gesture = drag.current;
@@ -105,7 +115,11 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
     if (!gesture.moved && Math.hypot(dx,dy)*zoom < 2) return;
     gesture.moved=true;
     const next=structuredClone(gesture.source);
-    if (gesture.side) {
+    if(gesture.segment!==undefined){
+      const c=next[gesture.at.contour];bendSegment(c.nodes[gesture.at.node],c.nodes[(gesture.at.node+1)%c.nodes.length],gesture.segment,{x:dx,y:dy});
+    } else if(gesture.createHandles){
+      const n=next[gesture.at.contour].nodes[gesture.at.node];n.outgoing={x:n.x+dx,y:n.y+dy};n.incoming={x:n.x-dx,y:n.y-dy};n.mode='symmetric';
+    } else if (gesture.side) {
       const n=next[gesture.at.contour].nodes[gesture.at.node];
       let dest=p;
       if (e.ctrlKey || e.metaKey) {
@@ -137,7 +151,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
-      if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"],[data-property-control],[data-layers-panel]')) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); setSelection([]); setContext(null); return; }
       if (drag.current) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); } return; }
       if (!editable) return;
@@ -156,7 +170,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
     {label:'平滑节点',hint:'两侧控制柄保持共线',Icon:Spline,run:()=>mode('smooth')},
     {label:'对称节点',hint:'两侧控制柄共线且等长',Icon:MoveHorizontal,run:()=>mode('symmetric')},
     {label:'插入节点',hint:'在所选节点之后的线段中点插入，保持曲线形状',Icon:Plus,run:insert},
-    {label:'删除节点',hint:'每条闭合轮廓至少保留 3 个节点',Icon:Minus,run:remove},
+    {label:'删除节点',hint:'每条轮廓至少保留 2 个节点',Icon:Minus,run:remove},
     {label:'线段变直',hint:'将所选节点之后的曲线转为直线',Icon:Unlink,run:straighten},
   ];
   return <>
@@ -166,7 +180,7 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
       </select>
       <span className="h-4 border-l border-(--ui-border) mx-1"/>
       {actions.map(({label,hint,Icon,run})=><button key={label} aria-label={label} title={`${label} · ${hint}`} disabled={!editable || !selected.length} onClick={run} className="h-7 w-7 shrink-0 rounded hover:bg-(--ui-hover) disabled:opacity-30"><Icon size={15} className="mx-auto"/></button>)}
-      <span className="text-(--ui-muted) text-[11px] whitespace-nowrap ml-2">{disabled ? '图层已锁定或隐藏' : parsed.error || (selected.length ? `${selected.length} 个节点 · Alt 独立柄 · Ctrl 约束` : '选择节点 · Shift 加选 · 双击线段加点')}</span>
+      <span className="text-(--ui-muted) text-[11px] whitespace-nowrap ml-2">{disabled ? '图层已锁定或隐藏' : parsed.error || (selected.length ? `${selected.length} 个节点 · Alt 拖节点拉柄 · Ctrl 约束` : '拖线段弯曲 · Shift 加选 · 双击线段加点')}</span>
     </div>,toolbar)}
     <g ref={root} onPointerMove={move} onPointerUp={finish} onPointerCancel={()=>cancel()} onLostPointerCapture={()=>{if(drag.current) cancel();}}>
       {!disabled && targets.map(t=><path key={t.id} d={t.d} fill="none" stroke="transparent" strokeWidth={12/zoom} pointerEvents={panHeld ? 'none' : 'stroke'} onPointerDown={e=>{
@@ -176,7 +190,9 @@ export function VectorEditor({layer, zoom, disabled, panHeld, onCommit, onPrevie
         {c.nodes.map((n,ni)=>{
           const next=c.nodes[(ni+1)%c.nodes.length];
           if(!c.closed && ni===c.nodes.length-1) return null;
-          return <path key={ni} d={`M ${n.x} ${n.y} ${segmentD(n,next)}`} fill="none" stroke="#60a5fa" strokeWidth={1.4/zoom} pointerEvents={panHeld?'none':'stroke'} style={{cursor:'crosshair'}} onPointerDown={e=>{if(e.button===0) e.stopPropagation();}} onDoubleClick={e=>{ e.stopPropagation(); mutate(p=>splitSegment(p[ci],ni)); setSelection([{contour:ci,node:ni+1}]); }}/>
+          const segment=`M ${n.x} ${n.y} ${segmentD(n,next)}`;
+          return <g key={ni}><path d={segment} fill="none" stroke="#60a5fa" strokeWidth={1.4/zoom} pointerEvents="none"/>
+            <path d={segment} fill="none" stroke="transparent" strokeWidth={12/zoom} pointerEvents={panHeld?'none':'stroke'} style={{cursor:'move'}} onPointerDown={e=>beginSegment(e,{contour:ci,node:ni})} onDoubleClick={e=>{e.stopPropagation();const t=nearestSegmentParameter(n,next,coords(e));mutate(p=>splitSegment(p[ci],ni,t));setSelection([{contour:ci,node:ni+1}]);}}/></g>
         })}
         {c.nodes.map((n,ni)=>{
           const at={contour:ci,node:ni}, active=selected.some(a=>same(a,at));

@@ -30,8 +30,8 @@ interface ToolQuickMenuProps {
   brushSettings: BrushSettings;
   onChangeBrushSettings: (patch: Partial<BrushSettings>) => void;
   onSelectTool: (tool: ToolType) => void;
-  selectionScope: 'part' | 'item' | 'color';
-  onChangeSelectionScope: (scope: 'part' | 'item' | 'color') => void;
+  selectionScope: 'part' | 'item' | 'color' | 'group';
+  onChangeSelectionScope: (scope: 'part' | 'item' | 'color' | 'group') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
   onCaptureStamp?:()=>void;
@@ -102,6 +102,7 @@ export const ToolQuickMenu: React.FC<ToolQuickMenuProps> = ({
       entries: [
         { key: 'item', label: '整物件选取', icon: icon(Box), active: selectionScope === 'item', run: () => onChangeSelectionScope('item') },
         { key: 'part', label: '单部件选取', icon: icon(MousePointerClick), active: selectionScope === 'part', run: () => onChangeSelectionScope('part') },
+        { key: 'group', label: '绘制组选取', icon: icon(Box), active: selectionScope === 'group', run: () => onChangeSelectionScope('group') },
         { key: 'color', label: '色块选取', icon: icon(PaintBucket), active: selectionScope === 'color', run: () => onChangeSelectionScope('color') },
       ],
     });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVectorPath, serializeVectorPath, splitSegment, setNodeMode, moveHandle } from '../src/utils/vectorPath';
+import { bendSegment, nearestSegmentParameter, parseVectorPath, segmentPoint, serializeVectorPath, splitSegment, setNodeMode, moveHandle } from '../src/utils/vectorPath';
 
 test('relative compound rings and closing curves survive round trip', () => {
   const d='M 10 10 C 20 0 30 0 40 10 L 40 40 C 20 50 0 20 10 10 Z m 5 5 l 5 0 l 0 5 z';
@@ -64,4 +64,27 @@ test('symmetric, smooth, and independent control handles obey constraints', () =
   setNodeMode(c,1,'corner');
   moveHandle(n,'outgoing',{x:100,y:50});
   assert.deepEqual(n.incoming,before);
+});
+
+test('insertion follows the clicked curve position and preserves its entire shape',()=>{
+  const original=parseVectorPath('M 0 0 C 20 140 140 80 160 0')[0],t=.23,clicked=segmentPoint(original.nodes[0],original.nodes[1],t);
+  const nearest=nearestSegmentParameter(original.nodes[0],original.nodes[1],clicked);
+  assert.ok(Math.abs(nearest-t)<1e-5);
+  const contour=structuredClone(original);splitSegment(contour,0,nearest);
+  assert.ok(Math.hypot(contour.nodes[1].x-clicked.x,contour.nodes[1].y-clicked.y)<.001);
+  for(let i=0;i<=100;i++){
+    const s=i/100,expected=segmentPoint(original.nodes[0],original.nodes[1],s);
+    const actual=s<=nearest?segmentPoint(contour.nodes[0],contour.nodes[1],s/nearest):segmentPoint(contour.nodes[1],contour.nodes[2],(s-nearest)/(1-nearest));
+    assert.ok(Math.hypot(expected.x-actual.x,expected.y-actual.y)<1e-8);
+  }
+});
+
+test('dragging a straight or curved segment moves the grabbed position without moving endpoints',()=>{
+  for(const d of ['M 0 0 L 100 0','M 0 0 C 0 100 100 100 100 0']){
+    const contour=parseVectorPath(d)[0],[a,b]=contour.nodes,t=.37,before=segmentPoint(a,b,t);
+    bendSegment(a,b,t,{x:12,y:-28});
+    const after=segmentPoint(a,b,t);
+    assert.deepEqual({x:a.x,y:a.y},{x:0,y:0});assert.deepEqual({x:b.x,y:b.y},{x:100,y:0});
+    assert.ok(Math.abs(after.x-before.x-12)<1e-8);assert.ok(Math.abs(after.y-before.y+28)<1e-8);
+  }
 });

@@ -4,7 +4,7 @@ import { VectorModes, isVectorTool } from './VectorModes';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import {
   ToolType,
   BrushSettings,
@@ -39,11 +39,19 @@ import {
   Lasso,
   PaintBucket,
   Unlink2,
+  Ungroup,
+  FlipHorizontal2,
+  FlipVertical2,
+  Scissors,
+  Layers,
+  Stamp,
 } from 'lucide-react';
 import { playCrispClick } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
 import { DEFAULT_STROKE, PathCap } from '../utils/strokePath';
 import { DEFAULT_SYMMETRY, SymmetryKind } from '../utils/symmetry';
+
+export type WorkspaceMode = 'draw' | 'arrange' | 'assets';
 
 const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
   <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
@@ -67,6 +75,15 @@ const SymGlyph: React.FC<{ kind: SymmetryKind }> = ({ kind }) => (
 );
 
 interface ToolOptionsProps {
+  workspaceModesEnabled?: boolean;
+  workspaceMode?: WorkspaceMode;
+  onWorkspaceModeChange?: (mode: WorkspaceMode) => void;
+  onGroupSelection?: () => void;
+  onUngroupSelection?: () => void;
+  onFlipSelection?: (direction: 'horizontal' | 'vertical') => void;
+  onMirrorSelection?: () => void;
+  onCreateAsset?: () => void;
+  onOpenSymmetrySettings?: () => void;
   currentTool: ToolType;
   onOpenStamp?: () => void;
   onOpenMaterials?:()=>void;
@@ -75,8 +92,8 @@ interface ToolOptionsProps {
   brushSettings: BrushSettings;
   onChangeBrushSettings: (newSettings: Partial<BrushSettings>) => void;
   onSelectTool?: (tool: ToolType) => void;
-  selectionScope: 'part' | 'item' | 'color';
-  onChangeSelectionScope: (scope: 'part' | 'item' | 'color') => void;
+  selectionScope: 'part' | 'item' | 'color' | 'group';
+  onChangeSelectionScope: (scope: 'part' | 'item' | 'color' | 'group') => void;
   selectedCount: number;
   onCreateItemFromSelection: () => void;
   canvasWidth: number;
@@ -123,7 +140,7 @@ export const PATH_CAPS: { id: PathCap; tip: string; icon: React.ReactNode }[] = 
 const HARDNESS_NAMES = ['极软', '软', '中', '硬', '极硬'];
 
 const Segmented: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex items-center bg-(--ui-raised) rounded-lg p-0.5 border border-(--ui-border) gap-0.5">{children}</div>
+  <div className="flex items-center gap-0.5 border-r border-(--ui-divider) pr-1 shrink-0">{children}</div>
 );
 
 const IconButton: React.FC<{
@@ -139,8 +156,8 @@ const IconButton: React.FC<{
     onContextMenu={onContextMenu}
     disabled={disabled}
     data-tip={tip}
-    className={`w-7 h-6 pointer-coarse:w-9 pointer-coarse:h-8 flex items-center justify-center rounded-md transition-colors disabled:opacity-35 ${
-      active ? 'bg-(--ui-accent) text-white' : 'text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
+    className={`w-7 h-7 pointer-coarse:w-9 pointer-coarse:h-8 flex items-center justify-center border-b-2 transition-colors disabled:opacity-35 ${
+      active ? 'border-(--ui-accent) text-(--ui-accent)' : 'border-transparent text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
     }`}
   >
     {children}
@@ -148,6 +165,15 @@ const IconButton: React.FC<{
 );
 
 export const ToolOptions: React.FC<ToolOptionsProps> = ({
+  workspaceModesEnabled = false,
+  workspaceMode = 'draw',
+  onWorkspaceModeChange,
+  onGroupSelection,
+  onUngroupSelection,
+  onFlipSelection,
+  onMirrorSelection,
+  onCreateAsset,
+  onOpenSymmetrySettings,
   currentTool,
   onOpenStamp, onOpenMaterials, onCaptureStamp, canCaptureStamp,
   onSelectTool,
@@ -157,24 +183,10 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
   onChangeSelectionScope,
   selectedCount,
   onCreateItemFromSelection,
-  canvasWidth,
-  canvasHeight,
 }) => {
-  const [showSym, setShowSym] = useState(false);
-  const symRef = useRef<HTMLDivElement>(null);
   const sym = brushSettings.symmetry ?? DEFAULT_SYMMETRY;
-  const setSym = (patch: Partial<typeof sym>) => onChangeBrushSettings({ symmetry: { ...sym, ...patch } });
-
-  useEffect(() => {
-    if (!showSym) return;
-    const close = (e: PointerEvent) => {
-      if (!symRef.current?.contains(e.target as Node)) setShowSym(false);
-    };
-    window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
-  }, [showSym]);
   const set = onChangeBrushSettings;
-  const carving = ['willow_leaf', 'geom_shape', 'pen_knife', 'freehand'].includes(currentTool);
+  const showDrawing = !workspaceModesEnabled || workspaceMode === 'draw';
 
 
   const willowOptions = (
@@ -202,12 +214,22 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
 
   return (
     <div className="relative z-30 h-10 pointer-coarse:h-12 px-3 bg-(--ui-panel-2) border-b border-(--ui-divider) text-(--ui-text-2) flex items-center gap-2 text-xs select-none shrink-0">
-      {currentTool === 'stamp' && <><button onClick={onOpenStamp} className="px-3 py-1 border border-(--ui-border) hover:bg-(--ui-hover)">笔刷设置</button><button onClick={onOpenMaterials}>素材库</button><span className="text-(--ui-muted)">图章 / 织带 · 单击盖印或拖动绘制 · 一笔一撤销</span></>}
-      {isVectorTool(currentTool) && <>
+      {workspaceModesEnabled && <div role="tablist" aria-label="工作模式" className="flex items-center shrink-0 h-full border-r border-(--ui-divider) pr-2 gap-1">
+        {([['draw', '绘制'], ['arrange', '编排'], ['assets', '资产']] as const).map(([mode, label]) =>
+          <button key={mode} type="button" role="tab" aria-selected={workspaceMode === mode}
+            onClick={() => onWorkspaceModeChange?.(mode)}
+            className={`h-full px-2 border-b-2 ${workspaceMode === mode ? 'border-(--ui-accent) text-(--ui-accent)' : 'border-transparent text-(--ui-muted) hover:text-(--ui-strong)'}`}>{label}</button>)}
+      </div>}
+      {showDrawing && currentTool === 'stamp' && <><button onClick={onOpenStamp} className="px-2 py-1 hover:bg-(--ui-hover)">笔刷设置</button><button onClick={onOpenMaterials}>素材库</button><span className="text-(--ui-muted) truncate">单击盖印 · 拖动绘制织带</span></>}
+      {showDrawing && isVectorTool(currentTool) && <>
         <VectorModes tool={currentTool} onSelect={onSelectTool ?? (() => {})} />
-        {currentTool === 'vector_edit' ? <div id="vector-options" className="min-w-0 flex-1" /> : <span className="text-(--ui-muted) truncate">选择切口 · 拖动锚点调整轮廓</span>}
+        {currentTool === 'vector_pen' && <Segmented>
+          <IconButton active={brushSettings.mode === 'cutout'} tip="钢笔刻纸：闭合路径作为切口" onClick={() => set({ mode: 'cutout' })}><Scissors className="w-3.5 h-3.5" /></IconButton>
+          <IconButton active={brushSettings.mode === 'positive'} tip="钢笔贴花：闭合路径作为色块" onClick={() => set({ mode: 'positive' })}><Layers className="w-3.5 h-3.5" /></IconButton>
+        </Segmented>}
+        {currentTool === 'vector_edit' ? <div id="vector-options" className="min-w-0 flex-1" /> : <span className="text-(--ui-muted) truncate">{currentTool === 'vector_pen' ? '单击落角点 · 拖动拉曲线 · 点起点闭合 · Enter 完成' : '选择路径 · 拖动锚点调整轮廓'}</span>}
       </>}
-      {currentTool === 'select' && (
+      {(currentTool === 'select' || (workspaceModesEnabled && workspaceMode === 'arrange')) && (!workspaceModesEnabled || workspaceMode !== 'assets') && (
         <>
           <Segmented>
             <IconButton active={selectionScope === 'item'} tip="整物件选取 (Tab)" onClick={() => onChangeSelectionScope('item')}>
@@ -216,11 +238,14 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
             <IconButton active={selectionScope === 'part'} tip="单部件选取 (Tab)" onClick={() => onChangeSelectionScope('part')}>
               <MousePointerClick className="w-3.5 h-3.5" />
             </IconButton>
+            <IconButton active={selectionScope === 'group'} tip="绘制组选取 (Tab)" onClick={() => onChangeSelectionScope('group')}>
+              <Group className="w-3.5 h-3.5" />
+            </IconButton>
             <IconButton active={selectionScope === 'color'} tip="色块选取 (Tab) · Shift 加选，双击选同色" onClick={() => onChangeSelectionScope('color')}>
               <PaintBucket className="w-3.5 h-3.5" />
             </IconButton>
           </Segmented>
-          <button disabled={!canCaptureStamp} onClick={onCaptureStamp} className="border border-(--ui-border) px-2 py-1 disabled:opacity-30">收为图章</button>
+          <IconButton disabled={!canCaptureStamp} tip="选中内容收为图章" onClick={onCaptureStamp ?? (() => {})}><Stamp className="w-3.5 h-3.5" /></IconButton>
           <IconButton
             active={!!brushSettings.selectLasso}
             tip={brushSettings.selectLasso ? '圈选：拖动圈画选中（Shift 加选）' : '点选：单击选中，空白处拖动圈选'}
@@ -228,9 +253,14 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
           >
             <Lasso className="w-3.5 h-3.5" />
           </IconButton>
-          <IconButton tip="把选中纸片打组为物件" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}>
-            <Group className="w-3.5 h-3.5" />
+          {onGroupSelection && <IconButton tip="组合为绘制组 · Ctrl+G" onClick={onGroupSelection} disabled={selectedCount === 0}><Group className="w-3.5 h-3.5" /></IconButton>}
+          {onUngroupSelection && <IconButton tip="解散绘制组 · Ctrl+Shift+G" onClick={onUngroupSelection} disabled={selectedCount === 0}><Ungroup className="w-3.5 h-3.5" /></IconButton>}
+          <IconButton tip="转为资产物件（Item）" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}>
+            <Box className="w-3.5 h-3.5" />
           </IconButton>
+          {onFlipSelection && <><IconButton tip="水平翻转" disabled={selectedCount === 0} onClick={() => onFlipSelection('horizontal')}><FlipHorizontal2 className="w-3.5 h-3.5" /></IconButton>
+            <IconButton tip="垂直翻转" disabled={selectedCount === 0} onClick={() => onFlipSelection('vertical')}><FlipVertical2 className="w-3.5 h-3.5" /></IconButton></>}
+          {onMirrorSelection && <IconButton tip="沿画布对称轴镜像复制" disabled={selectedCount === 0} onClick={onMirrorSelection}><SymGlyph kind="mirror" /></IconButton>}
           <IconButton
             active={brushSettings.lockAspect ?? true}
             tip={`${brushSettings.lockAspect ?? true ? '已锁定长宽比' : '长宽比未锁定'} · 按住 Shift 临时切换，按住 Ctrl 拖角/边自由变形`}
@@ -241,9 +271,9 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         </>
       )}
 
-      {currentTool === 'willow_leaf' && willowOptions}
+      {showDrawing && currentTool === 'willow_leaf' && willowOptions}
 
-      {currentTool === 'geom_shape' && (
+      {showDrawing && currentTool === 'geom_shape' && (
         <div className="flex items-center gap-2">
           <Segmented>
             {GEOM_SHAPES.map((g) => (
@@ -299,7 +329,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         </div>
       )}
 
-      {(currentTool === 'pen_knife' || currentTool === 'freehand') && (
+      {showDrawing && (currentTool === 'pen_knife' || currentTool === 'freehand') && (
         <>
           <Segmented>
             {KNIFE_TIPS.map((t) => (
@@ -334,7 +364,7 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
         </>
       )}
 
-      {currentTool === 'hand_draw' && (
+      {showDrawing && currentTool === 'hand_draw' && (
         <>
           <Segmented>
             {DRAW_BRUSHES.map((b) => (
@@ -374,91 +404,20 @@ export const ToolOptions: React.FC<ToolOptionsProps> = ({
           )}
         </>
       )}
-      {(carving || currentTool === 'hand_draw') && (
-        <div className="relative ml-auto" ref={symRef}>
-          <IconButton
-            active={sym.kind !== 'none'}
-            tip={sym.kind === 'none' ? '对称：关' : sym.kind === 'mirror' ? `轴对称 · ${sym.count} 条轴` : `中心对称 · ${sym.count} 份`}
-            onClick={() => setShowSym((v) => !v)}
-          >
-            <SymGlyph kind={sym.kind} />
-          </IconButton>
-          {showSym && (
-            <div className="absolute top-full right-0 mt-2 z-50 p-2 rounded-xl bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl flex flex-col gap-2">
-              <Segmented>
-                {(
-                  [
-                    { id: 'none', tip: '关闭对称' },
-                    { id: 'mirror', tip: '轴对称（镜像）' },
-                    { id: 'rotate', tip: '中心对称（旋转）' },
-                  ] as const
-                ).map((k) => (
-                  <IconButton
-                    key={k.id}
-                    active={sym.kind === k.id}
-                    tip={k.tip}
-                    onClick={() =>
-                      setSym({
-                        kind: k.id,
-                        count: k.id === 'rotate' ? Math.max(2, sym.count) : k.id === 'mirror' ? Math.min(sym.count, 12) : sym.count,
-                      })
-                    }
-                  >
-                    <SymGlyph kind={k.id} />
-                  </IconButton>
-                ))}
-              </Segmented>
-              {sym.kind !== 'none' && (
-                <div className="grid grid-cols-2 gap-1.5">
-                  <WheelNumber
-                    tip={sym.kind === 'mirror' ? '对称轴数量' : '旋转份数'}
-                    icon={<span className="text-[10px]">×</span>}
-                    value={sym.count}
-                    min={sym.kind === 'mirror' ? 1 : 2}
-                    max={sym.kind === 'mirror' ? 12 : 24}
-                    onChange={(v) => setSym({ count: v })}
-                  />
-                  <WheelNumber
-                    tip={sym.kind === 'mirror' ? '轴角度（90° 为竖直）' : '起始角度'}
-                    icon={<span className="text-[10px]">∠</span>}
-                    value={sym.angle}
-                    min={0}
-                    max={179}
-                    step={sym.kind === 'mirror' ? 15 : 5}
-                    format={(v) => `${v}°`}
-                    onChange={(v) => setSym({ angle: v })}
-                  />
-                  <WheelNumber
-                    tip="中心 X（也可在画布上拖动中心点）"
-                    icon={<span className="text-[10px]">X</span>}
-                    value={Math.round(sym.cx ?? canvasWidth / 2)}
-                    min={0}
-                    max={canvasWidth}
-                    step={10}
-                    onChange={(v) => setSym({ cx: v })}
-                  />
-                  <WheelNumber
-                    tip="中心 Y（也可在画布上拖动中心点）"
-                    icon={<span className="text-[10px]">Y</span>}
-                    value={Math.round(sym.cy ?? canvasHeight / 2)}
-                    min={0}
-                    max={canvasHeight}
-                    step={10}
-                    onChange={(v) => setSym({ cy: v })}
-                  />
-                  <button
-                    onClick={() => setSym({ cx: undefined, cy: undefined })}
-                    data-tip="中心回到画布正中"
-                    className="col-span-2 h-7 rounded-lg bg-(--ui-raised) border border-(--ui-border) text-(--ui-muted) hover:text-(--ui-strong) text-[11px]"
-                  >
-                    居中
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {workspaceModesEnabled && workspaceMode === 'assets' && <>
+        <button type="button" onClick={onOpenMaterials} className="h-7 px-2 hover:bg-(--ui-hover)">素材库</button>
+        <button type="button" onClick={onCreateAsset ?? onCaptureStamp} disabled={!canCaptureStamp}
+          className="h-7 px-2 flex items-center gap-1 hover:bg-(--ui-hover) disabled:opacity-35"><Stamp className="w-3.5 h-3.5" />收为素材</button>
+        <button type="button" onClick={onCreateItemFromSelection} disabled={selectedCount === 0}
+          className="h-7 px-2 flex items-center gap-1 hover:bg-(--ui-hover) disabled:opacity-35"><Box className="w-3.5 h-3.5" />转为物件</button>
+        <span className="text-(--ui-muted) truncate">图章、织带、布料与套装</span>
+      </>}
+      {onOpenSymmetrySettings && <button type="button" onClick={onOpenSymmetrySettings}
+        data-tip="画布对称设置 · 在图层栏调整对称轴和中心"
+        className={`ml-auto shrink-0 h-7 px-1.5 flex items-center gap-1 hover:bg-(--ui-hover) ${sym.kind === 'none' ? 'text-(--ui-muted)' : 'text-(--ui-accent)'}`}>
+        <SymGlyph kind={sym.kind} />
+        <span className="text-[10px]">{sym.kind === 'none' ? '对称' : sym.kind === 'mirror' ? '轴对称' : '中心对称'}</span>
+      </button>}
     </div>
   );
 };

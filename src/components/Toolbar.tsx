@@ -223,7 +223,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="flex flex-col items-center gap-1.5 w-full px-2">
         {TOOLS.map((tool) => {
           const isActive =
-            currentTool === tool.id || (tool.id === 'vector_edit' && currentTool === 'anchor_edit') || (tool.id === 'pen_knife' && currentTool === 'freehand');
+            currentTool === tool.id || (tool.id === 'vector_edit' && (currentTool === 'anchor_edit'||currentTool==='vector_pen')) || (tool.id === 'pen_knife' && currentTool === 'freehand');
           const Icon = tool.icon;
 
           return (

@@ -20,6 +20,11 @@ export type ActionId =
   | 'edit.undo'
   | 'edit.redo'
   | 'edit.delete'
+  | 'edit.copy'
+  | 'edit.paste'
+  | 'edit.duplicate'
+  | 'edit.group'
+  | 'edit.ungroup'
   | 'select.scope'
   | 'select.cancel'
   | 'file.save'
@@ -62,6 +67,11 @@ export const ACTIONS: ActionMeta[] = [
   { id: 'edit.undo', label: '撤销', group: '编辑', kind: 'key' },
   { id: 'edit.redo', label: '重做', group: '编辑', kind: 'key' },
   { id: 'edit.delete', label: '删除选中', group: '编辑', kind: 'key' },
+  { id: 'edit.copy', label: '复制图层', group: '编辑', kind: 'key' },
+  { id: 'edit.paste', label: '粘贴图层', group: '编辑', kind: 'key' },
+  { id: 'edit.duplicate', label: '创建图层副本', group: '编辑', kind: 'key' },
+  { id: 'edit.group', label: '组合为绘制组', group: '编辑', kind: 'key' },
+  { id: 'edit.ungroup', label: '解除绘制组', group: '编辑', kind: 'key' },
   { id: 'select.scope', label: '切换整物件 / 单部件', group: '编辑', kind: 'key' },
   { id: 'select.cancel', label: '取消选择', group: '编辑', kind: 'key' },
   { id: 'file.save', label: '保存项目', group: '文件', kind: 'key' },
@@ -94,6 +104,11 @@ export const DEFAULT_KEYMAP: Keymap = {
   'edit.undo': ['Ctrl+Z'],
   'edit.redo': ['Ctrl+Shift+Z', 'Ctrl+Y'],
   'edit.delete': ['Delete', 'Backspace'],
+  'edit.copy': ['Ctrl+C'],
+  'edit.paste': ['Ctrl+V'],
+  'edit.duplicate': ['Ctrl+D'],
+  'edit.group': ['Ctrl+G'],
+  'edit.ungroup': ['Ctrl+Shift+G'],
   'select.scope': ['Tab'],
   'select.cancel': ['Escape'],
   'file.save': ['Ctrl+S'],

@@ -50,9 +50,10 @@ import { TwinPreset } from '../utils/twinPresets';
 import { DocThumbnail } from './DocThumbnail';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
+import { InlineName } from './InlineName';
 import { SaveSettingsPanel } from './SaveSettingsPanel';
 import { SaveSettings, SaveStatus, describeSaveSettings } from '../utils/saveSettings';
-import { ZOOM_STEP, WHEEL_ZOOM_RATE, clampZoom } from '../utils/zoom';
+import { ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../utils/zoom';
 import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
 import type { DrawingPreviewMode } from '../utils/drawingPreview';
 
@@ -110,6 +111,8 @@ export interface DocumentTabItem {
 }
 
 interface TopBarProps {
+  workspaceModesEnabled?: boolean;
+  onWorkspaceModesEnabledChange?: (enabled: boolean) => void;
   documents: DocumentTabItem[];
   activeDocId: string;
   onSelectDocument: (docId: string) => void;
@@ -156,6 +159,8 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
+  workspaceModesEnabled = false,
+  onWorkspaceModesEnabledChange,
   documents,
   activeDocId,
   onSelectDocument,
@@ -220,32 +225,10 @@ export const TopBar: React.FC<TopBarProps> = ({
     window.clearTimeout(thumbTimer.current);
     setThumb(null);
   };
-  const zoomBoxRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-  const onZoomRef = useRef(onZoomChange);
-  onZoomRef.current = onZoomChange;
-  useEffect(() => {
-    const el = zoomBoxRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      const next = clampZoom(zoomRef.current * Math.exp(-e.deltaY * px * WHEEL_ZOOM_RATE));
-      zoomRef.current = next;
-      onZoomRef.current(next);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
   const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | 'bg' | null>(null);
   // Settings menu fields (canvas size)
   const [customWidth, setCustomWidth] = useState(currentWidth);
   const [customHeight, setCustomHeight] = useState(currentHeight);
-
-  // Inline rename document tab
-  const [editingDocId, setEditingDocId] = useState<string | null>(null);
-  const [editingDocName, setEditingDocName] = useState('');
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
@@ -405,18 +388,10 @@ export const TopBar: React.FC<TopBarProps> = ({
                     >
                       <div className="grid grid-cols-2 gap-1.5">
                         {(['宽', '高'] as const).map((label, i) => (
-                          <label key={label} className="flex items-center gap-1.5 h-7 px-2 rounded-lg bg-(--ui-input) border border-(--ui-border)">
-                            <span className="text-[10px] text-(--ui-muted)">{label}</span>
-                            <input
-                              type="number"
-                              min={200}
-                              max={4000}
-                              step={50}
-                              value={i === 0 ? customWidth : customHeight}
-                              onChange={(e) => (i === 0 ? setCustomWidth : setCustomHeight)(Number(e.target.value))}
-                              className="w-full bg-transparent text-(--ui-strong) text-xs font-mono outline-none"
-                            />
-                          </label>
+                          <WheelNumber key={label} tip={`画布${label === '宽' ? '宽度' : '高度'}`}
+                            icon={<span className="text-[10px]">{label}</span>} value={i === 0 ? customWidth : customHeight}
+                            min={200} max={4000} step={1} dragStep={5}
+                            onChange={i === 0 ? setCustomWidth : setCustomHeight} />
                         ))}
                       </div>
                       <div className="flex flex-wrap gap-1.5 justify-between">
@@ -473,6 +448,15 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {showSettingsMenu && (
             <div className="absolute left-0 top-full mt-1 w-52 bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 z-50 text-xs">
+              {onWorkspaceModesEnabledChange && <button type="button" role="switch" aria-checked={workspaceModesEnabled}
+                onClick={() => onWorkspaceModesEnabledChange(!workspaceModesEnabled)}
+                onPointerEnter={() => setSettingsFlyout(null)}
+                data-tip="在工具属性栏显示绘制、编排、资产标签；共享当前画布"
+                className="w-full px-3 py-2 flex items-center gap-2 text-left text-(--ui-text-2) hover:bg-(--ui-hover)">
+                <PanelRight className="w-3.5 h-3.5 text-(--ui-muted)" />
+                <span className="flex-1">工作模式标签</span>
+                <span className={`text-[10px] ${workspaceModesEnabled ? 'text-(--ui-accent)' : 'text-(--ui-faint)'}`}>{workspaceModesEnabled ? '开' : '关'}</span>
+              </button>}
               <div className="px-3 pt-1.5 pb-2">
                 <div className="flex items-center gap-2 mb-1.5 text-(--ui-muted)">
                   <Palette className="w-3.5 h-3.5 text-(--ui-accent-2)" />
@@ -664,7 +648,6 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="flex-1 flex items-center overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
         {documents.map((doc) => {
           const isActive = doc.id === activeDocId;
-          const isEditing = editingDocId === doc.id;
           const color = tabColor(doc.id);
 
           return (
@@ -674,7 +657,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 hideThumb();
                 onSelectDocument(doc.id);
               }}
-              onPointerEnter={(e) => e.pointerType === 'mouse' && !isEditing && showThumbSoon(doc.id, e.currentTarget)}
+              onPointerEnter={(e) => e.pointerType === 'mouse' && showThumbSoon(doc.id, e.currentTarget)}
               onPointerLeave={hideThumb}
               style={{ borderTopColor: color, boxShadow: isActive ? `inset 0 2px 0 ${color}` : undefined }}
               className={`h-8.5 px-3 flex items-center gap-1.5 rounded-t-lg cursor-pointer transition-all border-t-2 text-xs shrink-0 select-none group relative ${
@@ -689,41 +672,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               </span>
 
               {/* Title / Inline Edit */}
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editingDocName}
-                  autoFocus
-                  onChange={(e) => setEditingDocName(e.target.value)}
-                  onBlur={() => {
-                    if (editingDocName.trim()) {
-                      onRenameDocument(doc.id, editingDocName.trim());
-                    }
-                    setEditingDocId(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (editingDocName.trim()) {
-                        onRenameDocument(doc.id, editingDocName.trim());
-                      }
-                      setEditingDocId(null);
-                    }
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="px-1 py-0.5 bg-(--ui-input) text-(--ui-strong) text-xs outline-none rounded border border-(--ui-accent) w-24"
-                />
-              ) : (
-                <span
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setEditingDocId(doc.id);
-                    setEditingDocName(doc.name);
-                  }}
-                  className="truncate max-w-[120px] text-[11px]"
-                >
-                  {doc.name}
-                </span>
-              )}
+              <InlineName value={doc.name} onCommit={name => onRenameDocument(doc.id, name)}
+                label="文档名称" className="max-w-[120px] text-[11px]" />
 
               {/* Close Tab Button (X) */}
               {documents.length > 1 && (
@@ -756,7 +706,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* 3. Right: Zoom (放缩) + Unified Export Square Button */}
       <div className="flex items-center gap-2 shrink-0">
         {/* Zoom Controls */}
-        <div ref={zoomBoxRef} className="flex items-center bg-(--ui-raised) rounded-xl p-0.5 border border-(--ui-border) text-(--ui-text-2)">
+        <div className="flex items-center text-(--ui-text-2)">
           <button
             onClick={() => onZoomChange(zoom / ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
@@ -764,13 +714,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          <button
-            onClick={onResetZoom}
-            className="px-2 py-0.5 font-mono text-[11px] text-(--ui-strong) hover:bg-(--ui-hover) rounded-md transition-colors"
-            data-tip="缩放 · 滚轮调节 · 单击回到 100%"
-          >
-            {Math.round(zoom * 100)}%
-          </button>
+          <WheelNumber tip="画布缩放" value={Math.round(zoom * 100)} min={MIN_ZOOM * 100} max={MAX_ZOOM * 100}
+            dragStep={1} format={value => `${value}%`} onChange={value => onZoomChange(value / 100)} />
           <button
             onClick={() => onZoomChange(zoom * ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
@@ -778,6 +723,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
+          <button type="button" onClick={onResetZoom} data-tip="回到原始大小（100%）"
+            className="h-7 px-1 text-[10px] font-mono text-(--ui-muted) hover:text-(--ui-strong)">1:1</button>
           {onFitZoom && (
             <button
               onClick={onFitZoom}

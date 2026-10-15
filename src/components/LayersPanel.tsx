@@ -13,6 +13,7 @@ import {
   PatternType,
   ToolType,
   BrushSettings,
+  DrawingGroup,
 } from '../types/papercut';
 import { getPathBoundingBox } from '../utils/bezierMath';
 import { renderLayerMarkup, BASE_BLOCK } from '../utils/layerSvg';
@@ -57,6 +58,9 @@ import {
 import { TwinPreset } from '../utils/twinPresets';
 import { playDiscardSwoosh, playPaperRustle } from '../utils/soundEffects';
 import { WheelNumber } from './WheelNumber';
+import {InlineName} from './InlineName';
+import {CanvasLayerSettings} from './CanvasLayerSettings';
+import {findDrawingGroupOfLayer,getLayerEffectiveState} from '../utils/drawingGroups';
 import { ColorStudio } from './ColorStudio';
 import { WorkStatus } from './WorkStatus';
 import { StrokeButton } from './StrokePanel';
@@ -66,7 +70,13 @@ import { isLight, layerColors, normalizeHex, projectColors } from '../utils/colo
 interface LayersPanelProps {
   materialPanel?: React.ReactNode;
   colorPanel?: React.ReactNode;
-  panelRequest?: {tab:'materials'|'colors';key:number};
+  panelRequest?: {tab:'materials'|'colors'|'depth';section?:'symmetry'|'canvas'|'reference';key:number};
+  onCreateDrawingGroup:()=>void;
+  onSelectDrawingGroup:(id:string)=>void;
+  onUpdateDrawingGroup:(id:string,updates:Partial<DrawingGroup>)=>void;
+  onUngroupDrawingGroup:(id:string)=>void;
+  onConvertDrawingGroup:(id:string)=>void;
+  onDuplicateDrawingGroup:(id:string)=>void;
   project: PapercutProject;
   activeLayerId: string | null;
   selectedLayerIds: string[];
@@ -134,32 +144,11 @@ const NameField: React.FC<{ label: string; value: string; placeholder?: string; 
   tip,
   onCommit,
 }) => {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  const commit = () => {
-    const v = draft.trim();
-    if (v !== value) onCommit(v);
-    else setDraft(value);
-  };
   return (
-    <label className="flex flex-col gap-0.5 min-w-0" data-tip={tip}>
+    <div className="flex flex-col gap-0.5 min-w-0" data-tip={tip}>
       <span className="text-[9px] text-(--ui-faint) px-0.5">{label}</span>
-      <input
-        value={draft}
-        placeholder={placeholder}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-          if (e.key === 'Escape') {
-            setDraft(value);
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        onClick={(e) => e.stopPropagation()}
-        className="h-6 w-full min-w-0 px-1.5 rounded-md bg-(--ui-input) border border-(--ui-border) text-[11px] text-(--ui-strong) placeholder:text-(--ui-faint) outline-none focus:border-(--ui-accent)"
-      />
-    </label>
+      <InlineName value={value} onCommit={onCommit} label={label} placeholder={placeholder} allowEmpty className="h-6 text-[11px] text-(--ui-strong)"/>
+    </div>
   );
 };
 
@@ -296,6 +285,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   currentTool,
   brushSettings,
   selectedItem, materialPanel, colorPanel, panelRequest,
+  onCreateDrawingGroup,onSelectDrawingGroup,onUpdateDrawingGroup,onUngroupDrawingGroup,onConvertDrawingGroup,onDuplicateDrawingGroup,
 }) => {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -329,9 +319,11 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const { layers, groups, rootOrder } = project;
   const items = project.items || [];
   const [tab, setTab] = useState<PanelTab>('depth');
+  const [layerView,setLayerView]=useState<'stack'|'structure'>('stack');
   useEffect(()=>{if(panelRequest)setTab(panelRequest.tab);},[panelRequest]);
   const [editing, setEditing] = useState<{ kind: 'layer' | 'group' | 'item' | 'socket'; id: string; parent?: string } | null>(null);
   const [editingName, setEditingName] = useState('');
+  const renameCancelled=useRef(false);
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Record<string, boolean>>({});
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [dragging, setDragging] = useState<{ kind: 'layer' | 'root'; id: string } | null>(null);
@@ -341,6 +333,14 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; groupId: string } | null>(null);
   const [itemMenu, setItemMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
   const [twinOpen, setTwinOpen] = useState(false);
+  const twinMenuRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!twinOpen)return;
+    const outside=(e:PointerEvent)=>{if(!twinMenuRef.current?.contains(e.target as Node))setTwinOpen(false);};
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')setTwinOpen(false);};
+    window.addEventListener('pointerdown',outside);window.addEventListener('keydown',key);
+    return()=>{window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',key);};
+  },[twinOpen]);
   const [opacityEdit, setOpacityEdit] = useState<{ kind: 'group' | 'item'; id: string } | null>(null);
   /** After merge-down: pick which name the surviving layer keeps. */
   const [mergeNamePick, setMergeNamePick] = useState<{ layerId: string; names: [string, string] } | null>(null);
@@ -380,12 +380,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   }, [activeLayerId, tab]);
 
   const startRename = (kind: 'layer' | 'group' | 'item' | 'socket', id: string, current: string, parent?: string) => {
+    renameCancelled.current=false;
     setEditing({ kind, id, parent });
     setEditingName(current);
   };
 
   const commitRename = () => {
-    if (!editing) return;
+    if (!editing||renameCancelled.current) return;
     const name = editingName.trim();
     if (name) {
       if (editing.kind === 'layer') onUpdateLayer(editing.id, { name });
@@ -408,14 +409,18 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
       type="text"
       value={editingName}
       autoFocus
+      data-property-control=""
+      aria-label="重命名"
+      onFocus={e=>e.currentTarget.select()}
       onChange={(e) => setEditingName(e.target.value)}
       onBlur={commitRename}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') commitRename();
-        if (e.key === 'Escape') setEditing(null);
+        e.stopPropagation();
+        if (e.key === 'Enter') {e.preventDefault();e.currentTarget.blur();}
+        if (e.key === 'Escape') {e.preventDefault();renameCancelled.current=true;setEditing(null);}
       }}
       onClick={(e) => e.stopPropagation()}
-      className="px-1.5 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[11px] rounded-md outline-none w-full border border-(--ui-accent)"
+      className="px-0.5 py-0.5 bg-(--ui-input) text-(--ui-strong) text-[11px] outline-none w-full border-b border-(--ui-accent)"
     />
   );
 
@@ -495,13 +500,13 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY, layerId: layer.id });
         }}
-        className={`relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors border ${
+        className={`relative flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors border-l-2 ${
           dragging?.id === layer.id
             ? 'opacity-40 border-dashed border-(--ui-accent)'
             : isActive
             ? 'bg-(--ui-hover) border-(--ui-accent) text-(--ui-strong)'
             : isSelected
-            ? 'bg-(--ui-raised) border-(--ui-accent)/40 text-(--ui-strong)'
+            ? 'bg-(--ui-hover) border-(--ui-accent)/40 text-(--ui-strong)'
             : 'hover:bg-(--ui-raised) text-(--ui-text-2) border-transparent'
         }`}
       >
@@ -513,7 +518,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           />
         )}
         {draggable && <GripVertical className="w-3 h-3 text-(--ui-faint) shrink-0 cursor-grab pointer-coarse:hidden" />}
-        <div className="w-8 h-8 rounded-md bg-[#FAF8F2]/95 p-0.5 shrink-0 overflow-hidden">
+        <div className="w-8 h-8 p-0.5 shrink-0 overflow-hidden">
           <LayerThumb layer={layer} w={project.width} h={project.height} assets={project.fabricAssets}/>
         </div>
         <div className="flex-1 min-w-0">
@@ -521,16 +526,20 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             renameInput
           ) : (
             <div className="flex items-center gap-1.5 min-w-0">
-              <span
+              <button type="button" data-property-control="" aria-label="图层名称"
                 className="truncate text-[11px] font-medium min-w-0"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startRename('layer', layer.id, layer.name);
                 }}
                 data-tip="双击重命名"
+                onKeyDown={e=>{
+                  if(e.key==='Enter'||e.key==='F2'){e.preventDefault();e.stopPropagation();startRename('layer',layer.id,layer.name);}
+                  if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();e.stopPropagation();onDeleteLayers?.(selectedSet.has(layer.id)?selectedLayerIds:[layer.id]);}
+                }}
               >
                 {layer.name}
-              </span>
+              </button>
               {scope === 'items' && (
                 <span className="text-[9px] text-(--ui-faint) truncate min-w-0 shrink">{findGroupOfLayer(project, layer.id)?.name || '根层级'}</span>
               )}
@@ -604,6 +613,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
             <MousePointer2 className="w-3.5 h-3.5 shrink-0" />
           </button>
         )}
+        {scope==='depth'&&findDrawingGroupOfLayer(project,layer.id)&&<button aria-label="选中绘制组" className="text-(--ui-muted) hover:text-(--ui-accent)" onClick={e=>{e.stopPropagation();onSelectDrawingGroup(findDrawingGroupOfLayer(project,layer.id)!.id);}} data-tip={findDrawingGroupOfLayer(project,layer.id)!.name}><Folder size={13}/></button>}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -767,10 +777,34 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
   };
 
   const stackIds = flattenLayerIds(project);
+  const drawingGroups=project.drawingGroups??[];
+  const groupIds=new Set(drawingGroups.flatMap(group=>group.layerIds));
+  const drawGroupRow=(group:DrawingGroup)=>{
+    const selected=group.layerIds.length>0&&group.layerIds.every(id=>selectedSet.has(id));
+    return <div key={group.id} className="mb-1" data-drawing-group={group.id}>
+      <div className={`h-9 flex items-center gap-1 border-l-2 px-1 ${selected?'border-(--ui-accent) bg-(--ui-hover)':'border-transparent hover:bg-(--ui-hover)'}`} onClick={()=>onSelectDrawingGroup(group.id)}>
+        <button aria-label={group.collapsed?'展开绘制组':'折叠绘制组'} className="p-1 text-(--ui-muted)" onClick={e=>{e.stopPropagation();onUpdateDrawingGroup(group.id,{collapsed:!group.collapsed});}}><ChevronRight size={13} className={group.collapsed?'':'rotate-90'}/></button>
+        <Folder size={14}/><InlineName label="绘制组名称" value={group.name} onCommit={name=>onUpdateDrawingGroup(group.id,{name})} className="flex-1 text-[11px]"/>
+        <span className="text-[10px] text-(--ui-faint)">{group.layerIds.length}</span>
+        <button aria-label="绘制组可见性" className="p-1 text-(--ui-muted)" onClick={e=>{e.stopPropagation();onUpdateDrawingGroup(group.id,{visible:!group.visible});}}>{group.visible?<Eye size={12}/>:<EyeOff size={12}/>}</button>
+        <button aria-label="锁定绘制组" aria-pressed={group.locked} className="p-1 text-(--ui-muted)" onClick={e=>{e.stopPropagation();onUpdateDrawingGroup(group.id,{locked:!group.locked});}}>{group.locked?<Lock size={12}/>:<Unlock size={12}/>}</button>
+        <button aria-label="绘制组菜单" className="p-1 text-(--ui-muted)" onClick={e=>{e.stopPropagation();setGroupMenu({x:e.clientX-160,y:e.clientY+8,groupId:group.id});}}><MoreHorizontal size={14}/></button>
+      </div>
+      {!group.collapsed&&<div className="ml-4 border-l border-(--ui-divider) pl-1">{stackIds.slice().reverse().filter(id=>group.layerIds.includes(id)).map(id=>renderLayerRow(layers[id],'style'))}</div>}
+    </div>;
+  };
   const depthTab = (
     <div className="space-y-1" aria-label="图层顺序：上方在前">
-      <p className="text-[10px] text-(--ui-muted) px-2 py-1">上方在前 · 拖动部件调整遮挡；物件归属不变</p>
-      {stackIds.slice().reverse().map(id => renderLayerRow(layers[id], 'depth'))}
+      <div className="flex items-center gap-3 px-1 h-7 text-[10px]">
+        <button aria-pressed={layerView==='stack'} className={layerView==='stack'?'text-(--ui-strong) border-b border-(--ui-accent)':'text-(--ui-muted)'} onClick={()=>setLayerView('stack')}>堆叠</button>
+        <button aria-pressed={layerView==='structure'} className={layerView==='structure'?'text-(--ui-strong) border-b border-(--ui-accent)':'text-(--ui-muted)'} onClick={()=>setLayerView('structure')}>结构</button>
+        <button className="ml-auto p-1 hover:text-(--ui-accent) disabled:opacity-30" aria-label="组合为绘制组" data-tip="绘制组 · Ctrl+G" disabled={!selectedLayerIds.length&&!activeLayerId} onClick={()=>{onCreateDrawingGroup();setLayerView('structure');}}><FolderPlus size={14}/></button>
+      </div>
+      {layerView==='stack'?stackIds.slice().reverse().map(id=>renderLayerRow(layers[id],'depth')):<>
+        {drawingGroups.slice().sort((a,b)=>Math.max(...b.layerIds.map(id=>zOf[id]??0))-Math.max(...a.layerIds.map(id=>zOf[id]??0))).map(drawGroupRow)}
+        {stackIds.slice().reverse().filter(id=>!groupIds.has(id)).map(id=>renderLayerRow(layers[id],'depth'))}
+      </>}
+      <CanvasLayerSettings project={project} onUpdate={onUpdateProject} onImportReference={onImportReference} request={panelRequest}/>
     </div>
   );
 
@@ -911,14 +945,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                     <Anchor className="w-3 h-3 text-[#D23838]" />
                     <span className="flex-1" data-tip="场景原点，Godot 中物件的位置基准">锚点</span>
                     {(['x', 'y'] as const).map((axis) => (
-                      <input
-                        key={axis}
-                        type="number"
-                        value={Math.round(item.pivot[axis])}
-                        onChange={(e) => onUpdateItem(item.id, { pivot: { ...item.pivot, [axis]: Number(e.target.value) } })}
-                        className="w-14 bg-(--ui-input) border border-(--ui-border) rounded px-1 py-0.5 text-[10px] text-(--ui-strong) font-mono"
-                        data-tip={axis}
-                      />
+                      <WheelNumber key={axis} tip={`物件原点 ${axis.toUpperCase()}`} value={item.pivot[axis]} min={-32768} max={32768} dragStep={1} format={v=>`${axis.toUpperCase()} ${Math.round(v)}`} onChange={v=>onUpdateItem(item.id,{pivot:{...item.pivot,[axis]:v}})}/>
                     ))}
                   </div>
                   {item.sockets.map((s) => (
@@ -937,9 +964,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="font-mono text-[9px]">
-                        {Math.round(s.x - item.pivot.x)}, {Math.round(s.y - item.pivot.y)}
-                      </span>
+                      {(['x','y'] as const).map(axis=><WheelNumber key={axis} tip={`挂点 ${s.name} ${axis.toUpperCase()}`} value={s[axis]-item.pivot[axis]} min={-32768} max={32768} dragStep={1} format={v=>`${axis.toUpperCase()} ${Math.round(v)}`} className="px-0.5" onChange={v=>onUpdateItem(item.id,{sockets:item.sockets.map(socket=>socket.id===s.id?{...socket,[axis]:v+item.pivot[axis]}:socket)})}/>)}
                       <button
                         onClick={() => onUpdateItem(item.id, { sockets: item.sockets.filter((x) => x.id !== s.id) })}
                         className="p-0.5 text-(--ui-faint) hover:text-(--ui-accent-2)"
@@ -1182,6 +1207,15 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
 
   return (
     <aside
+      data-layers-panel="" tabIndex={-1}
+      onPointerDown={e=>{if(!(e.target as Element).closest('button,input,select,[data-property-control]'))e.currentTarget.focus();}}
+      onKeyDown={e=>{
+        if((e.target as Element).closest('input,textarea,select,[data-property-control]'))return;
+        if(e.key==='Delete'||e.key==='Backspace'){
+          e.preventDefault();e.stopPropagation();
+          onDeleteLayers?.(selectedLayerIds.length?selectedLayerIds:activeLayerId?[activeLayerId]:[]);
+        }
+      }}
       style={{ width }}
       className="h-full flex flex-col bg-(--ui-panel) border-l border-(--ui-divider) text-(--ui-text-2) text-xs shrink-0 select-none z-20 relative"
     >
@@ -1202,7 +1236,6 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
           { id: 'depth', label: '图层', icon: LayersIcon },
           { id: 'materials', label: '素材', icon: Box },
           { id: 'colors', label: '色彩', icon: Palette },
-          { id: 'style', label: '参考', icon: Scan },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -1227,17 +1260,18 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               <Brush className="w-4 h-4" />
             </button>
             <div
-              className="relative"
-              onPointerEnter={(e) => e.pointerType === 'mouse' && setTwinOpen(true)}
-              onPointerLeave={() => setTwinOpen(false)}
+              ref={twinMenuRef}
+              className="relative flex items-center"
             >
               <button
-                onClick={() => onAddLayer()}
+                aria-label="新建纸片"
+                onClick={() => {setTwinOpen(false);onAddLayer();}}
                 className="w-8 h-8 flex items-center justify-center rounded-lg bg-(--ui-accent) hover:bg-(--ui-accent-hover) text-white"
-                data-tip="新建纸片 · 悬停选孪生预设"
+                data-tip="新建纸片"
               >
                 <Plus className="w-4 h-4" />
               </button>
+              {twinPresets.length>0&&<button type="button" aria-label="孪生图层预设" aria-expanded={twinOpen} onClick={()=>setTwinOpen(!twinOpen)} className="w-4 h-8 flex items-center justify-center text-(--ui-muted) hover:bg-(--ui-hover)"><ChevronDown size={11}/></button>}
               {twinOpen && twinPresets.length > 0 && (
                 <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-(--ui-raised)/98 border border-(--ui-border-strong) rounded-xl shadow-2xl py-1 text-xs backdrop-blur-md">
                   <div className="px-2.5 py-1 text-[10px] text-(--ui-muted)">孪生图层</div>
@@ -1461,25 +1495,33 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
         </div>
       )}
       {groupMenu && (() => {
-        const g = groups.find((gg) => gg.id === groupMenu.groupId);
+        const g = drawingGroups.find((gg) => gg.id === groupMenu.groupId)??groups.find((gg) => gg.id === groupMenu.groupId);
         if (!g) return null;
+        const logical=drawingGroups.some(group=>group.id===g.id);
+        const editableMembers=g.layerIds.filter(id=>!getLayerEffectiveState(project,id).locked);
+        const update=(patch:Partial<DrawingGroup>)=>logical?onUpdateDrawingGroup(g.id,patch):onUpdateGroup(g.id,patch);
         const avgOpacity = g.layerIds.length
           ? Math.round((g.layerIds.reduce((a, id) => a + (layers[id]?.opacity ?? 1), 0) / g.layerIds.length) * 100)
           : 100;
         const setGroupOpacity = (pct: number) => {
           const next = { ...layers };
-          g.layerIds.forEach((id) => {
+          editableMembers.forEach((id) => {
             if (next[id]) next[id] = { ...next[id], opacity: pct / 100 };
           });
           onUpdateProject({ layers: next });
         };
         const actions = [
-          { label: '全部选中', icon: MousePointer2, run: () => onSelectLayers(g.layerIds, g.layerIds[g.layerIds.length - 1]) },
+          { label: '全部选中', icon: MousePointer2, run: () => logical?onSelectDrawingGroup(g.id):onSelectLayers(g.layerIds, g.layerIds[g.layerIds.length - 1]) },
           { label: '高亮这些图形', icon: Scan, run: () => onHighlightLayers(g.layerIds) },
           { label: '新建纸片', icon: Plus, run: () => onAddLayer(g.id) },
-          { label: '重命名', icon: Edit2, run: () => startRename('group', g.id, g.name) },
-          { label: g.visible ? '隐藏' : '显示', icon: g.visible ? EyeOff : Eye, run: () => onUpdateGroup(g.id, { visible: !g.visible }) },
-          { label: g.locked ? '解锁' : '锁定', icon: g.locked ? Unlock : Lock, run: () => onUpdateGroup(g.id, { locked: !g.locked }) },
+          ...(!logical?[{ label: '重命名', icon: Edit2, run: () => startRename('group', g.id, g.name) }]:[]),
+          { label: g.visible ? '隐藏' : '显示', icon: g.visible ? EyeOff : Eye, run: () => update({ visible: !g.visible }) },
+          { label: g.locked ? '解锁' : '锁定', icon: g.locked ? Unlock : Lock, run: () => update({ locked: !g.locked }) },
+          ...(logical?[
+            {label:'创建组副本',icon:Copy,run:()=>onDuplicateDrawingGroup(g.id)},
+            {label:'转为物件 · 重新归属所含部件',icon:Box,run:()=>onConvertDrawingGroup(g.id)},
+            {label:'解除绘制组',icon:Folder,run:()=>onUngroupDrawingGroup(g.id)},
+          ]:[]),
         ];
         return (
           <div
@@ -1521,7 +1563,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
               {opacityEdit?.kind === 'group' && opacityEdit.id === g.id && (
                 <div className="px-3 pb-2" onClick={(e) => e.stopPropagation()}>
                   <WheelNumber
-                    tip="深度层内全部纸片透明度"
+                    tip={logical?'绘制组透明度':'深度层透明度'}
+                    disabled={!editableMembers.length}
                     icon={<Droplet className="w-3 h-3" />}
                     value={avgOpacity}
                     min={0}
@@ -1536,27 +1579,27 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                 onClick={() => {
                   playDiscardSwoosh();
                   if (onDeleteLayers && g.layerIds.length) onDeleteLayers(g.layerIds);
-                  onDeleteGroup(g.id);
+                  if(!logical)onDeleteGroup(g.id);
                   setGroupMenu(null);
                 }}
-                data-tip="删除组内全部纸片并移除深度层"
+                data-tip="删除组内可编辑图层"
                 className="w-full px-3 py-1.5 text-left hover:bg-red-950/60 text-red-400 flex items-center gap-2 border-t border-(--ui-border) mt-1"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 删除
               </button>
-              <button
+              {!logical&&<button
                 onClick={() => {
                   playDiscardSwoosh();
-                  onDeleteGroup(g.id);
+                  if(logical)onUngroupDrawingGroup(g.id);else onDeleteGroup(g.id);
                   setGroupMenu(null);
                 }}
-                data-tip="纸片会移到根层级"
+                data-tip="保留图层及其堆叠顺序"
                 className="w-full px-3 py-1.5 text-left hover:bg-(--ui-hover) text-(--ui-muted) flex items-center gap-2"
               >
                 <Link2 className="w-3.5 h-3.5" />
-                解散深度层
-              </button>
+                {logical?'解除绘制组':'解散深度层'}
+              </button>}
             </div>
           </div>
         );

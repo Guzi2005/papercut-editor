@@ -10,6 +10,10 @@ import {fitFabricTransform} from './utils/fabric';
 import {layerContent} from './utils/layerContent';
 import type {FabricAsset,FabricFill} from './types/papercut';
 import { reorderStack, flatStack } from './utils/layerStack';
+import {createDrawingGroup,ungroupDrawingGroup,updateDrawingGroup,convertDrawingGroupToItem,deleteProjectLayers,duplicateProjectLayers,pasteProjectLayers,transformProjectLayers,getLayerEffectiveState,findDrawingGroupOfLayer} from './utils/drawingGroups';
+import {DEFAULT_SYMMETRY,reflectAcross,symmetryCenter,type SymmetrySettings} from './utils/symmetry';
+import {PROPERTY_GESTURE_EVENT,finishPropertyGesture,isPropertyPreview,type PropertyGestureDetail} from './utils/propertyGesture';
+import {getPathBoundingBox} from './utils/bezierMath';
 import { GameAssetBridge } from './components/GameAssetBridge';
 import { StampWorkbench } from './components/StampWorkbench';
 import {createStampDocument,stampFromDocument} from './utils/stampDocument';
@@ -148,13 +152,20 @@ export default function App() {
   const [stampEditMessage,setStampEditMessage]=useState('');
   const [liveStampEdit,setLiveStampEdit]=useState<{layerId:string;strokeId:string}|null>(null);
   const [liveStampPath,setLiveStampPath]=useState<{layerId:string;strokeId:string}|null>(null);
-  const [panelRequest,setPanelRequest]=useState<{tab:'materials'|'colors';materialTab?:MaterialTab;key:number}>();
+  const [panelRequest,setPanelRequest]=useState<{tab:'materials'|'colors'|'depth';materialTab?:MaterialTab;section?:'symmetry'|'canvas'|'reference';key:number}>();
   const [isSaveStampOpen,setIsSaveStampOpen]=useState(false);
   const [fabricAdjust,setFabricAdjust]=useState(false);
   const [selectedBlocks,setSelectedBlocks]=useState<BlockSelection>({});
   const openMaterials=(materialTab:MaterialTab=stampSettings.mode)=>{setPanelRequest({tab:'materials',materialTab,key:Date.now()});setPanelOpen(true);};
-  const selectTool=(tool:ToolType)=>{setCurrentTool(tool);setFabricAdjust(false);setLiveStampPath(null);if(tool==='stamp')openMaterials();};
+  const selectTool=(tool:ToolType)=>{
+    if(['willow_leaf','geom_shape','pen_knife','freehand','hand_draw','vector_pen'].includes(tool)&&!project.layers[activeLayerId])handleAddLayer(undefined,tool==='hand_draw'?'doodle':'paper');
+    setCurrentTool(tool);setFabricAdjust(false);setLiveStampPath(null);if(tool==='stamp')openMaterials();
+  };
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
+  const [workspaceModesEnabled,setWorkspaceModesEnabled]=useState(()=>localStorage.getItem('weave.workspaceModes')==='true');
+  const [workspaceMode,setWorkspaceMode]=useState<'draw'|'arrange'|'assets'>('draw');
+  const changeWorkspaceModesEnabled=(value:boolean)=>{setWorkspaceModesEnabled(value);localStorage.setItem('weave.workspaceModes',String(value));};
+  const layerClipboard=useRef<{project:PapercutProject;ids:string[]}|null>(null);
   const toolMounted = useRef(false);
   useEffect(() => {
     if (toolMounted.current) playToolPick();
@@ -363,6 +374,31 @@ export default function App() {
   const project = activeDoc.project;
   const activeLayerId = activeDoc.activeLayerId;
   const zoom = activeDoc.zoom;
+  const canvasSymmetry=project.symmetry??DEFAULT_SYMMETRY;
+  const effectiveBrushSettings={...brushSettings,symmetry:canvasSymmetry};
+  const propertyGesture=useRef<{id:string;docId:string;before:PapercutProject}|null>(null);
+  useEffect(()=>{
+    const listen=(event:Event)=>{
+      const detail=(event as CustomEvent<PropertyGestureDetail>).detail;
+      if(detail.phase==='begin'){
+        const state=stateRef.current,doc=state.documents.find(d=>d.id===state.activeDocId);
+        if(doc)propertyGesture.current={id:detail.id,docId:doc.id,before:doc.project};
+        return;
+      }
+      const gesture=propertyGesture.current;if(!gesture||gesture.id!==detail.id)return;
+      propertyGesture.current=null;
+      setDocuments(docs=>docs.map(doc=>{
+        if(doc.id!==gesture.docId)return doc;
+        if(detail.phase==='cancel')return {...doc,project:gesture.before};
+        if(doc.project===gesture.before||JSON.stringify(doc.project)===JSON.stringify(gesture.before))return doc;
+        const history=doc.history.slice(0,doc.historyIndex+1);history.push(doc.project);
+        if(history.length>HISTORY_LIMIT)history.shift();
+        return {...doc,history,historyIndex:history.length-1};
+      }));
+    };
+    window.addEventListener(PROPERTY_GESTURE_EVENT,listen);
+    return ()=>window.removeEventListener(PROPERTY_GESTURE_EVENT,listen);
+  },[]);
 
   useEffect(() => {
     setSelectedLayerIds([]);
@@ -385,14 +421,22 @@ export default function App() {
       const next = prev.filter((id) => project.layers[id]);
       return next.length === prev.length ? prev : next;
     });
+    if(activeLayerId&&!project.layers[activeLayerId]){
+      const next=firstLayerId(project);
+      setDocuments(docs=>docs.map(doc=>doc.id===activeDocId?{...doc,activeLayerId:next}:doc));
+      setSelectedLayerIds(next?[next]:[]);
+    }
   }, [project]);
 
   const pushHistory = useCallback(
     (newProject: PapercutProject) => {
       newProject={...newProject,layers:Object.fromEntries(Object.entries(newProject.layers).map(([id,layer])=>[id,detachChangedLiveStamps(layer)]))};
+      const preview=isPropertyPreview()&&propertyGesture.current?.docId===activeDocId;
+      if(!preview)finishPropertyGesture();
       setDocuments((prevDocs) =>
         prevDocs.map((doc) => {
           if (doc.id !== activeDocId) return doc;
+          if(preview)return {...doc,project:newProject};
           const nextHistory = doc.history.slice(0, doc.historyIndex + 1);
           nextHistory.push(newProject);
           if (nextHistory.length > HISTORY_LIMIT) nextHistory.shift();
@@ -419,6 +463,7 @@ export default function App() {
   };
 
   const handleUndo = useCallback(() => {
+    finishPropertyGesture();
     if (canUndo) playHistory(false);
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => {
@@ -430,6 +475,7 @@ export default function App() {
   }, [activeDocId, canUndo]);
 
   const handleRedo = useCallback(() => {
+    finishPropertyGesture();
     if (canRedo) playHistory(true);
     setDocuments((prevDocs) =>
       prevDocs.map((doc) => {
@@ -571,17 +617,25 @@ export default function App() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as Element|null)?.closest('[contenteditable="true"]')) return;
       if (isShortcutsOpen || document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
       const combo = comboFromKeyEvent(e);
       const action = combo ? actionForKey(keymap, combo) : null;
       if (!action) return;
-      // Canvas owns these (hold-to-pan, delete selection).
-      if (action === 'view.panHold' || action === 'edit.delete') return;
+      if(e.defaultPrevented)return;
+      // Nodes and colour blocks own Delete while those editors are active.
+      if(action==='edit.delete'){
+        if((e.target as Element|null)?.closest('[data-property-control]'))return;
+        if(currentTool!=='select'){
+          e.preventDefault();handleDeleteLayers(selectionIds());
+        }
+        return;
+      }
+      if (action === 'view.panHold') return;
       e.preventDefault();
 
       if (TOOLS[action]) {
-        setCurrentTool(TOOLS[action]!);
+        selectTool(TOOLS[action]!);
         return;
       }
       if (MODES[action]) {
@@ -594,6 +648,16 @@ export default function App() {
           return handleUndo();
         case 'edit.redo':
           return handleRedo();
+        case 'edit.copy':
+          return handleCopyLayers();
+        case 'edit.paste':
+          return handlePasteLayers();
+        case 'edit.duplicate':
+          return handleDuplicateLayers();
+        case 'edit.group':
+          return handleCreateDrawingGroup();
+        case 'edit.ungroup':
+          return handleUngroupSelection();
         case 'file.save':
           return handleSaveProjectFile();
         case 'file.open':
@@ -603,7 +667,7 @@ export default function App() {
         case 'help.keymap':
           return setIsShortcutsOpen(true);
         case 'select.scope':
-          if (currentTool === 'select') setSelectionScope((sc) => (sc === 'item' ? 'part' : sc === 'part' ? 'color' : 'item'));
+          if (currentTool === 'select') setSelectionScope((sc) => (sc === 'item' ? 'group' : sc === 'group' ? 'part' : sc === 'part' ? 'color' : 'item'));
           return;
         case 'select.cancel':
           if (currentTool === 'anchor_edit') setCurrentTool('pen_knife');
@@ -692,7 +756,7 @@ export default function App() {
   };
   const handleUseFabric=(asset:FabricAsset)=>{
     const layer=project.layers[activeLayerId];
-    if(layer&&(layer.locked||findGroupOfLayer(project,layer.id)?.locked))return;
+    if(layer&&getLayerEffectiveState(project,layer.id).locked)return;
     const w=Math.min(320,project.width*.6),h=Math.min(w*asset.height/asset.width,project.height*.8),x=(project.width-w)/2,y=(project.height-h)/2;
     const bounds=layer&&layer.kind!=='doodle'&&layer.baseShape.d?layerContent({...layer,drawings:[],positiveElements:[]}).bounds:null;
     if(layer&&layer.kind!=='doodle'){
@@ -704,9 +768,9 @@ export default function App() {
     }
     setCurrentTool('select');setFabricAdjust(false);
   };
-  const handleUpdateFabric=(fill:FabricFill|undefined)=>{const layer=project.layers[activeLayerId];if(!layer||layer.locked||findGroupOfLayer(project,layer.id)?.locked)return;pushHistory({...project,layers:{...project.layers,[layer.id]:{...layer,fabric:fill}}});if(!fill)setFabricAdjust(false);};
+  const handleUpdateFabric=(fill:FabricFill|undefined)=>{const layer=project.layers[activeLayerId];if(!layer||getLayerEffectiveState(project,layer.id).locked)return;pushHistory({...project,layers:{...project.layers,[layer.id]:{...layer,fabric:fill}}});if(!fill)setFabricAdjust(false);};
   const captureLayerIds=selectionScope==='color'?Object.keys(selectedBlocks).filter(id=>selectedBlocks[id]?.length):selectedLayerIds;
-  const canEditMaterialLayer=(layer:Layer|undefined|null)=>!!layer&&!layer.locked&&!findGroupOfLayer(project,layer.id)?.locked;
+  const canEditMaterialLayer=(layer:Layer|undefined|null)=>!!layer&&!getLayerEffectiveState(project,layer.id).locked;
   const editLiveStamp=(stroke:LiveStampStroke)=>{if(!canEditMaterialLayer(activeLayer)||!activeLayer)return;setStampDefinition(stroke.definition);setStampSettings(structuredClone(stroke.settings));setLiveStampEdit({layerId:activeLayer.id,strokeId:stroke.id});setStampOpen(true);setCurrentTool('select');};
   const applyLiveStamp=()=>{if(!liveStampEdit)return;const layer=project.layers[liveStampEdit.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampEdit.strokeId,{definition:stampDefinition,settings:stampSettings})}});setStampOpen(false);setLiveStampEdit(null);};
   const rememberMaterialDraft=()=>{
@@ -729,6 +793,7 @@ export default function App() {
   // ---------- Layer content edits ----------
   const updateActiveLayer = (fn: (layer: Layer) => Layer) => {
     if (!activeLayerId || !project.layers[activeLayerId]) return;
+    if(getLayerEffectiveState(project,activeLayerId).locked||!getLayerEffectiveState(project,activeLayerId).visible)return;
     const layer = project.layers[activeLayerId];
     pushHistory({ ...project, layers: { ...project.layers, [activeLayerId]: fn(layer) } });
   };
@@ -741,8 +806,8 @@ export default function App() {
     if(!paths.length)return;
     const layer=project.layers[activeLayerId];
     if(layer){
-      if(layer.locked||findGroupOfLayer(project,layer.id)?.locked||!layer.visible)return;
-      const next=layer.kind==='doodle'?{...layer,drawings:[...(layer.drawings??[]),...paths.map(p=>({id:p.id,d:p.d,color:p.fillColor??layer.color,opacity:1,strokeWidth:1,brushType:'pen' as const,fill:true}))]}:{...layer,positiveElements:[...layer.positiveElements,...paths]};
+      if(getLayerEffectiveState(project,layer.id).locked||!getLayerEffectiveState(project,layer.id).visible)return;
+      const next=layer.kind==='doodle'?{...layer,drawings:[...(layer.drawings??[]),...paths.map(p=>({id:p.id,d:p.d,symmetrySource:p.symmetrySource,color:p.fillColor??layer.color,opacity:1,strokeWidth:1,brushType:'pen' as const,fill:true}))]}:{...layer,positiveElements:[...layer.positiveElements,...paths]};
       pushHistory({...project,layers:{...project.layers,[layer.id]:stroke?attachLiveStampStroke(next,stroke):next}});
     }else{
       const id=newId('layer'),created:Layer={id,name:stampDefinition.name+' · 图章',kind:'paper',color:paths[0].fillColor??'#2E58D6',texture:'xuan',grain:.25,opacity:1,blendMode:'normal',visible:true,locked:false,baseShape:{type:'freeform',d:''},cutouts:[],positiveElements:paths};
@@ -765,7 +830,7 @@ export default function App() {
         ...project.layers,
         [activeLayerId]: {
           ...layer,
-          cutouts: layer.cutouts.map((c) => (c.id === cutoutId ? { ...c, ...updates, ...(updates.d ? {vectorNodeModes: undefined} : {}) } : c)),
+          cutouts: layer.cutouts.map((c) => (c.id === cutoutId ? { ...c, ...updates } : c)),
         },
       },
     };
@@ -789,21 +854,8 @@ export default function App() {
 
   const handleTransformLayers = useCallback(
     (layerIds: string[], m: Transform) => {
-      const layers = { ...project.layers };
-      layerIds.forEach((id) => {
-        if (layers[id]) layers[id] = transformLayer(layers[id], m);
-      });
-      const idSet = new Set(layerIds);
-      const items = (project.items || []).map((it) =>
-        it.partIds.every((pid) => idSet.has(pid))
-          ? {
-              ...it,
-              pivot: applyTransform(m, it.pivot),
-              sockets: it.sockets.map((s) => ({ ...s, ...applyTransform(m, s) })),
-            }
-          : it
-      );
-      pushHistory({ ...project, layers, items });
+      const editable=layerIds.filter(id=>!getLayerEffectiveState(project,id).locked);
+      if(editable.length)pushHistory(transformProjectLayers(project,editable,m));
     },
     [project, pushHistory]
   );
@@ -811,10 +863,11 @@ export default function App() {
   const handleTransformBlocks = useCallback(
     (sel: BlockSelection, m: Transform) => {
       const layers = { ...project.layers };
+      let changed=false;
       Object.entries(sel).forEach(([lid, ids]) => {
-        if (layers[lid] && ids.length) layers[lid] = transformBlocks(layers[lid], ids, m);
+        if (layers[lid] && ids.length&&!getLayerEffectiveState(project,lid).locked) {layers[lid] = transformBlocks(layers[lid], ids, m);changed=true;}
       });
-      pushHistory({ ...project, layers });
+      if(changed)pushHistory({ ...project, layers });
     },
     [project, pushHistory]
   );
@@ -822,16 +875,19 @@ export default function App() {
   const handleDeleteBlocks = useCallback(
     (sel: BlockSelection) => {
       const layers = { ...project.layers };
+      let changed=false;
       Object.entries(sel).forEach(([lid, ids]) => {
-        if (layers[lid]) layers[lid] = removeBlocks(layers[lid], ids);
+        if (layers[lid]&&ids.length&&!getLayerEffectiveState(project,lid).locked) {layers[lid] = removeBlocks(layers[lid], ids);changed=true;}
       });
-      pushHistory({ ...project, layers });
+      if(changed)pushHistory({ ...project, layers });
     },
     [project, pushHistory]
   );
 
   const handlePathfinder = (sel: BlockSelection, op: PathfinderOp): BlockSelection | null => {
-    const r = applyPathfinder(project, sel, op);
+    const editable=Object.fromEntries(Object.entries(sel).filter(([id,blocks])=>blocks.length&&!getLayerEffectiveState(project,id).locked));
+    if(!Object.keys(editable).length)return null;
+    const r = applyPathfinder(project, editable, op);
     if (!r) return null;
     pushHistory(r.project);
     return r.selection;
@@ -892,7 +948,8 @@ export default function App() {
     const rootOrder = [...flat.rootOrder];
     const at = activeLayerId ? rootOrder.findIndex(r => r.id === activeLayerId) : -1;
     rootOrder.splice(at < 0 ? rootOrder.length : at + 1, 0, {type:'layer',id:newLayerId});
-    pushHistory({...flat,layers:{...flat.layers,[newLayerId]:newLayer},rootOrder});
+    const parent=groupId?flat.drawingGroups?.find(g=>g.id===groupId):selectionScope==='group'&&activeLayerId?findDrawingGroupOfLayer(flat,activeLayerId):null;
+    pushHistory({...flat,layers:{...flat.layers,[newLayerId]:newLayer},rootOrder,drawingGroups:parent?(flat.drawingGroups??[]).map(g=>g.id===parent.id?{...g,layerIds:[...g.layerIds,newLayerId]}:g):flat.drawingGroups});
     handleSelectLayer(newLayerId);
     setSelectedLayerIds([newLayerId]);
     if (doodle) setCurrentTool('hand_draw');
@@ -966,6 +1023,7 @@ export default function App() {
 
   const handleUpdateLayer = (layerId: string, updates: Partial<Layer>) => {
     if (!project.layers[layerId]) return;
+    if(getLayerEffectiveState(project,layerId).locked&&Object.keys(updates).some(key=>!['name','visible','locked'].includes(key)))return;
     pushHistory({
       ...project,
       layers: { ...project.layers, [layerId]: { ...project.layers[layerId], ...updates } },
@@ -975,11 +1033,10 @@ export default function App() {
 
   const handleDeleteLayers = useCallback(
     (layerIds: string[]) => {
-      if (layerIds.length === 0) return;
-      const del = new Set(layerIds);
-      const layers = { ...project.layers };
-      layerIds.forEach((id) => delete layers[id]);
-      const next = normalizeProject({ ...project, layers });
+      const editable=layerIds.filter(id=>!getLayerEffectiveState(project,id).locked);
+      if (editable.length === 0) return;
+      const del = new Set(editable);
+      const next = deleteProjectLayers(project,editable);
       pushHistory(next);
       setSelectedLayerIds([]);
       if (activeLayerId && del.has(activeLayerId)) {
@@ -991,55 +1048,68 @@ export default function App() {
 
   const handleDeleteLayer = (layerId: string) => handleDeleteLayers([layerId]);
 
+  const selectionIds=()=>selectedLayerIds.length?selectedLayerIds:activeLayerId?[activeLayerId]:[];
+  const handleCreateDrawingGroup=()=>{
+    const result=createDrawingGroup(project,selectionIds());if(!result.group)return;
+    pushHistory(result.project);setSelectedLayerIds(result.group.layerIds);setSelectionScope('group');setCurrentTool('select');
+  };
+  const handleUngroupSelection=()=>{
+    const ids=new Set(selectionIds()),groups=(project.drawingGroups??[]).filter(g=>g.layerIds.some(id=>ids.has(id)));
+    if(!groups.length)return;let next=project;for(const group of groups)next=ungroupDrawingGroup(next,group.id);
+    pushHistory(next);setSelectionScope('part');
+  };
+  const handleSelectDrawingGroup=(groupId:string)=>{
+    const group=project.drawingGroups?.find(g=>g.id===groupId);if(!group)return;
+    setSelectedLayerIds(group.layerIds);setSelectionScope('group');setCurrentTool('select');
+    handleSelectLayer(group.layerIds.at(-1)??'');
+  };
+  const handleConvertDrawingGroup=(groupId:string)=>{
+    const ids=project.drawingGroups?.find(g=>g.id===groupId)?.layerIds??[];
+    const boxes=ids.map(id=>layerContent(project.layers[id]).bounds).filter((b):b is NonNullable<typeof b>=>!!b&&b.width>0);
+    const pivot=boxes.length?{x:(Math.min(...boxes.map(b=>b.x))+Math.max(...boxes.map(b=>b.x+b.width)))/2,y:Math.max(...boxes.map(b=>b.y+b.height))}:{x:project.width/2,y:project.height/2};
+    const result=convertDrawingGroupToItem(project,groupId,{reassign:true,pivot});if(!result.item)return;
+    pushHistory(result.project);setSelectedLayerIds(result.item.partIds);setSelectionScope('item');setCurrentTool('select');
+  };
+  const handleCopyLayers=()=>{
+    const ids=selectionIds().filter(id=>project.layers[id]);if(!ids.length)return;
+    layerClipboard.current={project:structuredClone(project),ids};
+    setSaveBanner({id:Date.now(),text:`已复制 ${ids.length} 个图层 · Ctrl+V 粘贴，可切换画布`});
+  };
+  const handlePasteLayers=()=>{
+    const source=layerClipboard.current;if(!source)return;
+    const result=pasteProjectLayers(project,source.project,source.ids);if(!result.layerIds.length)return;
+    pushHistory(result.project);handleSelectLayer(result.layerIds.at(-1)!);setSelectedLayerIds(result.layerIds);setCurrentTool('select');setSelectionScope(result.groupIds.length===1?'group':result.itemIds.length===1?'item':'part');
+  };
+  const handleDuplicateLayers=(ids=selectionIds())=>{
+    const result=duplicateProjectLayers(project,ids);if(!result.layerIds.length)return;
+    pushHistory(result.project);handleSelectLayer(result.layerIds.at(-1)!);setSelectedLayerIds(result.layerIds);setCurrentTool('select');setSelectionScope(result.groupIds.length===1?'group':result.itemIds.length===1?'item':'part');
+  };
+  const handleFlipSelection=(direction:'horizontal'|'vertical')=>{
+    const ids=selectionIds().filter(id=>project.layers[id]&&!getLayerEffectiveState(project,id).locked);if(!ids.length)return;
+    const paths=ids.flatMap(id=>{const l=project.layers[id];return [l.baseShape.d,...l.positiveElements.map(e=>e.d),...l.cutouts.filter(c=>!c.isHole).map(c=>c.d),...(l.drawings??[]).map(d=>d.d)];}).filter(Boolean);
+    const bounds=getPathBoundingBox(paths,project.width,project.height),cx=bounds.minX+bounds.width/2,cy=bounds.minY+bounds.height/2;
+    handleTransformLayers(ids,reflectAcross(direction==='horizontal'?90:0,cx,cy));
+  };
+  const handleMirrorSelection=()=>{
+    const ids=selectionIds().filter(id=>project.layers[id]&&!getLayerEffectiveState(project,id).locked);if(!ids.length)return;
+    const result=duplicateProjectLayers(project,ids),center=symmetryCenter(canvasSymmetry,project.width,project.height);
+    const matrix:Transform=canvasSymmetry.kind==='rotate'?[-1,0,0,-1,2*center.x,2*center.y]:reflectAcross(canvasSymmetry.angle,center.x,center.y);
+    pushHistory(transformProjectLayers(result.project,result.layerIds,matrix));setSelectedLayerIds(result.layerIds);handleSelectLayer(result.layerIds.at(-1)!);setCurrentTool('select');setSelectionScope(result.groupIds.length===1?'group':result.itemIds.length===1?'item':'part');
+  };
+  const handleSymmetryChange=(symmetry:SymmetrySettings,commit=true)=>{
+    const next={...project,symmetry};
+    if(commit)pushHistory(next);
+    else setDocuments(docs=>docs.map(d=>d.id===activeDocId?{...d,project:next}:d));
+  };
+
   const handleDuplicateLayer = (layerId: string) => {
-    const source = project.layers[layerId];
-    if (!source) return;
-    const dupId = newId('layer');
-    const liveStamps = structuredClone(detachChangedLiveStamps(source).liveStamps ?? []);
-    const pathIds = new Map<string, string>();
-    for (const stroke of liveStamps) {
-      const previousId = stroke.id;
-      stroke.id = newId('stamp');
-      stroke.pathIds = stroke.pathIds.map((id) => {
-        // Generated cache ids include their stroke id, so future regeneration keeps these ids.
-        const nextId = id.includes(previousId) ? id.replace(previousId, stroke.id) : newId('cut');
-        pathIds.set(id, nextId);
-        return nextId;
-      });
-      stroke.cacheHashes = undefined;
-    }
-    const reId = <T extends { id: string }>(c: T): T => ({ ...c, id: pathIds.get(c.id) ?? newId('cut') });
-    let duplicated: Layer = {
-      ...source,
-      id: dupId,
-      name: `${source.name} 副本`,
-      cutouts: source.cutouts.map(reId),
-      positiveElements: source.positiveElements.map(reId),
-      drawings: (source.drawings || []).map(reId),
-      liveStamps: [],
-    };
-    for (const stroke of liveStamps) duplicated = attachLiveStampStroke(duplicated, stroke);
-
-    const rootOrder = [...project.rootOrder];
-    const groups = project.groups.map((g) => {
-      const at = g.layerIds.indexOf(layerId);
-      if (at === -1) return g;
-      const ids = [...g.layerIds];
-      ids.splice(at + 1, 0, dupId);
-      return { ...g, layerIds: ids };
-    });
-    const rootIdx = rootOrder.findIndex((r) => r.type === 'layer' && r.id === layerId);
-    if (rootIdx !== -1) rootOrder.splice(rootIdx + 1, 0, { type: 'layer', id: dupId });
-
-    pushHistory({ ...project, layers: { ...project.layers, [dupId]: duplicated }, rootOrder, groups });
-    handleSelectLayer(dupId);
-    setSelectedLayerIds([dupId]);
+    handleDuplicateLayers([layerId]);
   };
 
   /** Merge this layer into the one directly below it in the same stack. Returns name choices for the result. */
   const handleMergeDown = (layerId: string): { layerId: string; names: [string, string] } | null => {
     const upper = project.layers[layerId];
-    if (!upper || upper.locked) return null;
+    if (!upper || getLayerEffectiveState(project,layerId).locked) return null;
     if (upper.fabric) {
       setSaveBanner({ id: Date.now(), text: '图片布料需要保留独立图层，暂时不能向下合并。可将多个图层收为同一个物件。', error: true });
       return null;
@@ -1049,7 +1119,7 @@ export default function App() {
     const i = ids.indexOf(layerId);
     const belowId = i > 0 ? ids[i - 1] : null;
     const lower = belowId ? project.layers[belowId] : null;
-    if (!lower || lower.locked) return null;
+    if (!lower || getLayerEffectiveState(project,lower.id).locked) return null;
     const names: [string, string] = [upper.name, lower.name];
     const merged = mergeLayerOnto(upper, lower);
     const layers = { ...project.layers, [lower.id]: merged };
@@ -1062,6 +1132,7 @@ export default function App() {
   };
 
   const handleInvertLayerCutouts = (layerId: string) => {
+    if(getLayerEffectiveState(project,layerId).locked)return;
     const layer = project.layers[layerId];
     if (!layer) return;
     handleUpdateLayer(layerId, {
@@ -1074,6 +1145,7 @@ export default function App() {
   };
 
   const handleClearLayerCutouts = (layerId: string) => {
+    if(getLayerEffectiveState(project,layerId).locked)return;
     handleUpdateLayer(layerId, { cutouts: [], positiveElements: [] });
   };
 
@@ -1236,7 +1308,7 @@ export default function App() {
       src,
       opacity: 0.45,
       visible: true,
-      onTop: true,
+      onTop: false,
       x: (project.width - width) / 2,
       y: (project.height - height) / 2,
       width,
@@ -1424,6 +1496,8 @@ export default function App() {
         </div>
       )}
       <TopBar
+        workspaceModesEnabled={workspaceModesEnabled}
+        onWorkspaceModesEnabledChange={changeWorkspaceModesEnabled}
         documents={documentTabItems}
         activeDocId={activeDocId}
         onSelectDocument={setActiveDocId}
@@ -1474,9 +1548,15 @@ export default function App() {
 
       {liveStampPath&&<div className="flex gap-4 items-center px-3 py-1 border-b border-(--ui-border) text-xs">纹样路径 · 拖节点，双击线加点，Alt 点节点删除<button onClick={()=>setLiveStampPath(null)}>结束路径调整</button></div>}
       <ToolOptions
+        workspaceModesEnabled={workspaceModesEnabled} workspaceMode={workspaceMode}
+        onWorkspaceModeChange={mode=>{setWorkspaceMode(mode);if(mode==='arrange')selectTool('select');if(mode==='assets')openMaterials();}}
+        onGroupSelection={handleCreateDrawingGroup} onUngroupSelection={handleUngroupSelection}
+        onFlipSelection={handleFlipSelection} onMirrorSelection={handleMirrorSelection}
+        onCreateAsset={()=>setIsSaveStampOpen(true)}
+        onOpenSymmetrySettings={()=>{setPanelRequest({tab:'depth',section:'symmetry',key:Date.now()});setPanelOpen(true);}}
         onOpenStamp={() => setStampOpen(true)} onOpenMaterials={()=>openMaterials()} onCaptureStamp={()=>setIsSaveStampOpen(true)} canCaptureStamp={captureLayerIds.length>0}
         currentTool={currentTool}
-        brushSettings={brushSettings}
+        brushSettings={effectiveBrushSettings}
         onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
         onSelectTool={selectTool}
         selectionScope={selectionScope}
@@ -1522,6 +1602,7 @@ export default function App() {
           </div>}
           <SaveBanner banner={saveBanner} onDone={() => setSaveBanner(null)} />
           <Canvas
+            onSymmetryChange={handleSymmetryChange}
             drawingPreviewMode={drawingPreviewMode}
             stampDefinition={stampDefinition} stampSettings={stampSettings} onStamp={handleStamp}
             liveStampPath={liveStampPath&&canEditMaterialLayer(project.layers[liveStampPath.layerId])?project.layers[liveStampPath.layerId]?.liveStamps?.find(s=>s.id===liveStampPath.strokeId):undefined} onLiveStampPathCommit={points=>{if(!liveStampPath)return;const layer=project.layers[liveStampPath.layerId];if(canEditMaterialLayer(layer))pushHistory({...project,layers:{...project.layers,[layer.id]:regenerateLiveStampLayer(layer,liveStampPath.strokeId,{points})}});}}
@@ -1530,7 +1611,7 @@ export default function App() {
             project={project}
             activeLayerId={activeLayerId}
             currentTool={currentTool}
-            brushSettings={brushSettings}
+            brushSettings={effectiveBrushSettings}
             onChangeBrushSettings={(settings) => setBrushSettings((prev) => ({ ...prev, ...settings }))}
             zoom={zoom}
             onZoomChange={handleZoomChange}
@@ -1615,6 +1696,12 @@ export default function App() {
           onDeleteLayer={handleDeleteLayer}
           onDeleteLayers={handleDeleteLayers}
           onDuplicateLayer={handleDuplicateLayer}
+          onCreateDrawingGroup={handleCreateDrawingGroup}
+          onSelectDrawingGroup={handleSelectDrawingGroup}
+          onUpdateDrawingGroup={(id,updates)=>pushHistory(updateDrawingGroup(project,id,updates))}
+          onUngroupDrawingGroup={id=>pushHistory(ungroupDrawingGroup(project,id))}
+          onConvertDrawingGroup={handleConvertDrawingGroup}
+          onDuplicateDrawingGroup={id=>handleDuplicateLayers(project.drawingGroups?.find(g=>g.id===id)?.layerIds??[])}
           onMergeDown={handleMergeDown}
           onInvertLayerCutouts={handleInvertLayerCutouts}
           onClearLayerCutouts={handleClearLayerCutouts}

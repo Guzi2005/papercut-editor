@@ -5,11 +5,31 @@ import {normalizeOutfits,isWardrobeCategory} from './wardrobe';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Layer, PapercutItem, PapercutProject } from '../types/papercut';
-import { Transform, applyTransform, linearPart, matrixScale, transformPathD } from './pathTransform';
+import { Layer, PapercutItem, PapercutProject, SymmetrySource } from '../types/papercut';
+import { Transform, Matrix, applyTransform, isWarp, linearPart, matrixScale, multiply, transformPathD } from './pathTransform';
 import { BASE_BLOCK } from './layerSvg';
 import { normalizeFabricAsset, normalizeFabricFill, transformFabric } from './fabric';
 import { validateColorSchemes } from './palettes';
+import { getLayerEffectiveState, normalizeDrawingGroups } from './drawingGroups';
+import { parseVectorPath } from './vectorPath';
+import {normalizeSymmetry} from './symmetry';
+
+export { getLayerEffectiveState, findDrawingGroupOfLayer } from './drawingGroups';
+
+/** Damaged optional editing metadata must never block recovery of its already-baked artwork. */
+function normalizeSymmetricGeometry<T extends { symmetrySource?: SymmetrySource; points?: unknown; vectorNodeModes?: unknown }>(value: T): T {
+  if (value.symmetrySource === undefined) return value;
+  const candidate = value.symmetrySource;
+  try {
+    if (!candidate || typeof candidate.d !== 'string' || !candidate.d || candidate.d.length > 2_000_000 ||
+      !Array.isArray(candidate.matrices) || !candidate.matrices.length || candidate.matrices.length > 64 ||
+      !candidate.matrices.every(m => Array.isArray(m) && m.length === 6 && m.every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e9) && Math.abs(m[0]*m[3]-m[1]*m[2]) > 1e-12)) throw new Error('Invalid symmetry source');
+    if (!parseVectorPath(candidate.d).length) throw new Error('Invalid source path');
+    return { ...value, symmetrySource: { d: candidate.d, matrices: candidate.matrices.map(m => [...m] as Matrix) } };
+  } catch {
+    return { ...value, symmetrySource: undefined, points: undefined, vectorNodeModes: undefined };
+  }
+}
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -18,10 +38,22 @@ export function newId(prefix: string): string {
 /** Bakes an affine transform or warp into every path of a layer. */
 export function transformLayer(layer: Layer, m: Transform): Layer {
   const s = matrixScale(linearPart(m));
-  const tc = <T extends { d: string; points?: { x: number; y: number }[]; stroke?: { width: number } }>(c: T): T => ({
+  const source = (value?: SymmetrySource): SymmetrySource | undefined => {
+    if (!value || isWarp(m)) return undefined;
+    const [a,b,c,d,e,f] = m, det = a*d-b*c;
+    if (Math.abs(det) < 1e-12) return undefined;
+    const inverse: Matrix = [d/det,-b/det,-c/det,a/det,(c*f-d*e)/det,(b*e-a*f)/det];
+    return { d: transformPathD(value.d,m), matrices: value.matrices.map(copy => multiply(m,multiply(copy,inverse))) };
+  };
+  const metadata = <T extends { symmetrySource?: SymmetrySource; vectorNodeModes?: unknown }>(value: T) => {
+    const symmetrySource = source(value.symmetrySource);
+    return { symmetrySource, ...(value.symmetrySource && !symmetrySource ? { vectorNodeModes: undefined } : {}) };
+  };
+  const tc = <T extends { d: string; symmetrySource?: SymmetrySource; points?: { x: number; y: number }[]; stroke?: { width: number }; vectorNodeModes?: unknown }>(c: T): T => ({
     ...c,
+    ...metadata(c),
     d: transformPathD(c.d, m),
-    points: c.points?.map((p) => applyTransform(m, p)),
+    points: c.symmetrySource && (isWarp(m) || s < 1e-6) ? undefined : c.points?.map((p) => applyTransform(m, p)),
     ...(c.stroke ? { stroke: { ...c.stroke, width: c.stroke.width * s } } : {}),
   });
   return {
@@ -32,12 +64,14 @@ export function transformLayer(layer: Layer, m: Transform): Layer {
       ...layer.baseShape,
       type: layer.baseShape.type === 'full' ? 'freeform' : layer.baseShape.type,
       d: transformPathD(layer.baseShape.d, m),
+      ...metadata(layer.baseShape),
     },
     cutouts: layer.cutouts.map(tc),
     positiveElements: layer.positiveElements.map(tc),
     drawings: layer.drawings?.map((drw) => ({
       ...drw,
       d: transformPathD(drw.d, m),
+      ...metadata(drw),
       strokeWidth: drw.strokeWidth * s,
       blur: drw.blur ? drw.blur * s : drw.blur,
     })),
@@ -59,10 +93,7 @@ export function flattenLayerIds(project: PapercutProject): string[] {
 }
 
 export function isLayerRendered(project: PapercutProject, layerId: string): boolean {
-  const layer = project.layers[layerId];
-  if (!layer || !layer.visible) return false;
-  const grp = project.groups.find((g) => g.layerIds.includes(layerId));
-  return grp ? grp.visible : true;
+  return getLayerEffectiveState(project, layerId).visible;
 }
 
 export function findGroupOfLayer(project: PapercutProject, layerId: string) {
@@ -115,7 +146,8 @@ export function normalizeProject(p: PapercutProject, recoverMetadata = false): P
     return asset && asset.id === id ? [[id, asset]] : [];
   }));
   const layers = Object.fromEntries(Object.entries(p.layers || {}).map(([id, layer]) => {
-    const next=layer.liveStamps?detachChangedLiveStamps({...layer,liveStamps:normalizeLiveStamps(layer.liveStamps)}):layer;
+    const geometry={...layer,baseShape:normalizeSymmetricGeometry(layer.baseShape),cutouts:layer.cutouts.map(normalizeSymmetricGeometry),positiveElements:layer.positiveElements.map(normalizeSymmetricGeometry),drawings:layer.drawings?.map(normalizeSymmetricGeometry)};
+    const next=geometry.liveStamps?detachChangedLiveStamps({...geometry,liveStamps:normalizeLiveStamps(geometry.liveStamps)}):geometry;
     if (!layer.fabric) return [id, next];
     const fabric = normalizeFabricFill(layer.fabric);
     return [id, { ...next, fabric: fabric && fabricAssets[fabric.assetId] ? fabric : undefined }];
@@ -141,6 +173,8 @@ export function normalizeProject(p: PapercutProject, recoverMetadata = false): P
     fabricAssets,
     colorSchemes,
     groups,
+    drawingGroups: normalizeDrawingGroups(p.drawingGroups, layers),
+    symmetry:normalizeSymmetry(p.symmetry),
     rootOrder,
     items,
     outfits:p.outfits?normalizeOutfits(p.outfits,items):undefined,

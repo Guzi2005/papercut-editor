@@ -1,5 +1,6 @@
 import type { PapercutProject } from '../types/papercut';
 import { flattenLayerIds, findGroupOfLayer } from './projectOps';
+import { normalizeDrawingGroups } from './drawingGroups';
 
 /** Remove legacy depth containers without changing appearance, item ownership or ids. */
 export function flatStack(p: PapercutProject): PapercutProject {
@@ -10,7 +11,9 @@ export function flatStack(p: PapercutProject): PapercutProject {
     const g=findGroupOfLayer(p,id),l=layers[id];
     layers[id]={...l,visible:l.visible&&(g?.visible??true),locked:l.locked||(g?.locked??false)};
   }
-  return {...p,layers,groups:[],rootOrder:ids.map(id=>({type:'layer',id}))};
+  // Legacy depth state was baked above; retain names and editing membership without applying it twice.
+  const drawingGroups=normalizeDrawingGroups([...(p.drawingGroups??[]),...p.groups.map(group=>({...group,visible:true,locked:false}))],layers);
+  return {...p,layers,groups:[],drawingGroups,rootOrder:ids.map(id=>({type:'layer',id}))};
 }
 
 /** Global bottom-to-top ordering. Moving across an old group never adopts its hidden/locked state. */

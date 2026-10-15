@@ -57,9 +57,10 @@ const Tile: React.FC<{ active: boolean; label: string; swatch: string; tip: stri
 );
 
 /** Canvas background choices in the manner of SAI2's canvas menu. */
-export const CanvasBgPanel: React.FC<{ value?: CanvasBackground; onChange: (bg: CanvasBackground) => void }> = ({
+export const CanvasBgPanel: React.FC<{ value?: CanvasBackground; onChange: (bg: CanvasBackground) => void; inline?:boolean }> = ({
   value = DEFAULT_CANVAS_BG,
   onChange: commitChange,
+  inline=false,
 }) => {
   const onChange = (bg: CanvasBackground) => commitChange({...bg,texture:value.texture});
   const solidColor = value.kind === 'solid' ? value.color : '#F7F4EB';
@@ -83,7 +84,7 @@ export const CanvasBgPanel: React.FC<{ value?: CanvasBackground; onChange: (bg: 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute left-full top-0 ml-1 w-[280px] bg-(--ui-panel) border border-(--ui-border-strong) rounded-xl shadow-2xl p-2.5 space-y-2.5"
+      className={inline?'space-y-2.5 py-2':'absolute left-full top-0 ml-1 w-[280px] bg-(--ui-panel) border border-(--ui-border-strong) shadow-2xl p-2.5 space-y-2.5'}
     >
       <div>
         <div className="text-[10px] text-(--ui-muted) mb-1.5">透明底 · 仅显示，导出透明</div>

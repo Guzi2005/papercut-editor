@@ -1,6 +1,6 @@
 import type {Layer,PapercutProject} from '../types/papercut';
 import {normalizeHex} from './color';
-import {findGroupOfLayer} from './projectOps';
+import {getLayerEffectiveState} from './drawingGroups';
 import {recolorLiveStampLayer} from './liveStamps';
 
 /** All replacements read the original colour, so swaps never cascade through another mapping. */
@@ -13,6 +13,6 @@ export function mapLayerColors(layer:Layer,mapping:Record<string,string>):Layer 
 }
 export function applySchemeColors(project:PapercutProject,mapping:Record<string,string>,ids:string[]):PapercutProject {
   const layers={...project.layers};
-  for(const id of new Set(ids)){const layer=layers[id];if(layer&&!layer.locked&&!findGroupOfLayer(project,id)?.locked)layers[id]=mapLayerColors(layer,mapping);}
+  for(const id of new Set(ids)){const layer=layers[id];if(layer&&!getLayerEffectiveState(project,id).locked)layers[id]=mapLayerColors(layer,mapping);}
   return {...project,layers};
 }
