@@ -13,7 +13,7 @@ type PreviewAction='stand'|'walk'|'sit'|'lie';
 export class SkirtStudio {
   element=el('div','skirt-studio');private controls=el('aside','skirt-controls');private tabs=el('div','skirt-views');private tools=el('div','skirt-tools');
   private pattern:PatternCanvas;private preview?:SkirtPreview;private texture=el('canvas');private info=el('p','skirt-info');private source=el('p','skirt-source');
-  private selected='';private tool:'select'|'pen'|'patch'='select';private ink='#c54d70';private brush=.009;
+  private selected='';private tool:'turn'|'select'|'pen'|'patch'='turn';private ink='#c54d70';private brush=.009;
   private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
   private mirror=true;private strokeStart=0;private patchStart=0;private pendingFrame=0;private patchPieces:string[]=[];private patchU=0;private patchLastU=0;private focusView:string|null=null;
   constructor(private host:Host){
@@ -22,7 +22,7 @@ export class SkirtStudio {
     const actions=row(button('保存设计 JSON',()=>{const d=this.host.get();if(d)download(JSON.stringify(d,null,2),'skirt.json');}),button('导入设计',()=>this.importDesign()),button('导出 Godot 包',()=>{const d=this.host.get();if(d)download(new Blob([skirtZip(d,this.host.overlay(d)) as BlobPart],{type:'application/zip'}),'pleated-skirt.zip');}));heading.append(title,actions);
     const layout=el('div','skirt-layout'),workspace=el('section','skirt-paper-panel'),previewPanel=el('section','skirt-preview-panel');
     const label=el('div','skirt-panel-title');const help=button('ⓘ',()=>{},'三个展开视图共享同一份纹样；展开图用于设计，不是含缝份的裁缝纸样。');help.classList.add('skirt-help');help.setAttribute('aria-label','展开图说明');label.append(el('strong','','纹样'),help);
-    const canvas=el('canvas');canvas.setAttribute('aria-label','裙子模板画布');canvas.dataset.testid='skirt-canvas';
+    const canvas=el('canvas');canvas.setAttribute('aria-label','裙子模板画布');canvas.dataset.tip='平铺图：转裙面工具或右键左右拖动，循环查看；中键平移，滚轮缩放';canvas.dataset.testid='skirt-canvas';
     const wrap=el('div','skirt-canvas-wrap');wrap.append(canvas);this.pattern=new PatternCanvas(canvas);canvas.id='skirt-pattern-panel';canvas.setAttribute('role','tabpanel');
     workspace.append(label,this.tabs,this.tools,wrap);
     const previewTitle=el('div','skirt-panel-title');const renderMode=button(readPreviewRenderMode()==='toon'?'三渲二':'材质预览',()=>{const toon=renderMode.textContent==='材质预览';renderMode.textContent=toon?'三渲二':'材质预览';renderMode.setAttribute('aria-label',toon?'渲染模式：三渲二':'渲染模式：材质预览');renderMode.setAttribute('aria-pressed',String(toon));this.preview?.setRenderMode(toon?'toon':'material');},'切换材质预览 / 游戏纸感：淡分层明暗、纸纹、无高光');renderMode.setAttribute('aria-label','渲染模式：'+renderMode.textContent);renderMode.setAttribute('aria-pressed',String(readPreviewRenderMode()==='toon'));previewTitle.append(el('strong','','立体预览'),renderMode,button('复位视角',()=>this.preview?.reset()));
@@ -87,12 +87,12 @@ export class SkirtStudio {
     this.controls.append(row(button('清除笔迹',()=>this.edit('清除笔迹',next=>next.strokes=[]),`清除 ${d.strokes.length} 条工作台笔迹`),button('清除拼色',()=>this.edit('清除拼色',next=>next.patches=[]),`清除 ${d.patches.length} 个拼色片`)));
   }
   private buildTools(d:SkirtDesign){this.tabs.replaceChildren();const entries=Object.entries(views);for(const [index,[id,name]] of entries.entries()){const b=button(name.replace(/^\d+ /,''),()=>this.edit('切换裙子画布',next=>next.canvas_view=id as CanvasView));b.classList.add('skirt-view-tab');b.dataset.view=id;b.id=`skirt-tab-${id}`;b.style.setProperty('--tab-color',['#5272df','#d0758e','#9b74ce'][index]);b.setAttribute('role','tab');b.setAttribute('aria-controls','skirt-pattern-panel');b.setAttribute('aria-selected',String(d.canvas_view===id));b.tabIndex=d.canvas_view===id?0:-1;b.classList.toggle('active',d.canvas_view===id);b.onkeydown=e=>{let target=index;if(e.key==='ArrowRight')target=(index+1)%entries.length;else if(e.key==='ArrowLeft')target=(index+entries.length-1)%entries.length;else if(e.key==='Home')target=0;else if(e.key==='End')target=entries.length-1;else return;e.preventDefault();this.focusView=entries[target][0];this.edit('切换裙子画布',next=>next.canvas_view=entries[target][0] as CanvasView);};this.tabs.append(b);}
-    this.tools.replaceChildren();if(d.canvas_view==='front'){const link=button(this.mirror?'正反同步':'独立绘制',()=>{this.mirror=!this.mirror;this.buildTools(this.host.get()!);},'只同步之后新画的笔迹与拼色；已有图案不受影响');link.setAttribute('aria-pressed',String(this.mirror));this.tools.append(link);}for(const [id,label] of [['select','移动镶边'],['pen','画笔'],['patch','拼色片']] as const){const b=button(label,()=>{this.tool=id;this.buildTools(this.host.get()!);});b.classList.toggle('active',this.tool===id);this.tools.append(b);}
+    this.tools.replaceChildren();this.pattern.turnTool=this.tool==='turn';if(d.canvas_view==='front'){const turn=button('转裙面',()=>{this.tool='turn';this.buildTools(this.host.get()!);},'左右拖动循环查看裙面；绘制时也可用右键拖动');turn.classList.toggle('active',this.tool==='turn');this.tools.append(turn,button('一键反面',()=>this.pattern.flip(),'切到当前面的对面（转半圈）'),button('复位平铺',()=>this.pattern.resetView(),'回到正面并复位缩放和平移')); const link=button(this.mirror?'正反同步':'独立绘制',()=>{this.mirror=!this.mirror;this.buildTools(this.host.get()!);},'只同步之后新画的笔迹与拼色；已有图案不受影响');link.setAttribute('aria-pressed',String(this.mirror));this.tools.append(link);}for(const [id,label] of [['select','移动镶边'],['pen','画笔'],['patch','拼色片']] as const){const b=button(label,()=>{this.tool=id;this.buildTools(this.host.get()!);});b.classList.toggle('active',this.tool===id);this.tools.append(b);}
     const ink=el('input');ink.type='color';ink.value=this.ink;ink.setAttribute('aria-label','裙子画笔颜色');ink.oninput=()=>this.ink=ink.value;this.tools.append(ink);
     const size=el('input');size.type='range';size.min='1';size.max='50';size.step='1';size.value=String(this.brush*1000);size.setAttribute('aria-label','裙子笔宽');size.oninput=()=>this.brush=Number(size.value)/1000;size.style.width='70px';this.tools.append(size);
     this.tools.append(button(this.pattern.guides?'隐藏褶线':'显示褶线',()=>{this.pattern.guides=!this.pattern.guides;this.pattern.draw();this.buildTools(this.host.get()!);}));
   }
-  private down(uv:UV,e:PointerEvent){const current=this.host.get();if(!current)return;this.start=uv;this.pointer=e.pointerId;this.draft=structuredClone(current);this.dirtyStroke=false;this.strokeStart=current.strokes.length;this.patchStart=current.patches.length;this.patchPieces=[];
+  private down(uv:UV,e:PointerEvent){if(this.tool==='turn')return;const current=this.host.get();if(!current)return;this.start=uv;this.pointer=e.pointerId;this.draft=structuredClone(current);this.dirtyStroke=false;this.strokeStart=current.strokes.length;this.patchStart=current.patches.length;this.patchPieces=[];
     if(this.tool==='select'){const b=[...this.draft.bands].reverse().find(x=>uv[1]>=x.start&&uv[1]<=x.end);if(!b){this.cancel();return;}this.selected=b.id;this.bandStart=b.start;this.bandWidth=b.end-b.start;}
     else if(this.tool==='pen'){if(this.draft.strokes.length>=256){this.cancel();this.host.status('笔迹已达 256 条，请整理后继续');return;}this.draft.strokes.push({id:newId(),color:this.ink,width:this.brush,points:[uv]});}
     else {if(this.draft.patches.length>=64){this.cancel();this.host.status('拼色片最多 64 片');return;}this.patchU=uv[0];this.patchLastU=uv[0];}
@@ -101,8 +101,11 @@ export class SkirtStudio {
   private move(uv:UV|null,e:PointerEvent){if(e.pointerId!==this.pointer||!this.draft||!this.start||!uv)return;
     if(this.tool==='select'){const b=this.draft.bands.find(x=>x.id===this.selected)!;b.start=Math.max(0,Math.min(1-this.bandWidth,this.bandStart+uv[1]-this.start[1]));b.end=b.start+this.bandWidth;}
     else if(this.tool==='pen'){let stroke=this.draft.strokes.at(-1)!;const last=stroke.points.at(-1)!;
-      if(Math.abs(last[0]-uv[0])>.5){if(this.draft.strokes.length>=256)return;stroke={id:newId(),color:this.ink,width:this.brush,points:[]};this.draft.strokes.push(stroke);}
-      if(Math.hypot(last[0]-uv[0],last[1]-uv[1])>.0015)stroke.points.push(uv);
+      if(Math.abs(last[0]-uv[0])>.5){
+        if(this.draft.strokes.length>=256)return;
+        const end=uv[0]+(uv[0]<last[0]?1:-1),edge=uv[0]<last[0]?1:0,t=(edge-last[0])/(end-last[0]),v=last[1]+(uv[1]-last[1])*t;
+        stroke.points.push([edge,v]);stroke={id:newId(),color:this.ink,width:this.brush,points:[[1-edge,v],uv]};this.draft.strokes.push(stroke);
+      }else if(Math.hypot(last[0]-uv[0],last[1]-uv[1])>.0015)stroke.points.push(uv);
     }else {
       let delta=uv[0]-this.patchLastU;if(delta>.5)delta-=1;else if(delta<-.5)delta+=1;this.patchU+=delta;this.patchLastU=uv[0];
       const v0=Math.min(this.start[1],uv[1]),v1=Math.max(this.start[1],uv[1]);

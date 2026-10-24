@@ -4,7 +4,6 @@ const TAU=Math.PI*2;
 const CYLINDER_EPS=.02;
 /** Canvas-space tolerance shared by pointer hits and round trips. */
 const EPS=1e-7;
-export type Face='front'|'back';
 export type ProjectionMode='front'|'sector'|'cylinder'|'ring';
 export interface ProjectionLayout {
  scale:number;top:number;inner:number;outer:number;sweep:number;cx:number;cy:number;mode:ProjectionMode;
@@ -15,10 +14,7 @@ export interface ProjectionLayout {
  * horizontally and vertically.
  */
 export function layout(p:Parameters,view:CanvasView):ProjectionLayout {
- if(view==='front'){
-  const scale=Math.min(.40/Math.max(Math.max(p.waist_cm,p.hem_cm)/2,1e-9),.74/Math.max(p.length_cm,1e-9));
-  return {scale,top:(1-p.length_cm*scale)/2,inner:p.waist_cm/TAU,outer:p.hem_cm/TAU,sweep:TAU,cx:.5,cy:.5,mode:'front'};
- }
+ if(view==='front')return {...flatLayout(p),inner:p.waist_cm/TAU,outer:p.hem_cm/TAU,sweep:TAU,cx:.5,cy:.5,mode:'front'};
  if(view==='ring'){
   // Top projection: radius is circumference / 2π. Length has no top-view
   // radius, so it must not shrink or grow the ring.
@@ -49,29 +45,17 @@ export function layout(p:Parameters,view:CanvasView):ProjectionLayout {
  const cy=.5-(low+high)*.5*scale;
  return {scale,top:cy+low*scale,inner:waistRadius,outer:hemRadius,sweep:Math.abs(theta),cx:.5,cy,mode:'sector'};
 }
-export const faceU=(x:number,face:Face)=>face==='front'?.25+x*.5:(1.25-x*.5)%1;
-export const faceX=(u:number,face:Face)=>face==='front'?(u-.25)*2:((1.25-u)%1)*2;
 export const oppositeU=(u:number)=>(.5-u+1)%1;
-export function project([u,v]:UV,view:CanvasView,p:Parameters,face:Face='front'):UV{
+export function project([u,v]:UV,view:CanvasView,p:Parameters,turn=0):UV{
  const l=layout(p,view);
- if(view==='front'){const width=(p.waist_cm+(p.hem_cm-p.waist_cm)*v)/2*l.scale;return [(face==='front'?.265:.735)+(faceX(u,face)-.5)*width,l.top+v*p.length_cm*l.scale];}
+ if(view==='front')return flatPoint(wrapU(u-.25-turn)*2,v,p);
  if(l.mode==='cylinder'){const width=(p.waist_cm+p.hem_cm)/2;return [l.cx+(u-.5)*width*l.scale,l.top+v*p.length_cm*l.scale];}
  const a=(u-.5)*l.sweep,r=l.inner+(l.outer-l.inner)*v;
  return [l.cx+Math.sin(a)*r*l.scale,l.cy+Math.cos(a)*r*l.scale];
 }
-export function unproject([x,y]:UV,view:CanvasView,p:Parameters):{uv:UV;face:Face}|null{
- const l=layout(p,view);let u:number,v:number;let face:Face='front';
- if(view==='front'){
-  face=x<.5?'front':'back';
-  v=(y-l.top)/(p.length_cm*l.scale);
-  if(v<-EPS||v>1+EPS)return null;
-  v=Math.max(0,Math.min(1,v));
-  const width=(p.waist_cm+(p.hem_cm-p.waist_cm)*v)/2*l.scale;
-  if(Math.abs(width)<1e-12)return null;
-  const local=(x-(face==='front'?.265:.735))/width+.5;
-  if(local<-EPS||local>1+EPS)return null;
-  u=faceU(Math.max(0,Math.min(1,local)),face);
- }
+export function unproject([x,y]:UV,view:CanvasView,p:Parameters,turn=0):{uv:UV}|null{
+ const l=layout(p,view);let u:number,v:number;
+ if(view==='front'){const uv=flatHit([x,y],p,turn);return uv?{uv}:null;}
  else if(l.mode==='cylinder'){
   const width=(p.waist_cm+p.hem_cm)/2;
   u=(x-l.cx)/(width*l.scale)+.5;
@@ -97,5 +81,23 @@ export function unproject([x,y]:UV,view:CanvasView,p:Parameters):{uv:UV;face:Fac
   }
  }
  if(u<-1e-5||u>1+1e-5||v<-EPS||v>1+EPS)return null;
- return {uv:[Math.max(0,Math.min(1,u)),Math.max(0,Math.min(1,v))],face};
+ return {uv:[Math.max(0,Math.min(1,u)),Math.max(0,Math.min(1,v))]};
+}
+
+/** A fixed finished-skirt silhouette with a circular window into material U. */
+export const wrapU=(u:number)=>((u%1)+1)%1;
+export function flatLayout(p:Parameters){
+ const scale=Math.min(.80/(Math.max(p.waist_cm,p.hem_cm)/2),.74/p.length_cm);
+ return {scale,top:(1-p.length_cm*scale)/2};
+}
+export function flatPoint(x:number,v:number,p:Parameters):UV{
+ const l=flatLayout(p),width=(p.waist_cm+(p.hem_cm-p.waist_cm)*v)/2*l.scale;
+ return [.5+(x-.5)*width,l.top+v*p.length_cm*l.scale];
+}
+export function flatUV(x:number,v:number,turn=0):UV{return [wrapU(.25+x*.5+turn),v];}
+export function flatHit([x,y]:UV,p:Parameters,turn=0):UV|null{
+ const l=flatLayout(p),v=(y-l.top)/(p.length_cm*l.scale);
+ if(v<-EPS||v>1+EPS)return null;
+ const width=(p.waist_cm+(p.hem_cm-p.waist_cm)*v)/2*l.scale,local=(x-.5)/width+.5;
+ return local<-EPS||local>1+EPS?null:flatUV(Math.max(0,Math.min(1,local)),Math.max(0,Math.min(1,v)),turn);
 }

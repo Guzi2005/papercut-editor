@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import type {Parameters,CanvasView} from '../src/pleatedSkirt/model';
 import {createDesign} from '../src/pleatedSkirt/model';
-import {layout,project,unproject,oppositeU,type Face} from '../src/pleatedSkirt/projection';
+import {templateSVG} from '../src/pleatedSkirt/canvas';
+import {layout,project,unproject,oppositeU,flatPoint,flatHit,flatUV,flatLayout,wrapU} from '../src/pleatedSkirt/projection';
 import {mirrorGesture,mirrorNewMarks,splitSeamSpan} from '../src/pleatedSkirt/mirror';
 
 const TAU=Math.PI*2;
@@ -10,12 +11,12 @@ const near=(actual:number,expected:number,tolerance=1e-7)=>assert.ok(Math.abs(ac
 const params=(over:Partial<Parameters>={}):Parameters=>({...createDesign().parameters,...over});
 const shortAngle=(a:number,b:number)=>{const d=Math.abs(a-b);return Math.min(d,Math.abs(d-1));};
 
-function roundtrip(view:CanvasView,p:Parameters,u:number,v:number,face:Face='front'){
- const xy=project([u,v],view,p,face),hit=unproject(xy,view,p);
+function roundtrip(view:CanvasView,p:Parameters,u:number,v:number,turn=0){
+ const xy=project([u,v],view,p,turn),hit=unproject(xy,view,p,turn);
  if(!hit)assert.fail(`${view} lost (${u}, ${v}) for ${JSON.stringify(p)}`);
  assert.ok(shortAngle(hit.uv[0],u)<=1e-7,`${view} u ${hit.uv[0]} != ${u}`);
  assert.ok(Math.abs(hit.uv[1]-v)<=1e-7,`${view} v ${hit.uv[1]} != ${v}`);
- if(view==='front')assert.equal(hit.face,face);
+
 }
 
 test('front and sector projections round trip for valid parameters, including hem<waist',()=>{
@@ -31,8 +32,7 @@ test('front and sector projections round trip for valid parameters, including he
  ];
  for(const p of cases){
   for(const u of [0,.1,.25,.4,.5,.6,.75,.9,1])for(const v of [0,.25,.5,.75,1])roundtrip('sector',p,u,v);
-  for(const u of [.25,.4,.5,.6,.75])for(const v of [0,.25,.5,.75,1])roundtrip('front',p,u,v,'front');
-  for(const u of [0,.1,.25,.75,.9,1])for(const v of [0,.25,.5,.75,1])roundtrip('front',p,u,v,'back');
+  for(const turn of [0,.125,.5,.97,-.3,1,2])for(const x of [0,.1,.5,.9,1])for(const v of [0,.5,1]){const uv=flatUV(x,v,turn),hit=flatHit(flatPoint(x,v,p),p,turn)!;assert.ok(hit);near(shortAngle(hit[0],uv[0]),0);near(hit[1],v);}
  }
 });
 
@@ -83,11 +83,11 @@ test('near-equal sectors stay finite and close to the cylinder limit',()=>{
  roundtrip('sector',nearEqual,.3,.7);
 });
 
-test('front panels share one scale and reflect waist/2, hem/2 and length',()=>{
+test('single flat silhouette retains one scale and reflect waist/2, hem/2 and length',()=>{
  for(const p of [params(),params({waist_cm:110,hem_cm:100}),params({waist_cm:100,hem_cm:100})]){
-  const l=layout(p,'front'),waistLeft=project([.25,0],'front',p,'front'),waistRight=project([.75,0],'front',p,'front');
-  const hemLeft=project([.25,1],'front',p,'front'),hemRight=project([.75,1],'front',p,'front');
-  const top=project([.5,0],'front',p,'front'),bottom=project([.5,1],'front',p,'front');
+  const l=layout(p,'front'),waistLeft=project([.25,0],'front',p),waistRight=project([.75,0],'front',p);
+  const hemLeft=project([.25,1],'front',p),hemRight=project([.75,1],'front',p);
+  const top=project([.5,0],'front',p),bottom=project([.5,1],'front',p);
   near(waistRight[0]-waistLeft[0],p.waist_cm/2*l.scale);
   near(hemRight[0]-hemLeft[0],p.hem_cm/2*l.scale);
   near(bottom[1]-top[1],p.length_cm*l.scale);
@@ -152,4 +152,22 @@ test('only a live drawing gesture mirrors a draft',()=>{
  assert.equal(mirrorGesture(d,false,true,0,0),d);
  assert.equal(mirrorGesture({...d,canvas_view:'sector'},true,true,0,0).strokes.length,1);
  assert.equal(mirrorGesture(d,true,true,0,0).strokes.length,2);
+});
+
+test('turns wrap continuously and flips do not alter the flat silhouette',()=>{
+ const p=params();
+ for(const turn of [-2,-.501,-.001,0,.499,.5,.999,1,3])for(const x of [.1,.5,.9]){
+  const point=flatPoint(x,.6,p),a=flatHit(point,p,turn)!,full=flatHit(point,p,turn+1)!,flip=flatHit(point,p,turn+.5)!;
+  near(shortAngle(a[0],full[0]),0);near(shortAngle(wrapU(a[0]+.5),flip[0]),0);near(a[1],flip[1]);
+ }
+ const left=flatHit(flatPoint(.499,.6,p),p,.5)!,right=flatHit(flatPoint(.501,.6,p),p,.5)!;
+ assert.ok(left[0]>.99&&right[0]<.01,'back seam travels through center without a gap');
+ assert.equal(flatHit([0,0],p,.5),null);
+});
+
+test('flat SVG exports one stationary silhouette',()=>{
+ const d=createDesign(),svg=templateSVG(d,'front');
+ assert.equal((svg.match(/<polygon/g)||[]).length,1);
+ assert.ok(!svg.includes('rotate('));
+ assert.ok(svg.includes(flatPoint(0,0,d.parameters).map(v=>(v*1000).toFixed(2)).join(',')));
 });

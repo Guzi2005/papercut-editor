@@ -16,7 +16,7 @@ export interface SkirtDesign {
   pattern_uv:{origin:'waist';seam:'back';u:'circumference';v:'waist_to_hem'};
 }
 export const templates:Record<Template,string> = {plain:'素裙 · 自由设计',mosuo_reference:'摩梭照片参考',yi_reference:'彝族照片参考',wax_reference:'蜡染照片参考'};
-export const views:Record<CanvasView,string> = {front:'01 平铺正反',sector:'02 圆弧展开',ring:'03 圆环俯视'};
+export const views:Record<CanvasView,string> = {front:'01 梯形平铺',sector:'02 圆弧展开',ring:'03 圆环俯视'};
 export const fabrics:Record<Fabric,string> = {cotton:'棉布',linen:'亚麻',silk:'丝绸',wool:'毛呢'};
 export const patterns:Record<Pattern,string> = {solid:'纯色',dash:'针脚',diamond:'菱格',wax:'蜡染几何'};
 export const limits = {length_cm:[40,120],waist_cm:[50,110],hem_cm:[100,360],pleat_count:[16,128],pleat_depth_cm:[.2,4],sharpness:[0,1],thickness_mm:[.2,3]} as const;
