@@ -23,8 +23,12 @@ export class DrapeConstraint {
    const v=row/rows,at=(row*w+col)*3;
    if(action==='sit'||action==='lie'){
     const rx=this.rest[at],ry=this.rest[at+1],rz=this.rest[at+2];
+    const front=(1-Math.cos(col/cols*Math.PI*2))*.5;
+    // A rounded lap/knee support, with less support at the sides. The hem
+    // drops beyond the knee instead of following one straight lifted cone.
+    const lap=Math.sin(Math.PI*v)*(.12+.24*front);
     const target=action==='sit'
-     ? [rx,ry+.40*v,rz*(1-.30*v)+.58*v]
+     ? [rx*(1-.12*v*blend),ry+.18*v+lap,rz*(1-.30*v)+.58*Math.sin(v*Math.PI/2)]
      : [-1.31+(1.31-ry),rx*(1-.75*v)-.10*v,rz*(1-.40*v)+.24*v];
     for(let k=0;k<3;k++)p[at+k]=source[at+k]*(1-blend)+target[k]*blend;
    }
@@ -35,6 +39,28 @@ export class DrapeConstraint {
    const open=d.opening*amount*v*.65;
    for(let k=0;k<3;k++)p[at+k]=envelope[at+k]*(1-open)+(envelope[lo+k]+envelope[hi+k])*.5*open;
    p[at+1]-=d.weight*(1-d.bending*.75)*amount*v*v*.22;
+  }
+  // Compressed material gathers into broad folds on the lap and seat sides.
+  // Amplitude comes from local spare arc length, not an arbitrary animated
+  // wave; phase is material-locked, so scrubbing and pausing are deterministic.
+  // This is a support-aware geometric corrective, not self-collision.
+  if(action==='sit'||action==='lie'){
+   const seated=action==='sit'?blend:blend*(1-blend);
+   const gathered=p.slice(0,this.shell*3);
+   for(let row=1;row<rows;row++)for(let col=0;col<cols;col++){
+    const index=row*w+col,at=index*3,v=row/rows,u=col/cols;
+    const span=this.warp[index],actual=this.distance(gathered,index,index-w);
+    const slack=Math.max(0,Math.min(.8,1-actual/Math.max(span,1e-8)));
+    const side=Math.pow(Math.abs(Math.sin(u*Math.PI*2)),2);
+    const band=Math.pow(Math.sin(Math.PI*v),2);
+    const softness=1-d.bending*.7;
+    const amplitude=Math.min(.065,Math.sqrt(slack)*(.025+.045*side)*softness)*band*seated;
+    const phase=v*Math.PI*(4+2*(1-d.bending))+.65*Math.cos(u*Math.PI*4);
+    p[at+1]+=amplitude*Math.sin(phase);
+    p[at+2]+=amplitude*.65*Math.cos(phase);
+    // Unsupported side fabric hangs lower; stiff fabric bridges more widely.
+    p[at+1]-=side*band*seated*d.weight*softness*.09;
+   }
   }
   // Reconstruct each material column from the target tangent field, starting
   // at the waist. Using target derivatives avoids accumulating a catch-up kink

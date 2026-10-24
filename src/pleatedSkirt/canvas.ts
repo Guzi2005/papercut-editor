@@ -1,8 +1,10 @@
+import {TransientCue} from './transientCue';
 import {dimensionDrawing,drawDimensions} from './dimensions';
 import {readDimensionMode,subscribeDimensionMode} from './dimensionSettings';
 import {project,unproject,flatLayout,flatPoint,flatHit,wrapU} from './projection';
 import {type SkirtDesign,type UV,type CanvasView} from './model';
 export class PatternCanvas {
+ private faceCue=new TransientCue();private dimensionCue=new TransientCue();private cueTimer?:ReturnType<typeof setTimeout>;
  private unsubscribeDimensions:()=>void;private lookup?:Int32Array;private key='';private observer:ResizeObserver;private events=new AbortController();
  design?:SkirtDesign;texture?:HTMLCanvasElement;selected='';guides=true;turnTool=true;
  private turn=0;private viewScale=1;private viewPanX=0;private viewPanY=0;
@@ -40,7 +42,16 @@ export class PatternCanvas {
  draw(){const d=this.design,t=this.texture;if(!d||!t||!this.canvas.clientWidth)return;
   const flat=d.canvas_view==='front',size=Math.min(1024,Math.max(256,Math.round(this.canvas.clientWidth*Math.min(devicePixelRatio,1.5))));
   if(this.canvas.width!==size||this.canvas.height!==size){this.canvas.width=size;this.canvas.height=size;}
-  const dimensionMode=readDimensionMode();this.canvas.dataset.dimensionMode=dimensionMode;
+  const now=performance.now();
+  const dimensionMode=readDimensionMode();
+  this.faceCue.update(`${d.design_id}:${d.canvas_view}:${Math.round(this.turn*360)%360}`,now);
+  this.dimensionCue.update(JSON.stringify([d.design_id,d.canvas_view,dimensionMode,d.parameters.waist_cm,d.parameters.hem_cm,d.parameters.length_cm]),now);
+  const faceAlpha=this.faceCue.alpha(now),dimensionAlpha=dimensionMode==='hidden'?0:this.dimensionCue.alpha(now);
+  this.canvas.dataset.faceVisible=String(flat&&faceAlpha>0);this.canvas.dataset.dimensionsVisible=String(dimensionAlpha>0);
+  clearTimeout(this.cueTimer);
+  const delays=[flat?this.faceCue.nextDelay(now):undefined,dimensionMode!=='hidden'?this.dimensionCue.nextDelay(now):undefined].filter((v):v is number=>v!==undefined);
+  if(delays.length)this.cueTimer=setTimeout(()=>this.draw(),Math.min(...delays));
+  this.canvas.dataset.dimensionMode=dimensionMode;
   this.canvas.dataset.turn=String(this.turn);this.canvas.dataset.flatPanels=flat?'1':'0';
   const ctx=this.canvas.getContext('2d')!,key=JSON.stringify([size,t.width,t.height,d.canvas_view,d.parameters.waist_cm,d.parameters.hem_cm,d.parameters.length_cm]);
   // Cache the fixed silhouette; rotation only changes the sampled texture column.
@@ -58,11 +69,14 @@ export class PatternCanvas {
   line(h(0),'#9b856b',1.2);line(h(1),'#9b856b',1.2);if(d.canvas_view!=='ring'){line([[0,0],[0,1]],'#9b856b',1.2);line([[1,0],[1,1]],'#9b856b',1.2);}
   const band=d.bands.find(b=>b.id===this.selected);if(band){line(h(band.start),'#c98937',2);line(h(band.end),'#c98937',2);}
   ctx.fillStyle=getComputedStyle(this.canvas).getPropertyValue('--ui-muted')||'#85786b';ctx.font=`${size*.019}px sans-serif`;ctx.textAlign='center';
+  ctx.globalAlpha=faceAlpha;
   if(flat){const degrees=Math.round(this.turn*360)%360;ctx.fillText(degrees===0?'正面':degrees===180?'背面':`${degrees}°`,size*.5,size*Math.max(.025,flatLayout(d.parameters).top-(dimensionMode==='diagram'?.10:.035)));}
-  if(dimensionMode==='diagram')drawDimensions(ctx,size,dimensionDrawing(d.parameters,d.canvas_view),getComputedStyle(this.canvas).getPropertyValue('--ui-text-2')||'#85786b');
-  if(dimensionMode==='summary')ctx.fillText(`腰 ${d.parameters.waist_cm} · 裙摆 ${d.parameters.hem_cm} · 裙长 ${d.parameters.length_cm} cm`,size*.5,size*.96);
+  ctx.globalAlpha=dimensionAlpha;
+  if(dimensionAlpha>0&&dimensionMode==='diagram')drawDimensions(ctx,size,dimensionDrawing(d.parameters,d.canvas_view),getComputedStyle(this.canvas).getPropertyValue('--ui-text-2')||'#85786b');
+  if(dimensionAlpha>0&&dimensionMode==='summary')ctx.fillText(`腰 ${d.parameters.waist_cm} · 裙摆 ${d.parameters.hem_cm} · 裙长 ${d.parameters.length_cm} cm`,size*.5,size*.96);
+  ctx.globalAlpha=1;
  }
- dispose(){this.unsubscribeDimensions();cancelAnimationFrame(this.frame);this.events.abort();this.observer.disconnect();}
+ dispose(){clearTimeout(this.cueTimer);this.unsubscribeDimensions();cancelAnimationFrame(this.frame);this.events.abort();this.observer.disconnect();}
 }
 export function templateSVG(d:SkirtDesign,view:CanvasView):string{
  const point=(x:number,v:number)=>(view==='front'?flatPoint(x,v,d.parameters):project([x,v],view,d.parameters)).map(n=>(n*1000).toFixed(2)).join(',');

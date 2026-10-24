@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {Redo2,Undo2} from 'lucide-react';
 import type {PapercutProject} from '../types/papercut';
 import {SkirtStudio} from '../pleatedSkirt/studio';
 import {SkirtPreview,readPreviewRenderMode} from '../pleatedSkirt/preview';
@@ -26,7 +27,7 @@ export function PleatedSkirtWorkbench(props:Props){
   },[props.project]);
   useEffect(()=>{studio.current?.restoreTabFocus();},[renderedVersion]);
   return <section className="skirt-host" data-skirt-workbench aria-label="百褶裙工作台" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();props.onPaint();}}}>
-    <div className="skirt-native-toolbar"><span>百褶裙 / 原稿与立体</span><button onClick={props.onUndo} disabled={!props.canUndo}>撤销</button><button onClick={props.onRedo} disabled={!props.canRedo}>重做</button><button onClick={()=>downloadFile(serializeProject(props.project),`${props.project.name}.weave.json`,'application/json')}>保存完整原稿</button><button onClick={props.onPaint}>回到画板细绘</button></div>
+    <div className="skirt-native-toolbar"><span>百褶裙 / 原稿与立体</span><button onClick={props.onUndo} disabled={!props.canUndo} aria-label="撤销" data-tip="撤销 (Ctrl+Z)"><Undo2 size={15}/></button><button onClick={props.onRedo} disabled={!props.canRedo} aria-label="重做" data-tip="重做 (Ctrl+Shift+Z)"><Redo2 size={15}/></button><button onClick={()=>downloadFile(serializeProject(props.project),`${props.project.name}.weave.json`,'application/json')}>保存完整原稿</button><button onClick={props.onPaint}>回到画板细绘</button></div>
     <div ref={host} className="skirt-native-content" inert={!ready}/>
     <div className="skirt-native-status" role="status" data-tip="原画板图层已同步；展开图为等比例正投影">{status}</div>
   </section>;

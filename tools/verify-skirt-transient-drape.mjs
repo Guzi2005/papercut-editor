@@ -1,0 +1,12 @@
+import {createRequire} from 'node:module';import {mkdir} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
+const require=createRequire('D:/GodotProjects/weave-and-wander/asset-workbench/package.json'),{chromium,expect}=require('@playwright/test');
+const out=join(tmpdir(),'papercut-seated-drape');await mkdir(out,{recursive:true});const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:1600,height:1050}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:3119/');await page.getByRole('button',{name:'工作模式：剪贴画板',exact:true}).click();await page.getByRole('menuitemradio',{name:'Weave & Wander 资产',exact:true}).click();await page.getByRole('button',{name:/参数化百褶裙/}).click();
+ const c=page.getByTestId('skirt-canvas'),p=page.getByTestId('skirt-preview');await expect(p).toHaveAttribute('data-avatar','ready');await page.getByRole('tab',{name:/梯形平铺/}).click();await expect(c).toHaveAttribute('data-face-visible','true');await expect(c).toHaveAttribute('data-dimensions-visible','true');await expect(c).toHaveAttribute('data-face-visible','false',{timeout:5000});await expect(c).toHaveAttribute('data-dimensions-visible','false');
+ await page.getByRole('button',{name:'一键反面',exact:true}).click();await expect(c).toHaveAttribute('data-face-visible','true');await expect(c).toHaveAttribute('data-dimensions-visible','false');
+ const length=page.getByRole('spinbutton',{name:'裙长 / cm 数值',exact:true});await length.fill('100');await length.press('Tab');await expect(c).toHaveAttribute('data-dimensions-visible','true');
+ await expect(page.getByRole('button',{name:'撤销',exact:true}).locator('svg')).toBeVisible();await page.getByRole('button',{name:'撤销',exact:true}).click();await expect(length).toHaveValue('88');await page.getByRole('button',{name:'重做',exact:true}).click();await expect(length).toHaveValue('100');
+ for(const action of ['坐下','躺下','站立']){await page.getByRole('button',{name:action,exact:true}).click();await page.getByRole('slider',{name:'动作进度',exact:true}).evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));});if(action!=='站立')await expect(p).toHaveAttribute('data-bench','true');expect(Number(await p.getAttribute('data-warp-error'))).toBeLessThan(.0001);await page.screenshot({path:join(out,action+'.png')});}
+ expect(errors).toEqual([]);console.log(JSON.stringify({passed:true,out}));
+}finally{await browser.close();}

@@ -67,11 +67,11 @@ export function dimensionDrawing(p:Parameters,view:CanvasView):DimensionDrawing 
 }
 
 export function drawDimensions(ctx:CanvasRenderingContext2D,size:number,drawing:DimensionDrawing,color:string){
- ctx.save();ctx.scale(size,size);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=.0012;
+ const opacity=ctx.globalAlpha;ctx.save();ctx.scale(size,size);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=.0012;
  for(const {points,kind} of drawing.paths){
-  ctx.globalAlpha=kind==='extension'?.5:.85;ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
+  ctx.globalAlpha=opacity*(kind==='extension'?.5:.85);ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
  }
- ctx.globalAlpha=1;ctx.font=`${size*.019}px sans-serif`;ctx.textBaseline='middle';
+ ctx.globalAlpha=opacity;ctx.font=`${size*.019}px sans-serif`;ctx.textBaseline='middle';
  for(const label of drawing.labels){
   ctx.save();ctx.translate(...label.at);ctx.rotate(label.angle||0);ctx.scale(1/size,1/size);ctx.textAlign=label.align||'center';ctx.fillText(label.text,0,0);ctx.restore();
  }
