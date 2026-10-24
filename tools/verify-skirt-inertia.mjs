@@ -1,0 +1,15 @@
+import {createRequire} from 'node:module';import {mkdir,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
+const require=createRequire('D:/GodotProjects/weave-and-wander/asset-workbench/package.json'),{chromium,expect}=require('@playwright/test');
+const out=join(tmpdir(),'papercut-inertia');await mkdir(out,{recursive:true});const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:1600,height:1050}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:3119/');await page.getByRole('button',{name:'工作模式：剪贴画板',exact:true}).click();await page.getByRole('menuitemradio',{name:'Weave & Wander 资产',exact:true}).click();await page.getByRole('button',{name:/参数化百褶裙/}).click();const p=page.getByTestId('skirt-preview');await expect(p).toHaveAttribute('data-avatar','ready');
+ const seek=async(value)=>page.getByRole('slider',{name:'动作进度',exact:true}).evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}));},value);
+ const screenshot=async(name)=>{await page.screenshot({path:join(out,name+'.png')});};
+ for(const silhouette of ['relaxed','a_line','bell','trumpet']){await page.getByRole('combobox',{name:'廓形',exact:true}).selectOption(silhouette);await expect(page.locator('.skirt-native-status')).toHaveText('已同步');await screenshot('stand-'+silhouette);}
+ await page.getByRole('combobox',{name:'廓形',exact:true}).selectOption('relaxed');await page.getByRole('button',{name:'裙摆展示',exact:true}).click();
+ for(const [tag,t] of [['reach',.12],['contact',.2],['lift',.5],['release',.72],['rest',1]]){await seek(t);expect(Number(await p.getAttribute('data-warp-error'))).toBeLessThan(.0001);await screenshot(tag);}
+ await page.getByRole('button',{name:'转圈圈',exact:true}).click();await page.getByRole('spinbutton',{name:'转速 / 圈每秒 数值',exact:true}).fill('1');await page.getByRole('spinbutton',{name:'匀速程度 / % 数值',exact:true}).fill('0');
+ for(const t of [.1,.4,.6,.8,1]){await seek(t);expect(Number(await p.getAttribute('data-warp-error'))).toBeLessThan(.0001);await screenshot('spin-'+t);}
+ await page.getByRole('button',{name:'播放或暂停动作',exact:true}).click();await expect.poll(async()=>Math.abs(Number(await p.getAttribute('data-hem-lag')))).toBeGreaterThan(.02);await page.getByRole('button',{name:'播放或暂停动作',exact:true}).click();await page.getByRole('button',{name:'播放或暂停动作',exact:true}).click();await expect.poll(async()=>Number(await p.getAttribute('data-spin-angle')),{timeout:15000}).toBeGreaterThan(15);await page.getByRole('button',{name:'播放或暂停动作',exact:true}).click();await screenshot('spin-steady');
+ const pending=page.waitForEvent('download');await page.getByRole('button',{name:'保存设计 JSON',exact:true}).click();const dl=await pending;await dl.saveAs(join(out,'design.json'));expect(JSON.parse(await readFile(join(out,'design.json'),'utf8')).silhouette).toBe('relaxed');expect(errors).toEqual([]);console.log(JSON.stringify({passed:true,out,errors}));
+}finally{await browser.close();}

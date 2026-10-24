@@ -1,7 +1,8 @@
 import {mirrorGesture,mirrorNewMarks,splitSeamSpan} from './mirror';
 import {effectiveDrape} from './drape';
 import {el,button,field,row,select,chooseFile,report,download} from './ui';
-import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
+import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,silhouettes,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
+import {effectiveShape,hemShapes,shapeControls,setShapeParameter} from './shape';
 import {PatternCanvas} from './canvas';
 import {SkirtPreview,readPreviewRenderMode} from './preview';
 import {paintTexture} from './texture';
@@ -10,15 +11,13 @@ import './style.css';
 
 interface Host {get:()=>SkirtDesign|undefined;commit:(label:string,d:SkirtDesign)=>void;overlay:(d:SkirtDesign)=>CanvasImageSource|undefined;paintLayer:()=>void;status:(s:string)=>void}
 type PreviewAction='stand'|'walk'|'sit'|'lie'|'display'|'spin';
-type MotionOptions={armAngle:number;spread:number;speed:number;uniformity:number};
-type MotionPreview={setAction?:(action:PreviewAction)=>void;setMotionOptions?:(options:MotionOptions)=>void};
 export class SkirtStudio {
   element=el('div','skirt-studio');private controls=el('aside','skirt-controls');private tabs=el('div','skirt-views');private tools=el('div','skirt-tools');
   private pattern:PatternCanvas;private preview?:SkirtPreview;private texture=el('canvas');private info=el('p','skirt-info');private source=el('p','skirt-source');
-  private motion:MotionOptions={armAngle:45,spread:90,speed:.4,uniformity:.35};
   private selected='';private tool:'turn'|'select'|'pen'|'patch'='turn';private ink='#c54d70';private brush=.009;
   private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
   private mirror=true;private strokeStart=0;private patchStart=0;private pendingFrame=0;private patchPieces:string[]=[];private patchU=0;private patchLastU=0;private focusView:string|null=null;
+  private shapeOpen=false;private readonly shapeDetailsId=`skirt-shape-details-${crypto.randomUUID()}`;
   constructor(private host:Host){
     this.texture.width=this.texture.height=1024;
     const heading=el('div','skirt-heading'),title=el('div');title.append(el('h1','','百褶裙'));
@@ -41,8 +40,8 @@ export class SkirtStudio {
      slider.oninput=()=>{update(Number(slider.value));number.value=String(current);};number.oninput=()=>update(number.valueAsNumber);number.onchange=()=>{update(number.valueAsNumber);number.value=String(current);};
      const controls=el('div','skirt-range');controls.append(slider,number);const f=field(label,controls);f.dataset.tip=tip;group.append(f);
     };
-    option(displayControls,'手臂抬角 / °','armAngle',45,0,85,1,'从身体向下方向抬起的角度');
-    option(displayControls,'双手 XY 夹角 / °','spread',90,20,150,1,'正面 XY 平面中的双手展开角度');
+    option(displayControls,'手臂抬角 / °','armAngle',45,0,85,1,'控制抓住手边裙料后向外展开的抬角');
+    option(displayControls,'双手 XY 夹角 / °','spread',90,20,150,1,'双手抓住手边裙料后，在正面 XY 平面缓缓展开');
     option(spinControls,'转速 / 圈每秒','speed',.4,.1,1.5,.1,'每秒平均转圈次数');
     option(spinControls,'匀速程度 / %','uniformity',35,0,100,1,'0：明显加减速；100：匀速');
     const showMotion=()=>{motionControls.hidden=!worn||!['display','spin'].includes(chosen);displayControls.hidden=chosen!=='display';spinControls.hidden=chosen!=='spin';};
@@ -83,6 +82,28 @@ export class SkirtStudio {
     this.controls.append(el('h2','','裙型与布料'),field('参考起点',this.choice(templates,d.template_id,(id:Template)=>{
       const next=createDesign(id);Object.assign(next,{design_id:d.design_id,item_id:d.item_id,component_id:d.component_id,collection_id:d.collection_id,canvas_view:d.canvas_view});this.selected='';this.commit('应用裙子模板',next);
     })));
+    const shape=effectiveShape(d),profile=d.silhouette??'relaxed';
+    const details=el('div','skirt-shape-details');details.id=this.shapeDetailsId;
+    const toggle=button('',()=>{},'');
+    const syncToggle=()=>{const open=this.shapeOpen;toggle.textContent=open?'▲ 参数':'▼ 参数';toggle.dataset.tip=open?'收起廓形参数':'展开廓形与下摆形状参数';toggle.setAttribute('aria-expanded',String(open));details.hidden=!open;};
+    const renderDetails=(design:SkirtDesign)=>{
+      details.replaceChildren();const current=design.silhouette??'relaxed',settings=effectiveShape(design),values=settings[current] as unknown as Record<string,number>;
+      for(const control of shapeControls[current]){
+        const item=this.slider(control.label,Math.round(values[control.key]*100),Math.round(control.min*100),Math.round(control.max*100),1,(next,v)=>{setShapeParameter(next,current,control.key,v/100);});
+        item.dataset.tip=control.tip;details.append(item);
+      }
+      if(settings.hem.mode==='wide'||settings.hem.mode==='deep'){
+        const ratio=this.slider('短长轴比 / %',Math.round(settings.hem.ratio*100),35,100,1,(next,v)=>{next.shape=effectiveShape(next);next.shape.hem.ratio=v/100;});
+        ratio.dataset.tip='100 为正圆；数值越小越扁；横向椭圆为左右方向，纵向椭圆为前后方向。';details.append(ratio);
+      }
+    };
+    const previewDesign=(change:(next:SkirtDesign)=>void)=>{const next=structuredClone(this.host.get()??d);change(next);return next;};
+    const silhouette=field('廓形',this.choice(silhouettes,profile,(v)=>{this.shapeOpen=true;this.edit('选择廓形',next=>next.silhouette=v);renderDetails(previewDesign(next=>next.silhouette=v));syncToggle();}));
+    silhouette.dataset.tip='静止时裙摆自然垂落的廓形；不改变纹样，也不改变腰围或下摆尺寸。';
+    const hemShape=field('下摆形状',this.choice(hemShapes,shape.hem.mode,(v)=>{this.shapeOpen=true;this.edit('选择下摆形状',next=>{next.shape=effectiveShape(next);next.shape.hem.mode=v;});renderDetails(previewDesign(next=>{next.shape=effectiveShape(next);next.shape.hem.mode=v;}));syncToggle();}));
+    hemShape.dataset.tip='下摆椭圆的横向或纵向；不改变腰围与下摆周长。';
+    toggle.classList.add('skirt-shape-toggle');toggle.setAttribute('aria-label','廓形参数');toggle.setAttribute('aria-controls',this.shapeDetailsId);toggle.onclick=()=>{this.shapeOpen=!this.shapeOpen;syncToggle();};
+    this.controls.append(row(silhouette,hemShape),toggle,details);renderDetails(d);syncToggle();
     const labels={length_cm:'裙长 / cm',waist_cm:'腰围 / cm',hem_cm:'裙摆大小 / cm',pleat_count:'褶子数量',pleat_depth_cm:'褶深 / cm',sharpness:'褶子锋利程度',thickness_mm:'布料厚度 / mm'};
     const ends:Partial<Record<keyof typeof limits,[string,string]>>={length_cm:['短裙 · 40','长裙 · 120'],hem_cm:['收拢 · 100','宽摆 · 360']};
     for(const key of Object.keys(limits) as (keyof typeof limits)[]){const [min,max]=limits[key];const control=this.slider(labels[key],d.parameters[key],min,max,['sharpness'].includes(key)?.01:['thickness_mm','pleat_depth_cm'].includes(key)?.1:1,(next,v)=>{next.parameters[key]=v;},ends[key]);if(key==='hem_cm')control.dataset.tip='下摆外轮廓周长 100–360 cm；越大，裙摆越展开。';this.controls.append(control);

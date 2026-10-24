@@ -1,8 +1,10 @@
 import type {DrapeSettings} from './drape';
+import {defaultShapeSettings,hemShapes,shapeControls,type ShapeSettings} from './shape';
 export type CanvasView = 'front' | 'sector' | 'ring';
 export type Template = 'plain' | 'mosuo_reference' | 'yi_reference' | 'wax_reference';
 export type Pattern = 'solid' | 'dash' | 'diamond' | 'wax';
 export type Fabric = 'cotton' | 'linen' | 'silk' | 'wool';
+export type Silhouette = 'relaxed' | 'a_line' | 'bell' | 'trumpet';
 export type UV = [number, number];
 export interface Band { id:string; start:number; end:number; color:string; pattern:Pattern; repeat:number }
 export interface Patch { id:string; u0:number; u1:number; v0:number; v1:number; color:string; pattern:Pattern; repeat:number }
@@ -12,12 +14,13 @@ export interface SkirtDesign {
   schema:'weave-pleated-skirt'; version:1; design_id:string; item_id:string; component_id:string; collection_id:string;
   template_id:Template; canvas_view:CanvasView;
   source:{note:string; references:{title:string;path:string}[]};
-  drape?:DrapeSettings; parameters:Parameters; bands:Band[]; patches:Patch[]; strokes:Stroke[];
+  drape?:DrapeSettings; silhouette?:Silhouette; shape?:ShapeSettings; parameters:Parameters; bands:Band[]; patches:Patch[]; strokes:Stroke[];
   pattern_uv:{origin:'waist';seam:'back';u:'circumference';v:'waist_to_hem'};
 }
 export const templates:Record<Template,string> = {plain:'素裙 · 自由设计',mosuo_reference:'摩梭照片参考',yi_reference:'彝族照片参考',wax_reference:'蜡染照片参考'};
 export const views:Record<CanvasView,string> = {front:'01 梯形平铺',sector:'02 圆弧展开',ring:'03 圆环俯视'};
 export const fabrics:Record<Fabric,string> = {cotton:'棉布',linen:'亚麻',silk:'丝绸',wool:'毛呢'};
+export const silhouettes:Record<Silhouette,string> = {relaxed:'自然垂落',a_line:'A 字',bell:'钟形',trumpet:'鱼尾'};
 export const patterns:Record<Pattern,string> = {solid:'纯色',dash:'针脚',diamond:'菱格',wax:'蜡染几何'};
 export const limits = {length_cm:[40,120],waist_cm:[50,110],hem_cm:[100,360],pleat_count:[16,128],pleat_depth_cm:[.2,4],sharpness:[0,1],thickness_mm:[.2,3]} as const;
 export const newId = () => crypto.randomUUID();
@@ -49,9 +52,20 @@ function list(v:unknown,max:number):unknown[] {if(!Array.isArray(v)||v.length>ma
 export function parseDesign(value:unknown):SkirtDesign {
   const v=object(value);if(v.schema!=='weave-pleated-skirt'||v.version!==1)throw Error('需要 weave-pleated-skirt v1 设计文件');
   const p=object(v.parameters),s=object(v.source),uv=object(v.pattern_uv),ids=new Set<string>();
-  exact(v,'schema version design_id item_id component_id collection_id template_id canvas_view source parameters bands patches strokes pattern_uv'+(Object.hasOwn(v,'drape')?' drape':''));
+  exact(v,'schema version design_id item_id component_id collection_id template_id canvas_view source parameters bands patches strokes pattern_uv'+(Object.hasOwn(v,'drape')?' drape':'')+(Object.hasOwn(v,'silhouette')?' silhouette':'')+(Object.hasOwn(v,'shape')?' shape':''));
   let drape:DrapeSettings|undefined;
   if(Object.hasOwn(v,'drape')){const x=object(v.drape);exact(x,'mode weight bending opening');if(x.mode!=='auto'&&x.mode!=='manual')throw Error('未知的垂坠模式');drape={mode:x.mode,weight:num(x.weight,0,1),bending:num(x.bending,0,1),opening:num(x.opening,0,1)};}
+  let silhouette:Silhouette|undefined;
+  if(Object.hasOwn(v,'silhouette'))silhouette=enumValue(v.silhouette,silhouettes);
+  let shape:ShapeSettings|undefined;
+  if(Object.hasOwn(v,'shape')){
+    const x=object(v.shape);exact(x,'relaxed a_line bell trumpet hem');shape=structuredClone(defaultShapeSettings);
+    for(const profile of Object.keys(shapeControls) as Silhouette[]){
+      const values=object(x[profile]),controls=shapeControls[profile];exact(values,controls.map(c=>c.key).join(' '));
+      for(const c of controls)Object.assign(shape[profile],{[c.key]:num(values[c.key],c.min,c.max)});
+    }
+    const hem=object(x.hem);exact(hem,'mode ratio');shape.hem={mode:enumValue(hem.mode,hemShapes),ratio:num(hem.ratio,.35,1)};
+  }
   exact(p,'length_cm waist_cm hem_cm pleat_count pleat_depth_cm sharpness thickness_mm fabric base_color');exact(s,'note references');exact(uv,'origin seam u v');
   const id=(value:unknown)=>{const str=text(value,128);if(ids.has(str))throw Error('裙子片段 ID 重复');ids.add(str);return str;};
   const parameters={} as Parameters;
@@ -64,5 +78,5 @@ export function parseDesign(value:unknown):SkirtDesign {
   let count=0;const strokes=list(v.strokes,256).map(x=>{const b=object(x);exact(b,'id color width points');const points=list(b.points,40000).map(x=>{if(!Array.isArray(x)||x.length!==2)throw Error('笔迹坐标无效');return [num(x[0],0,1),num(x[1],0,1)] as UV;});count+=points.length;if(count>40000)throw Error('笔迹最多 40000 点');return {id:id(b.id),color:color(b.color),width:num(b.width,.001,.05),points};});
   if(uv.origin!=='waist'||uv.seam!=='back'||uv.u!=='circumference'||uv.v!=='waist_to_hem')throw Error('裙子纹样坐标不匹配');
   if(typeof s.note!=='string'||s.note.length>4000)throw Error('来源说明无效');
-  return {...(drape?{drape}:{}),schema:'weave-pleated-skirt',version:1,design_id:text(v.design_id,128),item_id:text(v.item_id,128),component_id:text(v.component_id,128),collection_id:text(v.collection_id,128),template_id:enumValue(v.template_id,templates),canvas_view:enumValue(v.canvas_view,views),source:{note:s.note,references:list(s.references,32).map(r=>{const x=object(r);exact(x,'title path');return {title:text(x.title),path:text(x.path,2048)};})},parameters,bands,patches,strokes,pattern_uv:{origin:'waist',seam:'back',u:'circumference',v:'waist_to_hem'}};
+  return {...(drape?{drape}:{}),...(silhouette?{silhouette}:{}),...(shape?{shape}:{}),schema:'weave-pleated-skirt',version:1,design_id:text(v.design_id,128),item_id:text(v.item_id,128),component_id:text(v.component_id,128),collection_id:text(v.collection_id,128),template_id:enumValue(v.template_id,templates),canvas_view:enumValue(v.canvas_view,views),source:{note:s.note,references:list(s.references,32).map(r=>{const x=object(r);exact(x,'title path');return {title:text(x.title),path:text(x.path,2048)};})},parameters,bands,patches,strokes,pattern_uv:{origin:'waist',seam:'back',u:'circumference',v:'waist_to_hem'}};
 }

@@ -13,7 +13,7 @@ export class DrapeConstraint {
   for(let j=0;j<=this.rows;j++)for(let i=0;i<this.width;i++){const at=j*this.width+i;if(j)this.warp[at]=this.distance(rest,at,at-this.width);this.thickness[at]=this.distance(rest,at,at+this.shell);}
  }
  private distance(p:Float32Array,a:number,b:number){return Math.hypot(p[a*3]-p[b*3],p[a*3+1]-p[b*3+1],p[a*3+2]-p[b*3+2]);}
- apply(p:Float32Array,n:Float32Array,d:DrapeValues,amount:number,action:string='stand'){
+ apply(p:Float32Array,n:Float32Array,d:DrapeValues,amount:number,action:string='stand',shapeRest:Float32Array=this.rest){
   if(amount<=0)return;const w=this.width,cols=w-1,rows=this.rows;
   // The legacy corrective cage expands radial offsets around bent knees.
   // Use a monotone garment envelope for seated/lying poses instead, then
@@ -22,7 +22,7 @@ export class DrapeConstraint {
   for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
    const v=row/rows,at=(row*w+col)*3;
    if(action==='sit'||action==='lie'){
-    const rx=this.rest[at],ry=this.rest[at+1],rz=this.rest[at+2];
+    const rx=shapeRest[at],ry=shapeRest[at+1],rz=shapeRest[at+2];
     const front=(1-Math.cos(col/cols*Math.PI*2))*.5;
     // A rounded lap/knee support, with less support at the sides. The hem
     // drops beyond the knee instead of following one straight lifted cone.
@@ -62,6 +62,9 @@ export class DrapeConstraint {
     p[at+1]-=side*band*seated*d.weight*softness*.09;
    }
   }
+  this.projectLengths(p);this.finishSurface(p,n);
+ }
+ projectLengths(p:Float32Array){const w=this.width,cols=w-1,rows=this.rows;
   // Reconstruct each material column from the target tangent field, starting
   // at the waist. Using target derivatives avoids accumulating a catch-up kink
   // when a bent pose's absolute target is farther away than the cloth allows.
@@ -72,6 +75,8 @@ export class DrapeConstraint {
    if(len<1e-8){dx=this.rest[bi]-this.rest[ai];dy=this.rest[bi+1]-this.rest[ai+1];dz=this.rest[bi+2]-this.rest[ai+2];len=Math.hypot(dx,dy,dz);}
    const t=this.warp[b]/len;p[bi]=p[ai]+dx*t;p[bi+1]=p[ai+1]+dy*t;p[bi+2]=p[ai+2]+dz*t;
   }
+ }
+ finishSurface(p:Float32Array,n:Float32Array){const w=this.width,cols=w-1,rows=this.rows;
   for(let row=0;row<=rows;row++){const first=row*w*3,last=(row*w+cols)*3;for(let k=0;k<3;k++)p[last+k]=p[first+k];}
   for(let row=0;row<=rows;row++)for(let col=0;col<w;col++){
    const c=col%cols,at=(row*w+col)*3,left=(row*w+(c+cols-1)%cols)*3,right=(row*w+(c+1)%cols)*3,up=(Math.max(0,row-1)*w+c)*3,down=(Math.min(rows,row+1)*w+c)*3;

@@ -977,3 +977,26 @@
 .skirt-motion-controls .field > span { flex:0 0 110px; }
 .skirt-motion-controls .skirt-range { flex:1; min-width:0; }
 .skirt-motion-controls[hidden], .skirt-motion-controls > [hidden] { display:none; }
+
+/* Compact shape details: bare fold toggle below the two equal-width selectors. */
+.skirt-host .skirt-shape-toggle {
+  align-self: flex-start;
+  height: 20px;
+  min-height: 20px;
+  margin: 0 0 2px;
+  padding: 0 2px;
+  justify-content: flex-start;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ui-faint);
+  font-size: 10px;
+}
+
+.skirt-host .skirt-shape-toggle:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ui-text-2);
+}
+
+.skirt-host .skirt-shape-toggle[aria-expanded="true"] { color: var(--ui-accent); }
+.skirt-shape-details[hidden] { display: none; }
