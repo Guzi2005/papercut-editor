@@ -1,0 +1,9 @@
+// DOM controls for the isolated 3D workbench; document history belongs to React.
+export function el<K extends keyof HTMLElementTagNameMap>(tag:K,className='',text=''){const e=document.createElement(tag);e.className=className;e.textContent=text;return e;}
+export function report(error:unknown){window.dispatchEvent(new CustomEvent('skirt-error',{detail:error instanceof Error?error.message:String(error)}));}
+export function button(text:string,action:()=>unknown,title=text){const b=el('button','',text);b.type='button';b.dataset.tip=title;b.onclick=()=>{try{const result=action();if(result instanceof Promise)result.catch(report);}catch(e){report(e);}};return b;}
+export function row(...children:Node[]){const r=el('div','row');r.append(...children);return r;}
+export function field(label:string,control:HTMLElement){const l=el('label','field');if(control.matches('input,select,textarea')&&!control.hasAttribute('aria-label'))control.setAttribute('aria-label',label);l.append(el('span','',label),control);return l;}
+export function select(options:{id:string;name:string}[],value:string,change?:(v:string)=>void){const s=el('select');for(const o of options){const option=el('option','',o.name);option.value=o.id;s.append(option);}s.value=value;s.onchange=()=>change?.(s.value);return s;}
+export async function chooseFile(accept:string):Promise<File|null>{return new Promise(resolve=>{const input=el('input');input.type='file';input.accept=accept;input.onchange=()=>resolve(input.files?.[0]??null);input.oncancel=()=>resolve(null);input.click();});}
+export function download(content:string|Blob,name:string){const blob=typeof content==='string'?new Blob([content],{type:'application/json'}):content,url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

@@ -8,6 +8,7 @@ import type { PathCap, StrokeStyle } from '../utils/strokePath';
 import type { ColorScheme } from '../utils/palettes';
 import type {LiveStampStroke} from '../utils/liveStamps';
 import type { Matrix } from '../utils/pathTransform';
+import type {SkirtDesign} from '../pleatedSkirt/model';
 
 export interface Point {
   x: number;
@@ -209,6 +210,7 @@ export interface PapercutItem {
 }
 
 export interface ReferenceImage {
+  generatedBy?: 'pleated-skirt-guide';
   src: string; // data URL
   opacity: number;
   visible: boolean;
@@ -326,6 +328,7 @@ export interface BrushSettings {
 }
 
 export interface PapercutProject {
+  pleatedSkirt?: SkirtDesign;
   drawingGroups?: DrawingGroup[];
   symmetry?: SymmetrySettings;
   outfits?: OutfitDefinition[];

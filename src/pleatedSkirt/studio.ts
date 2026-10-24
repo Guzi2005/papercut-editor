@@ -1,0 +1,113 @@
+import {el,button,field,row,select,chooseFile,report,download} from './ui';
+import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
+import {PatternCanvas} from './canvas';
+import {SkirtPreview} from './preview';
+import {paintTexture} from './texture';
+import {skirtZip} from './export';
+import './style.css';
+
+interface Host {get:()=>SkirtDesign|undefined;commit:(label:string,d:SkirtDesign)=>void;overlay:(d:SkirtDesign)=>CanvasImageSource|undefined;paintLayer:()=>void;status:(s:string)=>void}
+type PreviewAction='stand'|'walk'|'sit'|'lie';
+export class SkirtStudio {
+  element=el('div','skirt-studio');private controls=el('aside','skirt-controls');private tabs=el('div','skirt-views');private tools=el('div','skirt-tools');
+  private pattern:PatternCanvas;private preview?:SkirtPreview;private texture=el('canvas');private info=el('p','skirt-info');private source=el('p','skirt-source');
+  private selected='';private tool:'select'|'pen'|'patch'='select';private ink='#c54d70';private brush=.009;
+  private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
+  private pendingFrame=0;private patchId='';private focusView:string|null=null;
+  constructor(private host:Host){
+    this.texture.width=this.texture.height=1024;
+    const heading=el('div','skirt-heading'),title=el('div');title.append(el('h1','','百褶裙'));
+    const actions=row(button('保存设计 JSON',()=>{const d=this.host.get();if(d)download(JSON.stringify(d,null,2),'skirt.json');}),button('导入设计',()=>this.importDesign()),button('导出 Godot 包',()=>{const d=this.host.get();if(d)download(new Blob([skirtZip(d,this.host.overlay(d)) as BlobPart],{type:'application/zip'}),'pleated-skirt.zip');}));heading.append(title,actions);
+    const layout=el('div','skirt-layout'),workspace=el('section','skirt-paper-panel'),previewPanel=el('section','skirt-preview-panel');
+    const label=el('div','skirt-panel-title');const help=button('ⓘ',()=>{},'三个展开视图共享同一份纹样；展开图用于设计，不是含缝份的裁缝纸样。');help.classList.add('skirt-help');help.setAttribute('aria-label','展开图说明');label.append(el('strong','','纹样'),help);
+    const canvas=el('canvas');canvas.setAttribute('aria-label','裙子模板画布');canvas.dataset.testid='skirt-canvas';
+    const wrap=el('div','skirt-canvas-wrap');wrap.append(canvas);this.pattern=new PatternCanvas(canvas);canvas.id='skirt-pattern-panel';canvas.setAttribute('role','tabpanel');
+    workspace.append(label,this.tabs,this.tools,wrap);
+    const previewTitle=el('div','skirt-panel-title');previewTitle.append(el('strong','','立体预览'),button('复位视角',()=>this.preview?.reset()));
+    const glCanvas=el('canvas');glCanvas.setAttribute('aria-label','百褶裙三维预览');glCanvas.dataset.testid='skirt-preview';
+    const stage=el('div','skirt-stage');glCanvas.setAttribute('aria-description','拖动旋转，滚轮缩放');stage.append(glCanvas);
+    try{this.preview=new SkirtPreview(glCanvas);}catch(error){stage.append(el('p','skirt-preview-error',String(error)));}
+    const actionTabs=el('div','skirt-action-tabs');for(const [id,name] of [['stand','站立'],['walk','行走'],['sit','坐下'],['lie','躺下']] as [PreviewAction,string][]) {const b=button(name,()=>{this.preview?.setAction(id);actionTabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));});b.dataset.action=id;b.title=`预览${name}动作`;if(id==='stand')b.classList.add('active');actionTabs.append(b);}
+    const playback=el('div','skirt-preview-tools');let worn=true,playing=true;
+    const mode=button('穿着',()=>{worn=!worn;mode.textContent=worn?'穿着':'单裙';this.preview?.setWorn(worn);actionTabs.hidden=!worn;timeline.disabled=!worn;},'切换穿着 / 单裙');
+    const play=button('暂停',()=>{playing=!playing;this.preview?.setPlaying(playing);},'播放 / 暂停动作');play.setAttribute('aria-label','播放或暂停动作');
+    const timeline=el('input');timeline.type='range';timeline.min='0';timeline.max='1';timeline.step='.01';timeline.value='0';timeline.setAttribute('aria-label','动作进度');timeline.oninput=()=>this.preview?.setProgress(Number(timeline.value));
+    if(this.preview)this.preview.onProgress=(progress,isPlaying)=>{timeline.value=String(progress);playing=isPlaying;play.textContent=isPlaying?'暂停':'播放';};
+    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,stage,playback,this.info,this.source);
+    this.tabs.setAttribute('role','tablist');this.tabs.setAttribute('aria-label','裙子展开图');
+    layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout);
+    this.pattern.onDown=(uv,e)=>this.down(uv,e);this.pattern.onMove=(uv,e)=>this.move(uv,e);this.pattern.onUp=()=>this.up();this.pattern.onCancel=()=>this.cancel();
+  }
+  refresh(){const d=this.host.get();if(!d)return;this.draft=undefined;this.start=undefined;this.pointer=-1;this.buildControls(d);this.buildTools(d);this.display(d);}
+  restoreTabFocus(){if(this.focusView&&!this.element.closest('[inert]')){this.tabs.querySelector<HTMLButtonElement>('button[data-view='+this.focusView+']')?.focus();this.focusView=null;}}
+  dispose(){cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.element.remove();}
+  private display(d:SkirtDesign){paintTexture(this.texture,d,this.host.overlay(d));this.pattern.update(d,this.texture,this.selected);this.preview?.update(d,this.texture);
+    this.info.textContent=`${d.parameters.pleat_count} 道褶 · ${d.parameters.length_cm} cm 裙长 · ${d.parameters.thickness_mm} mm 布厚`;
+    this.source.textContent='参考来源 ⓘ';this.source.dataset.tip=d.source.references.map(x=>x.title).join(' / ')||'自由设计 · 尚未添加来源';
+  }
+  private displaySoon(){if(this.pendingFrame)return;this.pendingFrame=requestAnimationFrame(()=>{this.pendingFrame=0;if(this.draft)this.display(this.draft);});}
+  private commit(label:string,d:SkirtDesign){this.host.commit(label,parseDesign(d));}
+  private edit(label:string,fn:(d:SkirtDesign)=>void){const current=this.host.get();if(!current)return;const d=structuredClone(current);fn(d);this.commit(label,d);}
+  private choice<T extends string>(options:Record<T,string>,value:T,fn:(v:T)=>void){return select(Object.entries(options).map(([id,name])=>({id,name:String(name)})),value,v=>fn(v as T));}
+  private slider(label:string,value:number,min:number,max:number,step:number,fn:(d:SkirtDesign,value:number)=>void,ends?:[string,string]){
+    const input=el('input'),number=el('input');input.type='range';number.type='number';
+    for(const control of [input,number]){control.min=String(min);control.max=String(max);control.step=String(step);control.value=String(value);control.setAttribute('aria-label',control===input?label:`${label} 数值`);}
+    const control=el('div','skirt-range');control.append(input,number);
+    input.oninput=()=>{number.value=input.value;const d=structuredClone(this.host.get()!);fn(d,Number(input.value));this.draft=d;this.displaySoon();};
+    input.onchange=()=>{const d=structuredClone(this.host.get()!);fn(d,Number(input.value));this.commit(label,d);};
+    number.onchange=()=>{if(number.value===''||!Number.isFinite(number.valueAsNumber)){number.value=input.value;return;}const v=Math.max(min,Math.min(max,Math.round(number.valueAsNumber/step)*step));this.edit(label,d=>fn(d,Number(v.toFixed(4))));};
+    const result=field(label,control);result.dataset.tip=ends?`${ends[0]} → ${ends[1]}`:`${min}–${max}`;return result;
+  }
+  private colorControl(label:string,value:string,fn:(d:SkirtDesign,color:string)=>void){const input=el('input');input.type='color';input.value=value;input.setAttribute('aria-label',label);input.oninput=()=>{const d=structuredClone(this.host.get()!);fn(d,input.value);this.draft=d;this.displaySoon();};input.onchange=()=>this.edit(label,d=>fn(d,input.value));return field(label,input);}
+  private buildControls(d:SkirtDesign){this.controls.replaceChildren();
+    this.controls.append(el('h2','','裙型与布料'),field('参考起点',this.choice(templates,d.template_id,(id:Template)=>{
+      const next=createDesign(id);Object.assign(next,{design_id:d.design_id,item_id:d.item_id,component_id:d.component_id,collection_id:d.collection_id,canvas_view:d.canvas_view});this.selected='';this.commit('应用裙子模板',next);
+    })));
+    const labels={length_cm:'裙长 / cm',waist_cm:'腰围 / cm',hem_cm:'裙摆大小 / cm',pleat_count:'褶子数量',pleat_depth_cm:'褶深 / cm',sharpness:'褶子锋利程度',thickness_mm:'布料厚度 / mm'};
+    const ends:Partial<Record<keyof typeof limits,[string,string]>>={length_cm:['短裙 · 40','长裙 · 120'],hem_cm:['收拢 · 100','宽摆 · 360']};
+    for(const key of Object.keys(limits) as (keyof typeof limits)[]){const [min,max]=limits[key];const control=this.slider(labels[key],d.parameters[key],min,max,['sharpness'].includes(key)?.01:['thickness_mm','pleat_depth_cm'].includes(key)?.1:1,(next,v)=>{next.parameters[key]=v;},ends[key]);if(key==='hem_cm')control.dataset.tip='下摆外轮廓周长 100–360 cm；越大，裙摆越展开。';this.controls.append(control);
+    }
+    this.controls.append(row(this.colorControl('底色',d.parameters.base_color,(next,c)=>next.parameters.base_color=c),field('布料',this.choice(fabrics,d.parameters.fabric,(v:Fabric)=>this.edit('选择布料',next=>next.parameters.fabric=v)))));
+    const bandHead=row(el('h2','','拼接与镶边'),button('+ 镶边',()=>this.edit('新增镶边',next=>{if(next.bands.length>=32)throw Error('最多 32 条镶边');const b={id:newId(),start:.84,end:.88,color:this.ink,pattern:'solid' as Pattern,repeat:32};next.bands.push(b);this.selected=b.id;})));
+    bandHead.classList.add('skirt-section-title');this.controls.append(bandHead);
+    const list=el('div','skirt-band-list');d.bands.forEach((b,i)=>{const item=button(`${String(i+1).padStart(2,'0')}　${Math.round(b.start*100)}–${Math.round(b.end*100)}%　${patterns[b.pattern]}`,()=>{this.selected=b.id;this.buildControls(this.host.get()!);this.pattern.update(d,this.texture,this.selected);});item.style.borderLeft=`5px solid ${b.color}`;item.classList.toggle('active',b.id===this.selected);list.append(item);});this.controls.append(list);
+    const b=d.bands.find(x=>x.id===this.selected);if(b){
+      this.controls.append(this.slider('镶边位置 / %',Math.round(b.start*1000)/10,0,99.5,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!,width=x.end-x.start;x.start=Math.min(n/100,1-width);x.end=x.start+width;}));
+      this.controls.append(this.slider('镶边宽度 / %',Math.round((b.end-b.start)*1000)/10,.5,30,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!;x.end=Math.min(1,x.start+n/100);if(x.end-x.start<.005)x.start=x.end-.005;}));
+      this.controls.append(row(this.colorControl('镶边颜色',b.color,(next,c)=>next.bands.find(x=>x.id===b.id)!.color=c),field('纹样',this.choice(patterns,b.pattern,(v:Pattern)=>this.edit('镶边纹样',next=>next.bands.find(x=>x.id===b.id)!.pattern=v)))));
+      this.controls.append(this.slider('纹样重复',b.repeat,4,64,1,(next,n)=>next.bands.find(x=>x.id===b.id)!.repeat=n));
+      this.controls.append(button('删除所选镶边',()=>this.edit('删除镶边',next=>{next.bands=next.bands.filter(x=>x.id!==b.id);this.selected='';})));
+    }
+    this.controls.append(row(button('清除笔迹',()=>this.edit('清除笔迹',next=>next.strokes=[]),`清除 ${d.strokes.length} 条工作台笔迹`),button('清除拼色',()=>this.edit('清除拼色',next=>next.patches=[]),`清除 ${d.patches.length} 个拼色片`)));
+  }
+  private buildTools(d:SkirtDesign){this.tabs.replaceChildren();const entries=Object.entries(views);for(const [index,[id,name]] of entries.entries()){const b=button(name.replace(/^\d+ /,''),()=>this.edit('切换裙子画布',next=>next.canvas_view=id as CanvasView));b.classList.add('skirt-view-tab');b.dataset.view=id;b.id=`skirt-tab-${id}`;b.style.setProperty('--tab-color',['#5272df','#d0758e','#9b74ce'][index]);b.setAttribute('role','tab');b.setAttribute('aria-controls','skirt-pattern-panel');b.setAttribute('aria-selected',String(d.canvas_view===id));b.tabIndex=d.canvas_view===id?0:-1;b.classList.toggle('active',d.canvas_view===id);b.onkeydown=e=>{let target=index;if(e.key==='ArrowRight')target=(index+1)%entries.length;else if(e.key==='ArrowLeft')target=(index+entries.length-1)%entries.length;else if(e.key==='Home')target=0;else if(e.key==='End')target=entries.length-1;else return;e.preventDefault();this.focusView=entries[target][0];this.edit('切换裙子画布',next=>next.canvas_view=entries[target][0] as CanvasView);};this.tabs.append(b);}
+    this.tools.replaceChildren();for(const [id,label] of [['select','移动镶边'],['pen','画笔'],['patch','拼色片']] as const){const b=button(label,()=>{this.tool=id;this.buildTools(this.host.get()!);});b.classList.toggle('active',this.tool===id);this.tools.append(b);}
+    const ink=el('input');ink.type='color';ink.value=this.ink;ink.setAttribute('aria-label','裙子画笔颜色');ink.oninput=()=>this.ink=ink.value;this.tools.append(ink);
+    const size=el('input');size.type='range';size.min='1';size.max='50';size.step='1';size.value=String(this.brush*1000);size.setAttribute('aria-label','裙子笔宽');size.oninput=()=>this.brush=Number(size.value)/1000;size.style.width='70px';this.tools.append(size);
+    this.tools.append(button(this.pattern.guides?'隐藏褶线':'显示褶线',()=>{this.pattern.guides=!this.pattern.guides;this.pattern.draw();this.buildTools(this.host.get()!);}));
+  }
+  private down(uv:UV,e:PointerEvent){const current=this.host.get();if(!current)return;this.start=uv;this.pointer=e.pointerId;this.draft=structuredClone(current);this.dirtyStroke=false;
+    if(this.tool==='select'){const b=[...this.draft.bands].reverse().find(x=>uv[1]>=x.start&&uv[1]<=x.end);if(!b){this.cancel();return;}this.selected=b.id;this.bandStart=b.start;this.bandWidth=b.end-b.start;}
+    else if(this.tool==='pen'){if(this.draft.strokes.length>=256){this.cancel();this.host.status('笔迹已达 256 条，请整理后继续');return;}this.draft.strokes.push({id:newId(),color:this.ink,width:this.brush,points:[uv]});}
+    else {if(this.draft.patches.length>=64){this.cancel();this.host.status('拼色片最多 64 片');return;}this.patchId=newId();}
+    this.displaySoon();
+  }
+  private move(uv:UV|null,e:PointerEvent){if(e.pointerId!==this.pointer||!this.draft||!this.start||!uv)return;
+    if(this.tool==='select'){const b=this.draft.bands.find(x=>x.id===this.selected)!;b.start=Math.max(0,Math.min(1-this.bandWidth,this.bandStart+uv[1]-this.start[1]));b.end=b.start+this.bandWidth;}
+    else if(this.tool==='pen'){let stroke=this.draft.strokes.at(-1)!;const last=stroke.points.at(-1)!;
+      if(Math.abs(last[0]-uv[0])>.5){if(this.draft.strokes.length>=256)return;stroke={id:newId(),color:this.ink,width:this.brush,points:[]};this.draft.strokes.push(stroke);}
+      if(Math.hypot(last[0]-uv[0],last[1]-uv[1])>.0015)stroke.points.push(uv);
+    }else {
+      const patch={id:this.patchId,u0:Math.min(this.start[0],uv[0]),u1:Math.max(this.start[0],uv[0]),v0:Math.min(this.start[1],uv[1]),v1:Math.max(this.start[1],uv[1]),color:this.ink,pattern:'solid' as Pattern,repeat:32};
+      this.draft.patches=this.draft.patches.filter(x=>x.id!==this.patchId);this.draft.patches.push(patch);
+    }
+    this.dirtyStroke=true;this.displaySoon();
+  }
+  private up(){if(!this.draft||!this.start)return;const next=this.draft,tool=this.tool;this.draft=undefined;this.start=undefined;this.pointer=-1;
+    if(tool==='patch')next.patches=next.patches.filter(x=>x.id!==this.patchId||(x.u1-x.u0>.001&&x.v1-x.v0>.001));
+    if(tool==='select'&&!this.dirtyStroke){this.refresh();return;}
+    try{this.commit(tool==='pen'?'裙面笔迹':tool==='patch'?'绘制拼色片':'移动镶边',next);}catch(e){report(e);this.refresh();}
+  }
+  private cancel(){if(!this.draft)return;this.draft=undefined;this.start=undefined;this.pointer=-1;const d=this.host.get();if(d)this.display(d);}
+  private async importDesign(){const file=await chooseFile('.json');if(!file)return;if(file.size>4_000_000)throw Error('设计 JSON 超过 4 MB');const next=parseDesign(JSON.parse(await file.text()));this.selected='';this.commit('导入裙子设计',next);this.host.status('已导入可编辑裙子设计');}
+}

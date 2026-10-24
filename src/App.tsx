@@ -16,6 +16,10 @@ import {PROPERTY_GESTURE_EVENT,finishPropertyGesture,isPropertyPreview,type Prop
 import {getPathBoundingBox} from './utils/bezierMath';
 import { GameAssetBridge } from './components/GameAssetBridge';
 import { StampWorkbench } from './components/StampWorkbench';
+import {PleatedSkirtWorkbench,PleatedSkirtLivePreview} from './components/PleatedSkirtWorkbench';
+import {createSkirtProject,withSkirtGuide} from './pleatedSkirt/project';
+import {parseDesign as parseSkirtDesign,type SkirtDesign} from './pleatedSkirt/model';
+import {paintTexture as paintSkirtTexture} from './pleatedSkirt/texture';
 import {createStampDocument,stampFromDocument} from './utils/stampDocument';
 import { BUILTIN_STAMPS, DEFAULT_STAMP_SETTINGS, loadStampLibrary, type StampDefinition, type StampSettings } from './utils/stamps';
 import { NewCanvasDialog } from './components/NewCanvasDialog';
@@ -147,6 +151,7 @@ export default function App() {
   const [stampDefinition,setStampDefinition]=useState<StampDefinition>(BUILTIN_STAMPS[0]);
   const [stampSettings,setStampSettings]=useState<StampSettings>(DEFAULT_STAMP_SETTINGS);
   const [stampOpen,setStampOpen]=useState(false);
+  const [skirtOpen,setSkirtOpen]=useState(false);
   const materialDrafts=useRef(new Map<string,{definition:StampDefinition;source:string|undefined}>());
   const [stampEdit,setStampEdit]=useState<{docId:string;returnId:string;definition:StampDefinition}|null>(null);
   const [stampEditMessage,setStampEditMessage]=useState('');
@@ -538,6 +543,13 @@ export default function App() {
     setIsNewCanvasOpen(false);
   };
 
+  const openSkirt=()=>{if(!project.pleatedSkirt)openProjectAsDocument(createSkirtProject());setSkirtOpen(true);};
+  const updateSkirt=(value:SkirtDesign)=>{const d=parseSkirtDesign(value);if(project.pleatedSkirt?.design_id!==d.design_id){openProjectAsDocument(createSkirtProject(d));return;}pushHistory({...project,pleatedSkirt:d});};
+  const paintSkirt=()=>{
+    if(project.pleatedSkirt){const t=document.createElement('canvas');t.width=t.height=1024;paintSkirtTexture(t,project.pleatedSkirt);const next=withSkirtGuide(project,t.toDataURL('image/png'));if(next!==project)pushHistory(next);}
+    setSkirtOpen(false);setCurrentTool('hand_draw');setSelectedLayerIds([]);
+  };
+
   const startStampEdit=(definition=stampDefinition)=>{
     if(stampEdit){setActiveDocId(stampEdit.docId);return;}
     const doc=makeDocument(newId('motif_doc'),`图章原稿 · ${definition.name}`,createStampDocument(definition),1.3);
@@ -622,6 +634,7 @@ export default function App() {
       const combo = comboFromKeyEvent(e);
       const action = combo ? actionForKey(keymap, combo) : null;
       if (!action) return;
+      if(skirtOpen&&project.pleatedSkirt&&!['edit.undo','edit.redo','file.save','file.open','file.new','help.keymap'].includes(action))return;
       if(e.defaultPrevented)return;
       // Nodes and colour blocks own Delete while those editors are active.
       if(action==='edit.delete'){
@@ -1496,6 +1509,8 @@ export default function App() {
         </div>
       )}
       <TopBar
+        onOpenSkirt={openSkirt}
+        skirtReady={hydrated}
         workspaceModesEnabled={workspaceModesEnabled}
         onWorkspaceModesEnabledChange={changeWorkspaceModesEnabled}
         documents={documentTabItems}
@@ -1545,6 +1560,9 @@ export default function App() {
         onQuickDownloadSvg={handleQuickDownloadSvg}
         onQuickDownloadPng={handleQuickDownloadPng}
       />
+
+      {skirtOpen&&project.pleatedSkirt&&<PleatedSkirtWorkbench key={activeDocId} project={project} onDesign={updateSkirt} onPaint={paintSkirt} onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo}/>}
+      {!skirtOpen&&project.pleatedSkirt&&<PleatedSkirtLivePreview key={activeDocId} project={project} onOpen={openSkirt}/>}
 
       {liveStampPath&&<div className="flex gap-4 items-center px-3 py-1 border-b border-(--ui-border) text-xs">纹样路径 · 拖节点，双击线加点，Alt 点节点删除<button onClick={()=>setLiveStampPath(null)}>结束路径调整</button></div>}
       <ToolOptions

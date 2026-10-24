@@ -1,0 +1,973 @@
+/* Pleated-skirt workbench: native papercut-editor surfaces and theme tokens only. */
+
+.skirt-host {
+  position: fixed;
+  inset: 52px 0 20px;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.skirt-host,
+.skirt-host * { box-sizing: border-box; }
+
+.skirt-host button,
+.skirt-host input,
+.skirt-host select,
+.skirt-host output { font: inherit; }
+
+.skirt-host h1,
+.skirt-host h2,
+.skirt-host h3 { margin: 0; line-height: 1.35; }
+
+/* Quiet controls: transparent by default, tinted only on hover, focus or selection. */
+
+.skirt-host button {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.skirt-host button:hover:not(:disabled) {
+  background: var(--ui-hover);
+  border-color: transparent;
+  color: var(--ui-strong);
+}
+
+.skirt-host button:active:not(:disabled) { transform: translateY(1px); }
+
+.skirt-host button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.skirt-host button:disabled { opacity: .4; cursor: not-allowed; }
+
+.skirt-host button.active,
+.skirt-host button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+  border-color: transparent;
+  color: var(--ui-accent);
+}
+
+.skirt-primary,
+.skirt-heading button:last-child {
+  color: color-mix(in srgb, var(--ui-accent) 70%, var(--ui-strong));
+  font-weight: 600;
+}
+
+.skirt-primary:hover:not(:disabled),
+.skirt-heading button:last-child:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-accent) 13%, transparent);
+  border-color: transparent;
+  color: var(--ui-accent);
+}
+
+.skirt-host input,
+.skirt-host select {
+  height: 24px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  font-size: 11px;
+  outline: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+
+.skirt-host select { padding-right: 3px; cursor: pointer; }
+
+.skirt-host input:hover,
+.skirt-host select:hover { border-color: var(--ui-border-strong); }
+
+.skirt-host input:focus-visible,
+.skirt-host select:focus-visible {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 20%, transparent);
+}
+
+.skirt-host input[type=range] {
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  accent-color: var(--ui-accent);
+  cursor: pointer;
+}
+
+.skirt-host input[type=color] {
+  width: 24px;
+  height: 24px;
+  padding: 2px;
+  background: var(--ui-raised);
+  cursor: pointer;
+}
+
+.skirt-host input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.skirt-host input[type=color]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 4px;
+}
+
+/* Host shell: native 32px toolbar and compact 20px status rail stay visible. */
+
+.skirt-native-toolbar {
+  position: relative;
+  z-index: 1;
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--ui-divider);
+  background: var(--ui-panel-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.skirt-native-toolbar::-webkit-scrollbar { display: none; }
+
+.skirt-native-toolbar>span {
+  min-width: 0;
+  margin-right: auto;
+  padding-right: 8px;
+  overflow: hidden;
+  color: var(--ui-text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skirt-native-toolbar button {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 7px;
+  font-size: 10.5px;
+}
+
+.skirt-native-content {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.skirt-native-status {
+  height: 20px;
+  min-height: 20px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-top: 1px solid var(--ui-divider);
+  background: var(--ui-panel-2);
+  color: var(--ui-text-2);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skirt-native-status.is-error,
+.skirt-native-status.error,
+.skirt-native-status[data-state="error"],
+.skirt-native-status[data-tone="error"] {
+  color: var(--ui-accent-2);
+  font-weight: 500;
+}
+
+/* Studio */
+
+.skirt-studio {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+}
+
+.skirt-studio[hidden] { display: none; }
+.skirt-host .skirt-studio { height: 100%; font-family: inherit; }
+
+.skirt-heading {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ui-divider);
+  background: transparent;
+}
+
+.skirt-heading>div:first-child { min-width: 0; overflow: hidden; }
+
+.skirt-eyebrow {
+  display: block;
+  color: var(--ui-faint);
+  font-size: 9px;
+  line-height: 1.2;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.skirt-heading h1 {
+  margin: 1px 0 0;
+  color: var(--ui-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: .1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skirt-heading .row { flex: none; align-items: center; gap: 2px; }
+.skirt-heading button { height: 24px; min-height: 24px; padding: 0 7px; font-size: 10.5px; }
+
+.skirt-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+/* Controls */
+
+.skirt-controls {
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 10px 16px;
+  border-right: 1px solid var(--ui-divider);
+  background: var(--ui-panel-2);
+  color: var(--ui-text);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-border-strong) transparent;
+}
+
+.skirt-controls::-webkit-scrollbar { width: 6px; }
+.skirt-controls::-webkit-scrollbar-track { background: transparent; }
+.skirt-controls::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ui-border-strong);
+  background-clip: padding-box;
+}
+
+.skirt-controls h2 {
+  margin: 0 0 6px;
+  color: var(--ui-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: .1px;
+}
+
+.skirt-host .field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin: 6px 0;
+  font-size: 11px;
+}
+
+.skirt-host .field>span {
+  color: var(--ui-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.skirt-host .row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.skirt-controls .field { margin: 6px 0; }
+.skirt-controls .field>span { color: var(--ui-muted); }
+.skirt-controls .row { align-items: flex-end; gap: 6px; }
+.skirt-controls .row .field { flex: 1 1 0; min-width: 0; }
+
+.skirt-controls .skirt-section-title {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-divider);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.skirt-section-title h2 { margin: 0; }
+.skirt-controls button { font-size: 10.5px; }
+
+.skirt-host .skirt-controls button,
+.skirt-host .skirt-controls select { color: var(--ui-text); }
+
+.skirt-controls button.active {
+  background: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+  border-color: transparent;
+  color: var(--ui-accent);
+}
+
+.skirt-controls select {
+  width: 100%;
+  background: var(--ui-raised);
+  border-color: var(--ui-border);
+}
+
+.skirt-range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.skirt-range input { min-width: 0; accent-color: var(--ui-accent); }
+
+.skirt-range input[type=range] {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* Narrow numeric field: spinners are hidden so three-digit values fit. */
+.skirt-range input[type=number] {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--ui-raised);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.skirt-range input[type=number]::-webkit-outer-spin-button,
+.skirt-range input[type=number]::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.skirt-range output {
+  flex: none;
+  min-width: 30px;
+  color: var(--ui-text-2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.skirt-range-ends {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 0;
+  color: var(--ui-faint);
+  font-size: 9.5px;
+  line-height: 1.3;
+}
+
+.skirt-band-list {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0;
+}
+
+.skirt-band-list button {
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  justify-content: flex-start;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border-left-width: 5px;
+  border-left-style: solid;
+  font-size: 10.5px;
+  font-weight: 400;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skirt-band-list button:hover:not(:disabled) { background: var(--ui-hover); }
+
+.skirt-band-list button.active {
+  background: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+  color: var(--ui-strong);
+}
+
+.skirt-host .muted {
+  margin: 6px 0;
+  color: var(--ui-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.skirt-hint {
+  margin: 4px 0 0;
+  color: var(--ui-faint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* Paper canvas and rectangular preview stage: surfaces, not cards. */
+
+.skirt-paper-panel,
+.skirt-preview-panel {
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.skirt-paper-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-right: 1px solid var(--ui-divider);
+}
+
+.skirt-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-border-strong) transparent;
+}
+
+.skirt-preview-panel::-webkit-scrollbar { width: 6px; }
+.skirt-preview-panel::-webkit-scrollbar-track { background: transparent; }
+.skirt-preview-panel::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ui-border-strong);
+  background-clip: padding-box;
+}
+
+.skirt-panel-title {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: .1px;
+}
+
+.skirt-panel-title>strong {
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.skirt-panel-title>span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-faint);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skirt-panel-title button { height: 22px; min-height: 22px; padding: 0 6px; font-size: 10px; }
+.skirt-panel-title>button:last-child { margin-left: auto; }
+
+/* Three canvas views: native document-tab shape with a colored top edge. */
+
+.skirt-views {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--ui-divider);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.skirt-views::-webkit-scrollbar { display: none; }
+
+.skirt-host .skirt-views button,
+.skirt-host .skirt-views .skirt-view-tab {
+  position: relative;
+  flex: none;
+  height: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-top: 3px solid color-mix(in srgb, var(--tab-color, var(--ui-accent)) 76%, transparent);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+/* Fallback colors when the studio does not set --tab-color inline. */
+.skirt-host .skirt-views> :nth-child(1) { --tab-color: var(--ui-accent); }
+.skirt-host .skirt-views> :nth-child(2) { --tab-color: var(--ui-accent-2); }
+.skirt-host .skirt-views> :nth-child(3) { --tab-color: var(--ui-accent-glow); }
+
+/* Keep the keyboard ring inside the scrolling tab strip. */
+.skirt-host .skirt-views button:focus-visible,
+.skirt-host .skirt-views .skirt-view-tab:focus-visible { outline-offset: -2px; }
+
+.skirt-host .skirt-views button:hover:not(:disabled),
+.skirt-host .skirt-views .skirt-view-tab:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tab-color, var(--ui-accent)) 8%, transparent);
+  border-top-color: var(--tab-color, var(--ui-accent));
+  color: var(--ui-text-2);
+}
+
+.skirt-host .skirt-views button.active,
+.skirt-host .skirt-views button[aria-selected="true"],
+.skirt-host .skirt-views .skirt-view-tab.active,
+.skirt-host .skirt-views .skirt-view-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--tab-color, var(--ui-accent)) 16%, var(--ui-panel));
+  border-top-color: var(--tab-color, var(--ui-accent));
+  border-bottom-color: transparent;
+  color: var(--ui-strong);
+  box-shadow: none;
+}
+
+.skirt-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+.skirt-tools button { height: 22px; min-height: 22px; padding: 0 6px; font-size: 10px; }
+.skirt-tools input[type=color] { flex: none; }
+.skirt-tools input[type=range] { flex: 1 1 64px; min-width: 52px; max-width: 112px; width: auto; }
+
+.skirt-canvas-wrap {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  container-type: size;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+/* Square canvas units: the painted sheet fits the smaller container axis. */
+.skirt-canvas-wrap canvas {
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  flex: none;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.skirt-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.skirt-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.skirt-stage canvas:active { cursor: grabbing; }
+
+.skirt-stage:has(canvas[data-avatar="loading"])::after,
+.skirt-live-preview:has(canvas[data-avatar="loading"])::after {
+  content: '载入小人…';
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.skirt-stage:has(canvas[data-avatar="error"])::after,
+.skirt-live-preview:has(canvas[data-avatar="error"])::after {
+  content: '角色载入失败，请重新打开预览';
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  color: var(--ui-accent-2);
+  font-size: 10px;
+}
+
+.skirt-action-tabs[hidden] { display: none; }
+
+.skirt-stage-label {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-faint);
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.skirt-preview-error {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 0;
+  border-left: 2px solid var(--ui-accent-2);
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--ui-accent-2) 8%, transparent);
+  color: var(--ui-accent-2);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.skirt-info {
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: 10.5px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.skirt-source {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: help;
+}
+
+.skirt-divider {
+  flex: none;
+  height: 1px;
+  margin: 1px 0;
+  background: var(--ui-divider);
+}
+
+.skirt-preview-panel h3 {
+  color: var(--ui-strong);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Tiny hover-only info affordance used beside compact control groups. */
+
+.skirt-host .skirt-help {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  min-height: 17px;
+  flex: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-faint);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: help;
+}
+
+.skirt-host .skirt-help:hover:not(:disabled) {
+  background: var(--ui-hover);
+  color: var(--ui-accent);
+}
+
+/* Pose actions and display/play controls stay compact and unboxed. */
+
+.skirt-action-tabs,
+.skirt-preview-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+.skirt-preview-tools { margin-left: auto; }
+
+.skirt-action-tabs button,
+.skirt-preview-tools button {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.skirt-action-tabs button.active,
+.skirt-action-tabs button[aria-pressed="true"],
+.skirt-preview-tools button.active,
+.skirt-preview-tools button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+  color: var(--ui-accent);
+}
+
+.skirt-action-tabs input[type=color],
+.skirt-preview-tools input[type=color] { flex: none; }
+
+.skirt-action-tabs input[type=range],
+.skirt-preview-tools input[type=range] {
+  flex: 1 1 64px;
+  min-width: 52px;
+  max-width: 112px;
+  width: auto;
+}
+
+/* Floating live preview on the drawing board. */
+
+.skirt-live-preview {
+  position: fixed;
+  right: 340px;
+  bottom: 40px;
+  z-index: 20;
+  width: 216px;
+  height: 258px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-panel) 92%, transparent);
+  color: var(--ui-text);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--ui-app) 28%, transparent);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.skirt-live-preview button {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 24px;
+  min-height: 24px;
+  justify-content: flex-start;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.skirt-live-preview button:hover {
+  background: var(--ui-hover);
+  border-color: transparent;
+  color: var(--ui-strong);
+}
+
+.skirt-live-preview button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.skirt-live-preview canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  touch-action: none;
+}
+
+.skirt-live-preview small {
+  flex: none;
+  padding: 0 4px 2px;
+  color: var(--ui-faint);
+  font-size: 9.5px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.skirt-live-preview p {
+  margin: 0;
+  padding: 3px 5px;
+  border-left: 2px solid var(--ui-accent-2);
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--ui-accent-2) 8%, transparent);
+  color: var(--ui-accent-2);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* Tablet 800 x 1000: 180px controls on the left, canvas and stage stacked right. */
+@media (max-width: 900px) {
+  .skirt-live-preview {
+    right: 12px;
+    bottom: 28px;
+    width: 168px;
+    height: 212px;
+  }
+
+  .skirt-native-toolbar { gap: 2px; padding: 2px 8px; }
+  .skirt-native-toolbar>span { display: none; }
+
+  .skirt-layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+    grid-template-rows: minmax(280px, 1.05fr) minmax(240px, .95fr);
+  }
+
+  .skirt-controls {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    padding: 8px 8px 12px;
+  }
+
+  .skirt-paper-panel {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-divider);
+  }
+
+  .skirt-preview-panel {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 8px 10px;
+  }
+
+  .skirt-stage { min-height: 180px; }
+  .skirt-heading { gap: 8px; padding: 0 10px; }
+  .skirt-heading h1 { font-size: 12.5px; }
+  .skirt-heading button { padding: 0 6px; }
+}
+
+/* Narrow screens: reflow instead of clipping the controls. */
+@media (max-width: 640px) {
+  .skirt-host { overflow-y: auto; }
+  .skirt-native-content { overflow: visible; }
+  .skirt-studio { height: auto; min-height: 100%; }
+  .skirt-heading {
+    height: auto;
+    min-height: 46px;
+    flex-wrap: wrap;
+    padding: 7px 10px;
+  }
+  .skirt-heading h1 { white-space: normal; }
+  .skirt-layout {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+  .skirt-controls {
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-divider);
+    overflow: visible;
+  }
+  .skirt-paper-panel {
+    min-height: 420px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .skirt-canvas-wrap { min-height: 280px; aspect-ratio: 1; }
+  .skirt-preview-panel { min-height: 420px; overflow: visible; }
+  .skirt-live-preview {
+    right: 10px;
+    bottom: 26px;
+    width: 156px;
+    height: 198px;
+  }
+}

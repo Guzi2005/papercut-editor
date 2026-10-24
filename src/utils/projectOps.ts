@@ -13,6 +13,7 @@ import { validateColorSchemes } from './palettes';
 import { getLayerEffectiveState, normalizeDrawingGroups } from './drawingGroups';
 import { parseVectorPath } from './vectorPath';
 import {normalizeSymmetry} from './symmetry';
+import {parseDesign as parseSkirtDesign} from '../pleatedSkirt/model';
 
 export { getLayerEffectiveState, findDrawingGroupOfLayer } from './drawingGroups';
 
@@ -133,6 +134,9 @@ export function computeDepthTable(project: PapercutProject): {
 
 /** Drops dangling references and fills defaults for projects authored before items existed. */
 export function normalizeProject(p: PapercutProject, recoverMetadata = false): PapercutProject {
+  // Keep unknown/corrupt garment metadata recoverable, but do not let it silently
+  // enter a new import or an export as if it were a valid garment design.
+  if(p.pleatedSkirt!==undefined){try{parseSkirtDesign(p.pleatedSkirt);}catch(error){if(!recoverMetadata)throw error;}}
   let colorSchemes = p.colorSchemes;
   if(colorSchemes!==undefined){
     try{colorSchemes=validateColorSchemes(colorSchemes);}catch(error){

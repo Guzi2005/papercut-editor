@@ -379,7 +379,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   const heldPanCode = useRef<string | null>(null);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within, [data-skirt-workbench]')) return;
       if (
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA'
@@ -415,7 +415,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     const onKey = (e: KeyboardEvent) => {
       if(e.defaultPrevented || (e.target as Element|null)?.closest('[data-layers-panel]'))return;
       if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"],[data-property-control]'))return;
-      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within, [data-skirt-workbench]')) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (selectedLayerIds.length === 0 && !blockMode) return;
@@ -1624,7 +1624,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if((e.target as Element|null)?.closest('input,textarea,select,[contenteditable="true"],[role="spinbutton"],[data-property-control]'))return;
-      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within')) return;
+      if (document.querySelector('dialog[open], [data-stamp-workbench]:focus-within, [data-skirt-workbench]')) return;
       if (pendingRef.current.length === 0) return;
       if (e.key === 'Enter') {
         e.preventDefault();
