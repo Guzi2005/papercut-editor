@@ -1,0 +1,60 @@
+import type {MeshData} from './geometry';
+import type {DrapeValues} from './drape';
+/** Deterministic, waist-pinned length constraints for the preview surface.
+ * Each longitudinal material edge keeps its reference arc length. Fine pleat
+ * relaxation provides an art-directed opening control.
+ * This is a geometric drape model, not a collision or sewing simulation. */
+export class DrapeConstraint {
+ private width:number;private rows:number;private shell:number;private rest:Float32Array;
+ private warp:Float32Array;private thickness:Float32Array;
+ constructor(mesh:MeshData,rest:Float32Array){
+  this.width=1;while(this.width<mesh.uvs.length/2&&mesh.uvs[this.width*2+1]===mesh.uvs[1])this.width++;
+  this.rows=24;this.shell=this.width*(this.rows+1);this.rest=rest.slice();this.warp=new Float32Array(this.shell);this.thickness=new Float32Array(this.shell);
+  for(let j=0;j<=this.rows;j++)for(let i=0;i<this.width;i++){const at=j*this.width+i;if(j)this.warp[at]=this.distance(rest,at,at-this.width);this.thickness[at]=this.distance(rest,at,at+this.shell);}
+ }
+ private distance(p:Float32Array,a:number,b:number){return Math.hypot(p[a*3]-p[b*3],p[a*3+1]-p[b*3+1],p[a*3+2]-p[b*3+2]);}
+ apply(p:Float32Array,n:Float32Array,d:DrapeValues,amount:number,action:string='stand'){
+  if(amount<=0)return;const w=this.width,cols=w-1,rows=this.rows;
+  // The legacy corrective cage expands radial offsets around bent knees.
+  // Use a monotone garment envelope for seated/lying poses instead, then
+  // enforce material lengths below. The cage still owns the waist attachment.
+  const source=p.slice(0,this.shell*3),blend=amount*amount*(3-2*amount);
+  for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
+   const v=row/rows,at=(row*w+col)*3;
+   if(action==='sit'||action==='lie'){
+    const rx=this.rest[at],ry=this.rest[at+1],rz=this.rest[at+2];
+    const target=action==='sit'
+     ? [rx,ry+.40*v,rz*(1-.30*v)+.58*v]
+     : [-1.31+(1.31-ry),rx*(1-.75*v)-.10*v,rz*(1-.40*v)+.24*v];
+    for(let k=0;k<3;k++)p[at+k]=source[at+k]*(1-blend)+target[k]*blend;
+   }
+  }
+  const envelope=p.slice(0,this.shell*3);
+  for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
+   const v=row/rows,at=(row*w+col)*3,lo=(row*w+(col+cols-4)%cols)*3,hi=(row*w+(col+4)%cols)*3;
+   const open=d.opening*amount*v*.65;
+   for(let k=0;k<3;k++)p[at+k]=envelope[at+k]*(1-open)+(envelope[lo+k]+envelope[hi+k])*.5*open;
+   p[at+1]-=d.weight*(1-d.bending*.75)*amount*v*v*.22;
+  }
+  // Reconstruct each material column from the target tangent field, starting
+  // at the waist. Using target derivatives avoids accumulating a catch-up kink
+  // when a bent pose's absolute target is farther away than the cloth allows.
+  const target=p.slice(0,this.shell*3);
+  for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
+   const a=(row-1)*w+col,b=row*w+col,ai=a*3,bi=b*3;
+   let dx=target[bi]-target[ai],dy=target[bi+1]-target[ai+1],dz=target[bi+2]-target[ai+2],len=Math.hypot(dx,dy,dz);
+   if(len<1e-8){dx=this.rest[bi]-this.rest[ai];dy=this.rest[bi+1]-this.rest[ai+1];dz=this.rest[bi+2]-this.rest[ai+2];len=Math.hypot(dx,dy,dz);}
+   const t=this.warp[b]/len;p[bi]=p[ai]+dx*t;p[bi+1]=p[ai+1]+dy*t;p[bi+2]=p[ai+2]+dz*t;
+  }
+  for(let row=0;row<=rows;row++){const first=row*w*3,last=(row*w+cols)*3;for(let k=0;k<3;k++)p[last+k]=p[first+k];}
+  for(let row=0;row<=rows;row++)for(let col=0;col<w;col++){
+   const c=col%cols,at=(row*w+col)*3,left=(row*w+(c+cols-1)%cols)*3,right=(row*w+(c+1)%cols)*3,up=(Math.max(0,row-1)*w+c)*3,down=(Math.min(rows,row+1)*w+c)*3;
+   const ax=p[right]-p[left],ay=p[right+1]-p[left+1],az=p[right+2]-p[left+2],bx=p[down]-p[up],by=p[down+1]-p[up+1],bz=p[down+2]-p[up+2];let nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;const len=Math.hypot(nx,ny,nz)||1;nx/=len;ny/=len;nz/=len;n.set([nx,ny,nz],at);
+   const inner=at+this.shell*3,t=this.thickness[row*w+col];p.set([p[at]-nx*t,p[at+1]-ny*t,p[at+2]-nz*t],inner);n.set([-nx,-ny,-nz],inner);
+  }
+  for(const [rim,row] of [[0,0],[1,rows]])for(let col=0;col<w;col++)for(let side=0;side<2;side++){
+   const to=(this.shell*2+rim*w*2+col*2+side)*3,from=(side*this.shell+row*w+col)*3;p.set(p.subarray(from,from+3),to);
+  }
+ }
+ maxWarpError(p:Float32Array){let error=0;for(let row=1;row<=this.rows;row++)for(let col=0;col<this.width-1;col++){const at=row*this.width+col;error=Math.max(error,Math.abs(this.distance(p,at,at-this.width)/this.warp[at]-1));}return error;}
+}

@@ -1,3 +1,4 @@
+import {AssetCreationDialog} from './components/AssetCreationDialog';
 import {attachLiveStampStroke,detachChangedLiveStamps,regenerateLiveStampLayer,expandLiveStampStroke,type LiveStampStroke} from './utils/liveStamps';
 import {createWardrobeTemplate} from './utils/wardrobe';
 import {definitionForMode,type MaterialTab,type MotifMode} from './utils/materialLibrary';
@@ -152,6 +153,7 @@ export default function App() {
   const [stampSettings,setStampSettings]=useState<StampSettings>(DEFAULT_STAMP_SETTINGS);
   const [stampOpen,setStampOpen]=useState(false);
   const [skirtOpen,setSkirtOpen]=useState(false);
+  const [assetMode,setAssetMode]=useState(false),[assetChooser,setAssetChooser]=useState(false);
   const materialDrafts=useRef(new Map<string,{definition:StampDefinition;source:string|undefined}>());
   const [stampEdit,setStampEdit]=useState<{docId:string;returnId:string;definition:StampDefinition}|null>(null);
   const [stampEditMessage,setStampEditMessage]=useState('');
@@ -543,7 +545,7 @@ export default function App() {
     setIsNewCanvasOpen(false);
   };
 
-  const openSkirt=()=>{if(!project.pleatedSkirt)openProjectAsDocument(createSkirtProject());setSkirtOpen(true);};
+  const openSkirt=()=>{setAssetMode(true);if(!project.pleatedSkirt)openProjectAsDocument(createSkirtProject());setSkirtOpen(true);};
   const updateSkirt=(value:SkirtDesign)=>{const d=parseSkirtDesign(value);if(project.pleatedSkirt?.design_id!==d.design_id){openProjectAsDocument(createSkirtProject(d));return;}pushHistory({...project,pleatedSkirt:d});};
   const paintSkirt=()=>{
     if(project.pleatedSkirt){const t=document.createElement('canvas');t.width=t.height=1024;paintSkirtTexture(t,project.pleatedSkirt);const next=withSkirtGuide(project,t.toDataURL('image/png'));if(next!==project)pushHistory(next);}
@@ -1509,8 +1511,8 @@ export default function App() {
         </div>
       )}
       <TopBar
-        onOpenSkirt={openSkirt}
-        skirtReady={hydrated}
+        onOpenAssets={()=>setAssetChooser(true)} assetMode={assetMode} onAssetModeChange={enabled=>{setAssetMode(enabled);if(!enabled){setSkirtOpen(false);setAssetChooser(false);}else if(project.pleatedSkirt){setSkirtOpen(true);}else{setAssetChooser(true);}}}
+        assetsReady={hydrated}
         workspaceModesEnabled={workspaceModesEnabled}
         onWorkspaceModesEnabledChange={changeWorkspaceModesEnabled}
         documents={documentTabItems}
@@ -1561,8 +1563,9 @@ export default function App() {
         onQuickDownloadPng={handleQuickDownloadPng}
       />
 
-      {skirtOpen&&project.pleatedSkirt&&<PleatedSkirtWorkbench key={activeDocId} project={project} onDesign={updateSkirt} onPaint={paintSkirt} onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo}/>}
-      {!skirtOpen&&project.pleatedSkirt&&<PleatedSkirtLivePreview key={activeDocId} project={project} onOpen={openSkirt}/>}
+      <AssetCreationDialog open={assetChooser} onClose={()=>setAssetChooser(false)} onCreateSkirt={()=>{openProjectAsDocument(createSkirtProject());setSkirtOpen(true);setAssetMode(true);}} onUseCanvas={()=>{setSkirtOpen(false);setAssetMode(true);}}/>
+      {assetMode&&skirtOpen&&project.pleatedSkirt&&<PleatedSkirtWorkbench key={activeDocId} project={project} onDesign={updateSkirt} onPaint={paintSkirt} onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo}/>}
+      {assetMode&&!skirtOpen&&project.pleatedSkirt&&<PleatedSkirtLivePreview key={activeDocId} project={project} onOpen={openSkirt}/>}
 
       {liveStampPath&&<div className="flex gap-4 items-center px-3 py-1 border-b border-(--ui-border) text-xs">纹样路径 · 拖节点，双击线加点，Alt 点节点删除<button onClick={()=>setLiveStampPath(null)}>结束路径调整</button></div>}
       <ToolOptions

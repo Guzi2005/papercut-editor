@@ -52,6 +52,7 @@ import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
 import { InlineName } from './InlineName';
 import { SaveSettingsPanel } from './SaveSettingsPanel';
+import { AssetModeEntry } from './AssetModeEntry';
 import { SaveSettings, SaveStatus, describeSaveSettings } from '../utils/saveSettings';
 import { ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../utils/zoom';
 import { isSoundMuted, toggleSound, playCrispClick } from '../utils/soundEffects';
@@ -111,8 +112,10 @@ export interface DocumentTabItem {
 }
 
 interface TopBarProps {
-  onOpenSkirt?: () => void;
-  skirtReady?: boolean;
+  onOpenAssets?: () => void;
+  assetsReady?: boolean;
+  assetMode?: boolean;
+  onAssetModeChange?: (enabled: boolean) => void;
   workspaceModesEnabled?: boolean;
   onWorkspaceModesEnabledChange?: (enabled: boolean) => void;
   documents: DocumentTabItem[];
@@ -161,8 +164,10 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
-  onOpenSkirt,
-  skirtReady=true,
+  onOpenAssets,
+  assetsReady = true,
+  assetMode = false,
+  onAssetModeChange,
   workspaceModesEnabled = false,
   onWorkspaceModesEnabledChange,
   documents,
@@ -284,11 +289,13 @@ export const TopBar: React.FC<TopBarProps> = ({
     <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-40 shrink-0 px-2 sm:px-4 gap-2">
       {/* 1. Left: Brand Icon + 文件 / 设置 (皮肤选择) Menu Tabs */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {onOpenSkirt&&<button onClick={onOpenSkirt} disabled={!skirtReady} aria-label="百褶裙工作台" className="h-7 px-2 rounded-lg text-xs bg-(--ui-raised) text-(--ui-text-2) hover:bg-(--ui-hover) disabled:opacity-40" data-tip="百褶裙：模板画布与实时三维预览">百褶裙</button>}
         <div className="flex items-center gap-1.5 pr-2 border-r border-(--ui-divider)">
-          <div className="w-6 h-6 rounded-lg bg-(--ui-accent) flex items-center justify-center text-white text-[12px] font-bold" data-tip="Weave 剪纸工坊">
-            ❖
-          </div>
+          <AssetModeEntry
+            onOpenAssets={onOpenAssets}
+            assetsReady={assetsReady}
+            assetMode={assetMode}
+            onAssetModeChange={onAssetModeChange}
+          />
           <button
             onClick={onSaveNow}
             aria-label="立即保存工作区"

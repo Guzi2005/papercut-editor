@@ -1,3 +1,6 @@
+import {loadBench,type BenchMesh} from './bench';
+import {effectiveDrape} from './drape';
+import {DrapeConstraint} from './drapeConstraint';
 import {buildMesh,type MeshData} from './geometry';
 import type {SkirtDesign} from './model';
 import {loadAvatar,GarmentBinding,sampleClip,type AvatarAsset,type PreviewAction} from './avatar';
@@ -17,24 +20,27 @@ void main(){
 const fragment=`#version 300 es
 precision highp float;
 in vec3 n;in vec2 tex;in vec3 tint;
-uniform sampler2D cloth;uniform float roughness,grain,useTexture;
+uniform sampler2D cloth;uniform float roughness,grain,useTexture,opacity,coverCut;
 out vec4 outColor;
 void main(){
+ if(useTexture<.5&&tex.x>.5&&tex.y>coverCut)discard;
  vec3 N=normalize(n),L=normalize(vec3(-.5,.8,1.2));
  float light=.58+.42*max(0.,dot(N,L));
  float threads=sin(tex.x*2600.)*sin(tex.y*2100.);
  float sheen=pow(max(0.,dot(reflect(-L,N),vec3(0,0,1))),35.)*(1.-roughness)*.25;
  vec3 rgb=mix(tint,texture(cloth,tex).rgb,useTexture)*(light+grain*threads*useTexture)+sheen*useTexture;
- outColor=vec4(rgb,1.);
+ outColor=vec4(rgb,opacity);
 }`;
 interface GPU {vao:WebGLVertexArrayObject;buffers:WebGLBuffer[];count:number}
 export class SkirtPreview {
  private gl:WebGL2RenderingContext;private program:WebGLProgram;private texture:WebGLTexture;
  private garment?:GPU;private body?:GPU;private mesh?:MeshData;private binding?:GarmentBinding;private avatar?:AvatarAsset;
  private bodyPositions=new Float32Array();private bodyNormals=new Float32Array();private cage=new Float32Array();
+ private bench?:GPU;private benchData?:BenchMesh;private constraint?:DrapeConstraint;private design?:SkirtDesign;
  private key='';private length=88;private action:PreviewAction='stand';private worn=true;private playing=true;private progress=0;private elapsed=0;private raf=0;private last=0;
- private yaw=.3;private pitch=.07;private zoom=1;private observer:ResizeObserver;private events=new AbortController();private disposed=false;
- private drag?:{id:number;x:number;y:number};
+ private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private observer:ResizeObserver;private events=new AbortController();private disposed=false;
+ private drag?:{id:number;x:number;y:number;button:number};
+ private benchSit?:BenchMesh;private benchLie?:BenchMesh;
  onProgress?:(progress:number,playing:boolean)=>void;
  constructor(private canvas:HTMLCanvasElement){
   const gl=canvas.getContext('webgl2',{antialias:true,alpha:true,preserveDrawingBuffer:true});if(!gl)throw Error('当前浏览器没有启用 WebGL 2');this.gl=gl;
@@ -42,13 +48,14 @@ export class SkirtPreview {
   this.program=gl.createProgram()!;const vs=shader(gl.VERTEX_SHADER,vertex),fs=shader(gl.FRAGMENT_SHADER,fragment);gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error('3D 预览初始化失败');
   this.texture=gl.createTexture()!;gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   this.observer=new ResizeObserver(()=>this.draw());this.observer.observe(canvas);const signal=this.events.signal;
-  canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);},{signal});
-  canvas.addEventListener('pointermove',e=>{if(!this.drag||this.drag.id!==e.pointerId)return;this.yaw+=(e.clientX-this.drag.x)*.009;this.pitch=Math.max(-1.25,Math.min(1.25,this.pitch+(e.clientY-this.drag.y)*.008));this.drag={id:e.pointerId,x:e.clientX,y:e.clientY};this.draw();},{signal});
+  canvas.addEventListener('pointerdown',e=>{if(![0,1,2].includes(e.button))return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:e.button};canvas.setPointerCapture(e.pointerId);},{signal});
+  canvas.addEventListener('pointermove',e=>{if(!this.drag||this.drag.id!==e.pointerId)return;const dx=e.clientX-this.drag.x,dy=e.clientY-this.drag.y;if(this.drag.button===1){this.panX+=dx*.003*this.zoom;this.panY-=dy*.003*this.zoom;}else{this.yaw+=dx*.009;this.pitch=Math.max(-1.25,Math.min(1.25,this.pitch+dy*.008));}this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:this.drag.button};this.draw();},{signal});
   for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,()=>{this.drag=undefined;},{signal});
+  canvas.addEventListener('contextmenu',e=>e.preventDefault(),{signal});
   canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.3,Math.min(3,this.zoom*Math.exp(e.deltaY*.001)));this.draw();},{passive:false,signal});
   document.addEventListener('visibilitychange',()=>{this.last=0;if(document.hidden){cancelAnimationFrame(this.raf);this.raf=0;}else this.schedule();},{signal});
   canvas.dataset.avatar='loading';
-  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);this.body=this.upload(this.bodyPositions,this.bodyNormals,new Float32Array(m.vertexCount*2),new Float32Array(m.colors),new Uint32Array(m.indices));if(this.mesh)this.binding=new GarmentBinding(this.mesh,m.cage,this.length);canvas.dataset.avatar='ready';this.pose();this.draw();this.schedule();}).catch(error=>{if(this.disposed)return;canvas.dataset.avatar='error';canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
+  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);const bodyUV=new Float32Array(m.vertexCount*2);for(const part of m.parts){if(!['PreviewThigh','Calf','FlatSole','ShoeUpper'].includes(part.name))continue;for(let i=part.vertexOffset;i<part.vertexOffset+part.vertexCount;i++){bodyUV[i*2]=1;bodyUV[i*2+1]=asset.data[m.actions.stand.frames[0].offset+i*3+1];}}this.body=this.upload(this.bodyPositions,this.bodyNormals,bodyUV,new Float32Array(m.colors),new Uint32Array(m.indices));this.bindGarment();canvas.dataset.avatar='ready';this.pose();this.draw();this.schedule();}).catch(error=>{if(this.disposed)return;canvas.dataset.avatar='error';canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
  }
  private upload(positions:Float32Array,normals:Float32Array,uvs:Float32Array,colors:Float32Array,indices:Uint32Array):GPU{
   const gl=this.gl,gpu:GPU={vao:gl.createVertexArray()!,buffers:[],count:indices.length};gl.bindVertexArray(gpu.vao);
@@ -58,36 +65,47 @@ export class SkirtPreview {
  private release(gpu?:GPU){if(gpu){gpu.buffers.forEach(b=>this.gl.deleteBuffer(b));this.gl.deleteVertexArray(gpu.vao);}}
  private updateVertices(gpu:GPU,p:Float32Array,n:Float32Array){const gl=this.gl;for(const [i,data] of [p,n].entries()){gl.bindBuffer(gl.ARRAY_BUFFER,gpu.buffers[i]);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);}}
  update(d:SkirtDesign,texture:HTMLCanvasElement){
-  const gl=this.gl,p=d.parameters,key=JSON.stringify(p);this.length=p.length_cm;
-  if(key!==this.key){this.key=key;this.mesh=buildMesh(p);this.release(this.garment);this.garment=this.upload(this.mesh.positions,this.mesh.normals,this.mesh.uvs,new Float32Array(this.mesh.positions.length),this.mesh.indices);if(this.avatar)this.binding=new GarmentBinding(this.mesh,this.avatar.manifest.cage,this.length);this.pose();}
+  const gl=this.gl,p=d.parameters,key=JSON.stringify([p,d.drape]);this.length=p.length_cm;this.design=d;
+  if(key!==this.key){this.key=key;this.mesh=buildMesh(p);this.release(this.garment);this.garment=this.upload(this.mesh.positions,this.mesh.normals,this.mesh.uvs,new Float32Array(this.mesh.positions.length),this.mesh.indices);this.bindGarment();this.pose();}
   gl.useProgram(this.program);gl.uniform1f(gl.getUniformLocation(this.program,'roughness'),{cotton:.86,linen:.95,silk:.32,wool:1}[p.fabric]);gl.uniform1f(gl.getUniformLocation(this.program,'grain'),{cotton:.012,linen:.032,silk:.006,wool:.04}[p.fabric]);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,texture);this.draw();
  }
- setAction(action:PreviewAction){this.action=action;this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();}
+ private bindGarment(){if(!this.mesh||!this.avatar)return;this.binding=new GarmentBinding(this.mesh,this.avatar.manifest.cage,this.length);this.binding.deform(new Float32Array(this.avatar.manifest.cage.restPositions));this.constraint=new DrapeConstraint(this.mesh,this.binding.positions);}
+ setAction(action:PreviewAction){this.action=action;this.release(this.bench);this.bench=undefined;this.benchData=undefined;this.benchSit=undefined;this.benchLie=undefined;if(action==='sit'||action==='lie'){const load=action==='lie'?Promise.all([loadBench(false),loadBench(true)]):loadBench(false).then(b=>[b]);void load.then(([sit,lie])=>{if(this.disposed||this.action!==action)return;this.benchSit=sit;this.benchLie=lie??sit;this.benchData={...sit,positions:sit.positions.slice()};this.bench=this.upload(this.benchData.positions,this.benchData.normals,this.benchData.uvs,this.benchData.colors,this.benchData.indices);this.pose();this.draw();}).catch(error=>this.canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true})));}this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();}
  setWorn(worn:boolean){this.worn=worn;this.pose();this.draw();this.schedule();}
  setPlaying(playing:boolean){this.playing=playing;this.last=0;this.onProgress?.(this.progress,playing);if(!playing){cancelAnimationFrame(this.raf);this.raf=0;}this.schedule();}
  setProgress(progress:number){this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*1.2;this.setPlaying(false);this.pose();this.draw();}
  private pose(){
   if(!this.mesh||!this.garment)return;
   if(!this.worn||!this.avatar||!this.binding||!this.body){this.updateVertices(this.garment,this.mesh.positions,this.mesh.normals);return;}
-  const {manifest:m,data}=this.avatar,{a,b,mix}=sampleClip(m.actions[this.action],this.progress,this.action==='walk'),n=m.vertexCount*3;
-  for(let i=0;i<n;i++){this.bodyPositions[i]=data[a.offset+i]*(1-mix)+data[b.offset+i]*mix;this.bodyNormals[i]=data[a.offset+n+i]*(1-mix)+data[b.offset+n+i]*mix;}
-  for(let i=0;i<this.cage.length;i++)this.cage[i]=data[a.offset+n*2+i]*(1-mix)+data[b.offset+n*2+i]*mix;
-  this.binding.deform(this.cage);this.updateVertices(this.body,this.bodyPositions,this.bodyNormals);this.updateVertices(this.garment,this.binding.positions,this.binding.normals);
+  const {manifest:m,data}=this.avatar,n=m.vertexCount*3;
+  const sample=(action:PreviewAction,progress:number,index:number)=>{const clip=m.actions[action],s=sampleClip(clip,progress,action==='walk');return data[s.a.offset+index]*(1-s.mix)+data[s.b.offset+index]*s.mix;};
+  let fromAction:PreviewAction=this.action,toAction:PreviewAction=this.action,fromProgress=this.progress,toProgress=this.progress,mix=0;
+  if(this.action==='lie'){
+   if(this.progress<.4){fromAction='stand';fromProgress=0;toAction='sit';toProgress=1;mix=this.progress/.4;}
+   else if(this.progress<.55){fromAction='sit';fromProgress=1;toAction='sit';toProgress=1;mix=0;}
+   else{fromAction='sit';fromProgress=1;toAction='lie';toProgress=1;mix=(this.progress-.55)/.45;}
+  }
+  for(let i=0;i<n;i++){this.bodyPositions[i]=sample(fromAction,fromProgress,i)*(1-mix)+sample(toAction,toProgress,i)*mix;this.bodyNormals[i]=sample(fromAction,fromProgress,n+i)*(1-mix)+sample(toAction,toProgress,n+i)*mix;}
+  for(let i=0;i<this.cage.length;i++){const at=n*2+i;this.cage[i]=sample(fromAction,fromProgress,at)*(1-mix)+sample(toAction,toProgress,at)*mix;}
+  if(this.bench&&this.benchSit&&this.benchLie&&this.benchData){const benchMix=this.action==='lie'?Math.max(0,Math.min(1,(this.progress-.55)/.45)):0;for(let i=0;i<this.benchData.positions.length;i++)this.benchData.positions[i]=this.benchSit.positions[i]*(1-benchMix)+this.benchLie.positions[i]*benchMix;this.updateVertices(this.bench,this.benchData.positions,this.benchData.normals);}
+  this.binding.deform(this.cage);if(this.design&&this.constraint){this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),this.action==='stand'?.15:this.action==='walk'?.35:this.progress,this.action);this.canvas.dataset.warpError=this.constraint.maxWarpError(this.binding.positions).toFixed(6);}this.updateVertices(this.body,this.bodyPositions,this.bodyNormals);this.updateVertices(this.garment,this.binding.positions,this.binding.normals);
   this.canvas.dataset.progress=this.progress.toFixed(3);this.onProgress?.(this.progress,this.playing);
  }
  private schedule(){if(this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
- reset(){this.yaw=.3;this.pitch=.07;this.zoom=1;this.draw();}
+ reset(){this.yaw=.3;this.pitch=.07;this.zoom=1;this.panX=0;this.panY=0;this.draw();}
  draw(){
   if(this.disposed||!this.mesh||!this.garment)return;const gl=this.gl,r=this.canvas.getBoundingClientRect();if(!r.width||!r.height)return;
   const scale=Math.min(devicePixelRatio,2),w=Math.round(r.width*scale),h=Math.round(r.height*scale);if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);
   const dressed=this.worn&&this.avatar&&this.binding&&this.body;
-  const arrays=dressed?[this.bodyPositions,this.binding!.positions]:[this.mesh.positions];const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+  const arrays=dressed?[this.bodyPositions,this.binding!.positions,...(this.benchData?[this.benchData.positions]:[])]:[this.mesh.positions];const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
   for(const data of arrays)for(let i=0;i<data.length;i+=3)for(let j=0;j<3;j++){min[j]=Math.min(min[j],data[i+j]);max[j]=Math.max(max[j],data[i+j]);}
-  const center=min.map((v,i)=>(v+max[i])/2),radius=Math.max(.1,Math.hypot(...max.map((v,i)=>(v-min[i])/2))),aspect=w/h;
+  const center=min.map((v,i)=>(v+max[i])/2);center[0]-=this.panX;center[1]-=this.panY;const radius=Math.max(.1,Math.hypot(...max.map((v,i)=>(v-min[i])/2))),aspect=w/h;
   const distance=radius*Math.sqrt(1+(2.9/Math.min(1,aspect))**2)*1.03*this.zoom;
   for(const [name,value] of Object.entries({yaw:this.yaw,pitch:this.pitch,distance,aspect}))gl.uniform1f(gl.getUniformLocation(this.program,name),value);gl.uniform3fv(gl.getUniformLocation(this.program,'center'),center);gl.bindTexture(gl.TEXTURE_2D,this.texture);
+  gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),1);gl.uniform1f(gl.getUniformLocation(this.program,'coverCut'),1.31-this.length/100*(1.11/.88)+.025-(this.action==='lie'?this.progress*.25:0));
   if(dressed){gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.bindVertexArray(this.body!.vao);gl.drawElements(gl.TRIANGLES,this.body!.count,gl.UNSIGNED_INT,0);}
   gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),1);gl.bindVertexArray(this.garment.vao);gl.drawElements(gl.TRIANGLES,this.garment.count,gl.UNSIGNED_INT,0);
+  if(dressed&&this.bench){const alpha=Math.cos(this.yaw)<.2||this.pitch<-.25?.22:1;gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),alpha);this.canvas.dataset.benchOpacity=String(alpha);gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.bindVertexArray(this.bench.vao);gl.drawElements(gl.TRIANGLES,this.bench.count,gl.UNSIGNED_INT,0);gl.depthMask(true);gl.disable(gl.BLEND);}this.canvas.dataset.bench=String(Boolean(dressed&&this.bench));
  }
- dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.events.abort();this.observer.disconnect();this.release(this.garment);this.release(this.body);this.gl.deleteTexture(this.texture);this.gl.deleteProgram(this.program);}
+ dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.events.abort();this.observer.disconnect();this.release(this.garment);this.release(this.body);this.release(this.bench);this.gl.deleteTexture(this.texture);this.gl.deleteProgram(this.program);}
 }

@@ -1,26 +1,29 @@
 # 百褶裙工作台
 
-本功能接入 `D:/CodexWorkspace/papercut-editor`（织游角色、波兰剪纸所在画板）。`weave-and-wander/asset-workbench` 是旧“片语”实验品，不是后续主入口。
+正式入口在 `D:/CodexWorkspace/papercut-editor`（织游角色、波兰剪纸所在画板）。旧“片语”实验品保留作参考。
 
-1. 顶栏点 **百褶裙**。在普通作品中点击会新开裙子原稿，原作品保留在标签页。
-2. **裙长** 40–120 cm、**裙摆大小** 100–360 cm（下摆外轮廓周长）独立调节，支持滑条和数值输入。另可调腰围、褶数、褶深、锋利程度、布厚和布料。摩梭、彝族、蜡染照片仅作为可编辑参考起点，来源随设计保存。
-3. 梯形、半圆环、圆环共享同一份 UV 笔迹。半圆环是同心圆、横纵等比例，没有透视或椭圆压缩。三种设计视图不是含缝份的裁缝纸样。
-4. **回到画板细绘** 使用原有图层、手绘、剪纸、图章和布料工具。方形 UV 上边是腰口，下边是裙摆；左右在后缝相接。底部裙子图仅作参考，真正笔迹保存在原生图层中。右下三维窗随原稿更新。
-5. **保存完整原稿** 输出 `.weave.json`，保留原生图层、Item 和裙子参数。浏览器保存和撤销复用原有文档机制。单独设计 JSON 只含裙子参数及工作台笔迹，不含画板原生图层。
-6. **导出 Godot 包** 输出 `skirt.json`、`skirt.png` 和三种 SVG 模板。JSON 与 PNG 放同一目录，游戏 `components/pleated_skirt.gd` 的 `load_design(path)` 载入。JSON 图案与原画板图层合成进 PNG，辅助褶线和参考图不导出。
+1. 点击左上角四菱形，切换到 **Weave & Wander 资产**。原槽位显示十字绣小人；菜单的 **新建资产** 打开可扩展的制作类型列表。已有裙子原稿会直接恢复工作台，新建裙子保留其他文档。
+2. 裙长 40–120 cm、腰围 50–110 cm、裙摆周长 100–360 cm；另可调褶数、褶深、锋利程度、布厚和布料。参考模板来自用户提供的照片，不代表某一族群服装的唯一标准。
+3. **平铺正反** 是成品裙子的正反两面，腰宽=腰围/2、下摆宽=裙摆周长/2，高度=裙长。默认同步新画的笔迹与拼色，可切为独立绘制；不追溯覆盖已有图案。后缝处的拼色会拆分，避免误涂到整圈裙面。
+4. **圆弧展开** 使用同心圆和横纵一致的厘米比例。圆弧角度、半径由腰围、裙摆和裙长共同决定，不再固定为半圆。等腰围/裙摆的筒裙使用矩形极限。**圆环俯视** 是裙子的顶视投影，腰/摆半径对应周长，不是把所有版型强行摊成完整圆裙。图纸不含缝份、褶内裁布余量，不是生产裁剪纸样。
+5. **回到画板细绘** 使用原生图层、手绘、剪纸、图章和布料工具。UV 上边是腰口，下边是裙摆，左右在后缝相接。右下三维窗随原稿更新。
+6. **保存完整原稿** 输出 `.weave.json`，保留原生图层、Item 和裙子参数。浏览器保存与撤销复用文档机制。单独设计 JSON 只含参数和工作台笔迹；Godot 包中的 PNG 合成原生图层。
 
-界面使用画板 `--ui-*` 主题变量，跟随四套原生主题。图纸 tab 带彩色顶边，支持方向键、Home、End；数字框宽 42px，说明收进悬停提示，画布和预览没有额外白底。二维展开图保持归一化比例便于绘图，实际裙长和裙摆尺寸在三维中表达。
+界面使用原生 `--ui-*` 主题、彩色图纸页签、42px 数字框；画布和预览无额外白底，辅助说明收进悬停提示。
 
-三维默认显示游戏小人穿着，可切换单裙，播放站立、行走、坐下、侧躺，暂停并拖动进度。角色和动作来自游戏 VolumeDoll 与现有骨架；试衣预览补齐被长裙省略的大腿，并把上衣收至腰线。这两项只在预览导出器中发生，不改游戏角色。
+三维默认穿在游戏 VolumeDoll 小人身上，可播放站立、行走、坐下、侧躺并暂停拖动。坐躺配套长椅直接导出 `components/rest_bench.gd` 的 85 个几何部件与基色（包括靠垫、坐垫和藤编篮），不是重画替代物。背后或低角度观察时椅子变半透明；游戏的纸面程序纹理不在 WebGL 预览中复刻。长椅按需读取约 5.9 MB 二进制数据。
 
-裙子通过游戏 LongSkirt 的变形笼适配动作，保留自己的褶子和纹样。它是姿态参考，尚无碰撞、重力布料或缝合求解。短窄裙坐下时仍有大腿穿插，超宽裙侧躺的自然垂坠需要继续校准。游戏运行时目前载入独立裙子，角色换装与商品链闭环是下一阶段。
+垂坠的三个调节量是下垂重量、抗弯挺度、褶子开放。面料、布厚、裙长、裙摆及褶子参数决定默认值；手动修改后固定，可恢复面料默认。保存的可选 `drape` 字段会完整通过编辑器/Godot 往返。
 
-预览资产：`public/pleated-avatar/manifest.json` 和 `frames.bin`，57 帧、45 个部件，按需加载约 16 MB。当前只有一套体型和发型；坐躺循环包含进入、停留、起身。重建命令在游戏工程运行：
+动作预览固定腰口，逐段保持拟合后每条纵向材料线的参考长度，配合褶形松弛与坐躺包络，避免用硬拉长来追随膝盖。裙内腿部按裙长及躺姿遮挡阈值裁去。它仍是几何姿态预览，尚无完整布料自碰撞、面内不可伸长约束或真实缝合求解；极端尺寸与体型仍需实机校准。Godot 当前保存垂坠设置，但独立裙子组件尚未接入同一套动态求解和角色换装。
+
+预览角色：`public/pleated-avatar/manifest.json` 和 `frames.bin`，57 帧、45 部件。长椅：`bench.json` 和 `bench.bin`。在游戏工程重建：
 
 ```powershell
 & D:/Godot/Godot_v4.7.1-stable_win64/Godot_v4.7.1-stable_win64_console.exe --headless --path . --script tools/export_skirt_preview_avatar.gd -- --output D:/CodexWorkspace/papercut-editor/public/pleated-avatar
+& D:/Godot/Godot_v4.7.1-stable_win64/Godot_v4.7.1-stable_win64_console.exe --headless --path . --script tools/export_preview_bench.gd -- --output D:/CodexWorkspace/papercut-editor/public/pleated-avatar
 ```
 
-启动：`npm run dev -- --host 127.0.0.1 --port 3119 --strictPort`。原有项目桥接启动器继续有效。
+启动：`npm run dev -- --host 127.0.0.1 --port 3119 --strictPort`。
 
-验证：`npm run lint`、`npm run build`、`npm test`（114 项通过）。游戏工程中 `tools/verify_papercut_skirt.mjs` 验证原生画板往返，`tools/verify_skirt_preview.mjs` 验证播放、键盘页签及八组极端姿态。截图在 `captures/pleated_editor/`。数值有限、页面无异常不等于服装没有穿插，仍需查看截图。
+验证：`npm run lint`、`npm run build`、`npm test`；游戏工程的 `tools/verify_papercut_skirt.mjs` 检查原生画板往返，`tools/verify_skirt_preview.mjs` 检查播放和极端姿态，`tools/verify_skirt_revision.mjs` 检查正反同步、模式切换、长椅及纵向长度约束。截图在游戏工程 `captures/pleated_editor/` 和 `captures/skirt_revision/`。最终验收需要看实际画面，数值有限不等于没有穿插。

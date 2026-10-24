@@ -5,6 +5,7 @@ export interface AvatarFrame {offset:number;bounds:{min:number[];max:number[]}}
 export interface AvatarClip {fps:number;frames:AvatarFrame[]}
 export interface AvatarManifest {
   version:number;vertexCount:number;frameStride:number;indices:number[];colors:number[];
+  parts:{name:string;vertexOffset:number;vertexCount:number}[];
   actions:Record<PreviewAction,AvatarClip>;
   cage:{vertexCount:number;columns:number;rowsY:number[];restPositions:number[]};
 }
