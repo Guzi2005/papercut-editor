@@ -1,3 +1,4 @@
+import {SkirtDimensionSettings} from './SkirtDimensionSettings';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -589,6 +590,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   ))}
                 </div>
               </div>
+              <div className="px-3 pt-1 pb-2" onPointerEnter={() => setSettingsFlyout(null)}><SkirtDimensionSettings /></div>
               <div className="h-px bg-(--ui-divider) my-1" />
               <div className="relative" onPointerEnter={(e) => e.pointerType === 'mouse' && setSettingsFlyout('twin')}>
                 <button
