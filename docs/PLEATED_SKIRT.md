@@ -27,3 +27,4 @@
 启动：`npm run dev -- --host 127.0.0.1 --port 3119 --strictPort`。
 
 验证：`npm run lint`、`npm run build`、`npm test`；游戏工程的 `tools/verify_papercut_skirt.mjs` 检查原生画板往返，`tools/verify_skirt_preview.mjs` 检查播放和极端姿态，`tools/verify_skirt_revision.mjs` 检查正反同步、模式切换、长椅及纵向长度约束。截图在游戏工程 `captures/pleated_editor/` 和 `captures/skirt_revision/`。最终验收需要看实际画面，数值有限不等于没有穿插。
+三维标题旁可切换 **材质预览 / 三渲二**，画板浮动预览也有同一切换。选择保存在本机浏览器预览偏好中，返回工作台或刷新后继续使用，不写入裙子 JSON 或导出纹样。三渲二移植游戏 `shaders/doll_volume.gdshader` 的光照方向、两级量化、0.94–1.0 淡明暗和 0.075 纸纹强度；纹理使用静止参考坐标与屏幕导数过滤，随动作贴附。此模式没有额外黑描边和镜面高光；长椅也采用同一预览纸感，未复刻 Godot 房间灯光、阴影及后处理。`node tools/verify-skirt-render-modes.mjs` 验证两模式像素差异、切回一致性、无白色截断、动作进度保留、浮动预览及偏好重载；Playwright 依赖可由 `PLAYWRIGHT_PACKAGE_JSON` 指向已有安装。

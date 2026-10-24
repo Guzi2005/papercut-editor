@@ -5,30 +5,45 @@ import {buildMesh,type MeshData} from './geometry';
 import type {SkirtDesign} from './model';
 import {loadAvatar,GarmentBinding,sampleClip,type AvatarAsset,type PreviewAction} from './avatar';
 export type {PreviewAction} from './avatar';
+export type PreviewRenderMode='material'|'toon';
+const MODE_KEY='pleated-skirt-preview-render-mode';
+export function readPreviewRenderMode():PreviewRenderMode{try{return localStorage.getItem(MODE_KEY)==='toon'?'toon':'material';}catch{return 'material';}}
 const vertex=`#version 300 es
 precision highp float;
-in vec3 position;in vec3 normal;in vec2 uv;in vec3 vertexColor;
+in vec3 paperPosition;in vec3 position;in vec3 normal;in vec2 uv;in vec3 vertexColor;
 uniform float yaw,pitch,distance,aspect;uniform vec3 center;
-out vec3 n;out vec2 tex;out vec3 tint;
+out vec3 n;out vec2 tex;out vec3 tint;out vec3 worldNormal;out vec3 paper;
 void main(){
  float cy=cos(yaw),sy=sin(yaw),cx=cos(pitch),sx=sin(pitch);
  mat3 ry=mat3(cy,0,-sy,0,1,0,sy,0,cy),rx=mat3(1,0,0,0,cx,sx,0,-sx,cx);
- vec3 p=rx*ry*(position-center);n=rx*ry*normal;tex=uv;tint=vertexColor;p.z-=distance;
+ worldNormal=normal;paper=paperPosition;vec3 p=rx*ry*(position-center);n=rx*ry*normal;tex=uv;tint=vertexColor;p.z-=distance;
  float f=2.9,near=.01,far=60.;
  gl_Position=vec4(p.x*f/aspect,p.y*f,((far+near)/(near-far))*p.z+(2.*far*near)/(near-far),-p.z);
 }`;
 const fragment=`#version 300 es
 precision highp float;
-in vec3 n;in vec2 tex;in vec3 tint;
-uniform sampler2D cloth;uniform float roughness,grain,useTexture,opacity,coverCut;
+in vec3 n;in vec2 tex;in vec3 tint;in vec3 worldNormal;in vec3 paper;
+uniform sampler2D cloth;uniform float roughness,grain,useTexture,opacity,coverCut,renderMode;
 out vec4 outColor;
 void main(){
  if(useTexture<.5&&tex.x>.5&&tex.y>coverCut)discard;
  vec3 N=normalize(n),L=normalize(vec3(-.5,.8,1.2));
- float light=.58+.42*max(0.,dot(N,L));
+ float diffuse=max(0.,dot(N,L));
+ float light=.58+.42*diffuse;
  float threads=sin(tex.x*2600.)*sin(tex.y*2100.);
  float sheen=pow(max(0.,dot(reflect(-L,N),vec3(0,0,1))),35.)*(1.-roughness)*.25;
- vec3 rgb=mix(tint,texture(cloth,tex).rgb,useTexture)*(light+grain*threads*useTexture)+sheen*useTexture;
+ vec3 base=mix(tint,texture(cloth,tex).rgb,useTexture);
+ vec3 rgb=base*(light+grain*threads*useTexture)+sheen*useTexture;
+ if(renderMode>.5){
+  // Port of shaders/doll_volume.gdshader: unlit pigment, two tone steps,
+  // 0.94 base light, 0.075 paper tooth, and derivative-filtered grain.
+  float gameLight=dot(normalize(worldNormal),normalize(vec3(-.55,.8,.65)));
+  float level=clamp((gameLight+.45)/1.4,0.,1.);
+  float stepped=floor(level*2.)/2.;
+  float fleck=fract(sin(dot(floor(paper*220.),vec3(17.13,91.17,43.71)))*43758.5453);
+  float fade=1.-smoothstep(.35,1.1,length(fwidth(paper*220.)));
+  rgb=base*(.94+.06*stepped)*(1.+(fleck-.5)*.075*fade);
+ }
  outColor=vec4(rgb,opacity);
 }`;
 interface GPU {vao:WebGLVertexArrayObject;buffers:WebGLBuffer[];count:number}
@@ -38,7 +53,7 @@ export class SkirtPreview {
  private bodyPositions=new Float32Array();private bodyNormals=new Float32Array();private cage=new Float32Array();
  private bench?:GPU;private benchData?:BenchMesh;private constraint?:DrapeConstraint;private design?:SkirtDesign;
  private key='';private length=88;private action:PreviewAction='stand';private worn=true;private playing=true;private progress=0;private elapsed=0;private raf=0;private last=0;
- private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private observer:ResizeObserver;private events=new AbortController();private disposed=false;
+ private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private renderMode:PreviewRenderMode=readPreviewRenderMode();private observer:ResizeObserver;private events=new AbortController();private disposed=false;
  private drag?:{id:number;x:number;y:number;button:number};
  private benchSit?:BenchMesh;private benchLie?:BenchMesh;
  onProgress?:(progress:number,playing:boolean)=>void;
@@ -55,11 +70,11 @@ export class SkirtPreview {
   canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.3,Math.min(3,this.zoom*Math.exp(e.deltaY*.001)));this.draw();},{passive:false,signal});
   document.addEventListener('visibilitychange',()=>{this.last=0;if(document.hidden){cancelAnimationFrame(this.raf);this.raf=0;}else this.schedule();},{signal});
   canvas.dataset.avatar='loading';
-  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);const bodyUV=new Float32Array(m.vertexCount*2);for(const part of m.parts){if(!['PreviewThigh','Calf','FlatSole','ShoeUpper'].includes(part.name))continue;for(let i=part.vertexOffset;i<part.vertexOffset+part.vertexCount;i++){bodyUV[i*2]=1;bodyUV[i*2+1]=asset.data[m.actions.stand.frames[0].offset+i*3+1];}}this.body=this.upload(this.bodyPositions,this.bodyNormals,bodyUV,new Float32Array(m.colors),new Uint32Array(m.indices));this.bindGarment();canvas.dataset.avatar='ready';this.pose();this.draw();this.schedule();}).catch(error=>{if(this.disposed)return;canvas.dataset.avatar='error';canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
+  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);const bodyUV=new Float32Array(m.vertexCount*2);for(const part of m.parts){if(!['PreviewThigh','Calf','FlatSole','ShoeUpper'].includes(part.name))continue;for(let i=part.vertexOffset;i<part.vertexOffset+part.vertexCount;i++){bodyUV[i*2]=1;bodyUV[i*2+1]=asset.data[m.actions.stand.frames[0].offset+i*3+1];}}this.body=this.upload(this.bodyPositions,this.bodyNormals,bodyUV,new Float32Array(m.colors),new Uint32Array(m.indices),asset.data.subarray(m.actions.stand.frames[0].offset,m.actions.stand.frames[0].offset+m.vertexCount*3));this.bindGarment();canvas.dataset.avatar='ready';this.pose();this.draw();this.schedule();}).catch(error=>{if(this.disposed)return;canvas.dataset.avatar='error';canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
  }
- private upload(positions:Float32Array,normals:Float32Array,uvs:Float32Array,colors:Float32Array,indices:Uint32Array):GPU{
+ private upload(positions:Float32Array,normals:Float32Array,uvs:Float32Array,colors:Float32Array,indices:Uint32Array,paperPositions=positions):GPU{
   const gl=this.gl,gpu:GPU={vao:gl.createVertexArray()!,buffers:[],count:indices.length};gl.bindVertexArray(gpu.vao);
-  for(const [name,size,data] of [['position',3,positions],['normal',3,normals],['uv',2,uvs],['vertexColor',3,colors]] as const){const b=gl.createBuffer()!;gpu.buffers.push(b);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,name==='position'||name==='normal'?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);const location=gl.getAttribLocation(this.program,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);}
+  for(const [name,size,data] of [['position',3,positions],['normal',3,normals],['uv',2,uvs],['vertexColor',3,colors],['paperPosition',3,paperPositions]] as const){const b=gl.createBuffer()!;gpu.buffers.push(b);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,name==='position'||name==='normal'?gl.DYNAMIC_DRAW:gl.STATIC_DRAW);const location=gl.getAttribLocation(this.program,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);}
   const b=gl.createBuffer()!;gpu.buffers.push(b);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,indices,gl.STATIC_DRAW);return gpu;
  }
  private release(gpu?:GPU){if(gpu){gpu.buffers.forEach(b=>this.gl.deleteBuffer(b));this.gl.deleteVertexArray(gpu.vao);}}
@@ -71,6 +86,8 @@ export class SkirtPreview {
  }
  private bindGarment(){if(!this.mesh||!this.avatar)return;this.binding=new GarmentBinding(this.mesh,this.avatar.manifest.cage,this.length);this.binding.deform(new Float32Array(this.avatar.manifest.cage.restPositions));this.constraint=new DrapeConstraint(this.mesh,this.binding.positions);}
  setAction(action:PreviewAction){this.action=action;this.release(this.bench);this.bench=undefined;this.benchData=undefined;this.benchSit=undefined;this.benchLie=undefined;if(action==='sit'||action==='lie'){const load=action==='lie'?Promise.all([loadBench(false),loadBench(true)]):loadBench(false).then(b=>[b]);void load.then(([sit,lie])=>{if(this.disposed||this.action!==action)return;this.benchSit=sit;this.benchLie=lie??sit;this.benchData={...sit,positions:sit.positions.slice()};this.bench=this.upload(this.benchData.positions,this.benchData.normals,this.benchData.uvs,this.benchData.colors,this.benchData.indices);this.pose();this.draw();}).catch(error=>this.canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true})));}this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();}
+ getRenderMode(){return this.renderMode;}
+ setRenderMode(mode:PreviewRenderMode){this.renderMode=mode;try{localStorage.setItem(MODE_KEY,mode);}catch{/* Preview remains usable with storage disabled. */}this.canvas.dataset.renderMode=mode;this.draw();}
  setWorn(worn:boolean){this.worn=worn;this.pose();this.draw();this.schedule();}
  setPlaying(playing:boolean){this.playing=playing;this.last=0;this.onProgress?.(this.progress,playing);if(!playing){cancelAnimationFrame(this.raf);this.raf=0;}this.schedule();}
  setProgress(progress:number){this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*1.2;this.setPlaying(false);this.pose();this.draw();}
@@ -101,7 +118,7 @@ export class SkirtPreview {
   for(const data of arrays)for(let i=0;i<data.length;i+=3)for(let j=0;j<3;j++){min[j]=Math.min(min[j],data[i+j]);max[j]=Math.max(max[j],data[i+j]);}
   const center=min.map((v,i)=>(v+max[i])/2);center[0]-=this.panX;center[1]-=this.panY;const radius=Math.max(.1,Math.hypot(...max.map((v,i)=>(v-min[i])/2))),aspect=w/h;
   const distance=radius*Math.sqrt(1+(2.9/Math.min(1,aspect))**2)*1.03*this.zoom;
-  for(const [name,value] of Object.entries({yaw:this.yaw,pitch:this.pitch,distance,aspect}))gl.uniform1f(gl.getUniformLocation(this.program,name),value);gl.uniform3fv(gl.getUniformLocation(this.program,'center'),center);gl.bindTexture(gl.TEXTURE_2D,this.texture);
+  for(const [name,value] of Object.entries({yaw:this.yaw,pitch:this.pitch,distance,aspect}))gl.uniform1f(gl.getUniformLocation(this.program,name),value);gl.uniform1f(gl.getUniformLocation(this.program,'renderMode'),this.renderMode==='toon'?1:0);this.canvas.dataset.renderMode=this.renderMode;gl.uniform3fv(gl.getUniformLocation(this.program,'center'),center);gl.bindTexture(gl.TEXTURE_2D,this.texture);
   gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),1);gl.uniform1f(gl.getUniformLocation(this.program,'coverCut'),1.31-this.length/100*(1.11/.88)+.025-(this.action==='lie'?this.progress*.25:0));
   if(dressed){gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.bindVertexArray(this.body!.vao);gl.drawElements(gl.TRIANGLES,this.body!.count,gl.UNSIGNED_INT,0);}
   gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),1);gl.bindVertexArray(this.garment.vao);gl.drawElements(gl.TRIANGLES,this.garment.count,gl.UNSIGNED_INT,0);

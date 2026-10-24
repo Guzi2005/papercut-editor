@@ -3,7 +3,7 @@ import {effectiveDrape} from './drape';
 import {el,button,field,row,select,chooseFile,report,download} from './ui';
 import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
 import {PatternCanvas} from './canvas';
-import {SkirtPreview} from './preview';
+import {SkirtPreview,readPreviewRenderMode} from './preview';
 import {paintTexture} from './texture';
 import {skirtZip} from './export';
 import './style.css';
@@ -25,7 +25,7 @@ export class SkirtStudio {
     const canvas=el('canvas');canvas.setAttribute('aria-label','裙子模板画布');canvas.dataset.testid='skirt-canvas';
     const wrap=el('div','skirt-canvas-wrap');wrap.append(canvas);this.pattern=new PatternCanvas(canvas);canvas.id='skirt-pattern-panel';canvas.setAttribute('role','tabpanel');
     workspace.append(label,this.tabs,this.tools,wrap);
-    const previewTitle=el('div','skirt-panel-title');previewTitle.append(el('strong','','立体预览'),button('复位视角',()=>this.preview?.reset()));
+    const previewTitle=el('div','skirt-panel-title');const renderMode=button(readPreviewRenderMode()==='toon'?'三渲二':'材质预览',()=>{const toon=renderMode.textContent==='材质预览';renderMode.textContent=toon?'三渲二':'材质预览';renderMode.setAttribute('aria-label',toon?'渲染模式：三渲二':'渲染模式：材质预览');renderMode.setAttribute('aria-pressed',String(toon));this.preview?.setRenderMode(toon?'toon':'material');},'切换材质预览 / 游戏纸感：淡分层明暗、纸纹、无高光');renderMode.setAttribute('aria-label','渲染模式：'+renderMode.textContent);renderMode.setAttribute('aria-pressed',String(readPreviewRenderMode()==='toon'));previewTitle.append(el('strong','','立体预览'),renderMode,button('复位视角',()=>this.preview?.reset()));
     const glCanvas=el('canvas');glCanvas.setAttribute('aria-label','百褶裙三维预览');glCanvas.dataset.testid='skirt-preview';
     const stage=el('div','skirt-stage');glCanvas.setAttribute('aria-description','拖动旋转，滚轮缩放');stage.append(glCanvas);
     try{this.preview=new SkirtPreview(glCanvas);}catch(error){stage.append(el('p','skirt-preview-error',String(error)));}

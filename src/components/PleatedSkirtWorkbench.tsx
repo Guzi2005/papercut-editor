@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import type {PapercutProject} from '../types/papercut';
 import {SkirtStudio} from '../pleatedSkirt/studio';
-import {SkirtPreview} from '../pleatedSkirt/preview';
+import {SkirtPreview,readPreviewRenderMode} from '../pleatedSkirt/preview';
 import {paintTexture} from '../pleatedSkirt/texture';
 import {rasterizeSkirtOverlay} from '../pleatedSkirt/project';
 import type {SkirtDesign} from '../pleatedSkirt/model';
@@ -35,7 +35,8 @@ export function PleatedSkirtWorkbench(props:Props){
 /** Native scissors, pens, stamps and fabrics feed the very same texture preview. */
 export function PleatedSkirtLivePreview({project,onOpen}:{project:PapercutProject;onOpen:()=>void}){
   const canvas=useRef<HTMLCanvasElement>(null),preview=useRef<SkirtPreview|null>(null),[error,setError]=useState('');
+  const [renderMode,setRenderMode]=useState(readPreviewRenderMode);
   useEffect(()=>{try{preview.current=new SkirtPreview(canvas.current!);}catch(e){setError(String(e));}return()=>{preview.current?.dispose();preview.current=null;};},[]);
   useEffect(()=>{let cancelled=false;rasterizeSkirtOverlay(project).then(overlay=>{if(cancelled||!project.pleatedSkirt)return;const texture=document.createElement('canvas');texture.width=texture.height=1024;paintTexture(texture,project.pleatedSkirt,overlay);preview.current?.update(project.pleatedSkirt,texture);}).catch(e=>{if(!cancelled)setError(String(e));});return()=>{cancelled=true;};},[project]);
-  return <aside className="skirt-live-preview" aria-label="画板实时裙子预览"><button onClick={onOpen} data-tip="上腰口 · 下裙摆 · 左右接后缝">百褶裙 · 参数与展开 ↗</button><canvas ref={canvas}/>{error&&<p>{error}</p>}</aside>;
+  return <aside className="skirt-live-preview" aria-label="画板实时裙子预览"><button onClick={onOpen} data-tip="上腰口 · 下裙摆 · 左右接后缝">百褶裙 · 参数与展开 ↗</button><button aria-label={'渲染模式：'+(renderMode==='toon'?'三渲二':'材质预览')} aria-pressed={renderMode==='toon'} onClick={()=>{const next=renderMode==='toon'?'material':'toon';setRenderMode(next);preview.current?.setRenderMode(next);}}>{renderMode==='toon'?'三渲二':'材质预览'}</button><canvas ref={canvas}/>{error&&<p>{error}</p>}</aside>;
 }
