@@ -1,12 +1,13 @@
 import type {MeshData} from './geometry';
 
-export type PreviewAction='stand'|'walk'|'sit'|'lie';
+export type AvatarAction='stand'|'walk'|'sit'|'lie';
+export type PreviewAction=AvatarAction|'display'|'spin';
 export interface AvatarFrame {offset:number;bounds:{min:number[];max:number[]}}
 export interface AvatarClip {fps:number;frames:AvatarFrame[]}
 export interface AvatarManifest {
   version:number;vertexCount:number;frameStride:number;indices:number[];colors:number[];
   parts:{name:string;vertexOffset:number;vertexCount:number}[];
-  actions:Record<PreviewAction,AvatarClip>;
+  actions:Record<AvatarAction,AvatarClip>;
   cage:{vertexCount:number;columns:number;rowsY:number[];restPositions:number[]};
 }
 export interface AvatarAsset {manifest:AvatarManifest;data:Float32Array}

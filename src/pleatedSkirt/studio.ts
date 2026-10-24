@@ -9,10 +9,13 @@ import {skirtZip} from './export';
 import './style.css';
 
 interface Host {get:()=>SkirtDesign|undefined;commit:(label:string,d:SkirtDesign)=>void;overlay:(d:SkirtDesign)=>CanvasImageSource|undefined;paintLayer:()=>void;status:(s:string)=>void}
-type PreviewAction='stand'|'walk'|'sit'|'lie';
+type PreviewAction='stand'|'walk'|'sit'|'lie'|'display'|'spin';
+type MotionOptions={armAngle:number;spread:number;speed:number;uniformity:number};
+type MotionPreview={setAction?:(action:PreviewAction)=>void;setMotionOptions?:(options:MotionOptions)=>void};
 export class SkirtStudio {
   element=el('div','skirt-studio');private controls=el('aside','skirt-controls');private tabs=el('div','skirt-views');private tools=el('div','skirt-tools');
   private pattern:PatternCanvas;private preview?:SkirtPreview;private texture=el('canvas');private info=el('p','skirt-info');private source=el('p','skirt-source');
+  private motion:MotionOptions={armAngle:45,spread:90,speed:.4,uniformity:.35};
   private selected='';private tool:'turn'|'select'|'pen'|'patch'='turn';private ink='#c54d70';private brush=.009;
   private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
   private mirror=true;private strokeStart=0;private patchStart=0;private pendingFrame=0;private patchPieces:string[]=[];private patchU=0;private patchLastU=0;private focusView:string|null=null;
@@ -29,13 +32,27 @@ export class SkirtStudio {
     const glCanvas=el('canvas');glCanvas.setAttribute('aria-label','百褶裙三维预览');glCanvas.dataset.testid='skirt-preview';
     const stage=el('div','skirt-stage');glCanvas.setAttribute('aria-description','拖动旋转，滚轮缩放');stage.append(glCanvas);
     try{this.preview=new SkirtPreview(glCanvas);}catch(error){stage.append(el('p','skirt-preview-error',String(error)));}
-    const actionTabs=el('div','skirt-action-tabs');for(const [id,name] of [['stand','站立'],['walk','行走'],['sit','坐下'],['lie','躺下']] as [PreviewAction,string][]) {const b=button(name,()=>{this.preview?.setAction(id);actionTabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));});b.dataset.action=id;b.title=`预览${name}动作`;if(id==='stand')b.classList.add('active');actionTabs.append(b);}
+    let chosen:PreviewAction='stand';const motionControls=el('div','skirt-motion-controls'),displayControls=el('div'),spinControls=el('div');
+    motionControls.append(displayControls,spinControls);motionControls.hidden=true;
+    const option=(group:HTMLElement,label:string,key:'armAngle'|'spread'|'speed'|'uniformity',value:number,min:number,max:number,step:number,tip:string)=>{
+     const slider=el('input'),number=el('input');slider.type='range';number.type='number';let current=value;
+     for(const c of [slider,number]){c.min=String(min);c.max=String(max);c.step=String(step);c.value=String(value);c.setAttribute('aria-label',label+(c===number?' 数值':''));}
+     const update=(raw:number)=>{if(!Number.isFinite(raw))return;current=Math.max(min,Math.min(max,Math.round(raw/step)*step));slider.value=String(current);this.preview?.setMotionOptions({[key]:key==='uniformity'?current/100:current});};
+     slider.oninput=()=>{update(Number(slider.value));number.value=String(current);};number.oninput=()=>update(number.valueAsNumber);number.onchange=()=>{update(number.valueAsNumber);number.value=String(current);};
+     const controls=el('div','skirt-range');controls.append(slider,number);const f=field(label,controls);f.dataset.tip=tip;group.append(f);
+    };
+    option(displayControls,'手臂抬角 / °','armAngle',45,0,85,1,'从身体向下方向抬起的角度');
+    option(displayControls,'双手 XY 夹角 / °','spread',90,20,150,1,'正面 XY 平面中的双手展开角度');
+    option(spinControls,'转速 / 圈每秒','speed',.4,.1,1.5,.1,'每秒平均转圈次数');
+    option(spinControls,'匀速程度 / %','uniformity',35,0,100,1,'0：明显加减速；100：匀速');
+    const showMotion=()=>{motionControls.hidden=!worn||!['display','spin'].includes(chosen);displayControls.hidden=chosen!=='display';spinControls.hidden=chosen!=='spin';};
+    const actionTabs=el('div','skirt-action-tabs');for(const [id,name] of [['stand','站立'],['walk','行走'],['sit','坐下'],['lie','躺下'],['display','裙摆展示'],['spin','转圈圈']] as [PreviewAction,string][]) {const b=button(name,()=>{chosen=id;showMotion();this.preview?.setAction(id);actionTabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));});b.dataset.action=id;b.title=`预览${name}动作`;if(id==='stand')b.classList.add('active');actionTabs.append(b);}
     const playback=el('div','skirt-preview-tools');let worn=true,playing=true;
-    const mode=button('穿着',()=>{worn=!worn;mode.textContent=worn?'穿着':'单裙';this.preview?.setWorn(worn);actionTabs.hidden=!worn;timeline.disabled=!worn;},'切换穿着 / 单裙');
+    const mode=button('穿着',()=>{worn=!worn;mode.textContent=worn?'穿着':'单裙';this.preview?.setWorn(worn);actionTabs.hidden=!worn;showMotion();timeline.disabled=!worn;},'切换穿着 / 单裙');
     const play=button('暂停',()=>{playing=!playing;this.preview?.setPlaying(playing);},'播放 / 暂停动作');play.setAttribute('aria-label','播放或暂停动作');
     const timeline=el('input');timeline.type='range';timeline.min='0';timeline.max='1';timeline.step='.01';timeline.value='0';timeline.setAttribute('aria-label','动作进度');timeline.oninput=()=>this.preview?.setProgress(Number(timeline.value));
     if(this.preview)this.preview.onProgress=(progress,isPlaying)=>{timeline.value=String(progress);playing=isPlaying;play.textContent=isPlaying?'暂停':'播放';};
-    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,stage,playback,this.info,this.source);
+    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,motionControls,stage,playback,this.info,this.source);
     this.tabs.setAttribute('role','tablist');this.tabs.setAttribute('aria-label','裙子展开图');
     layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout);
     this.pattern.onDown=(uv,e)=>this.down(uv,e);this.pattern.onMove=(uv,e)=>this.move(uv,e);this.pattern.onUp=()=>this.up();this.pattern.onCancel=()=>this.cancel();

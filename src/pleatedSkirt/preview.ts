@@ -1,9 +1,10 @@
+import {defaultMotionOptions,motionOptions,displayPhase,spinPhase,rotateY,moveArm,type MotionOptions} from './motion';
 import {loadBench,type BenchMesh} from './bench';
 import {effectiveDrape} from './drape';
 import {DrapeConstraint} from './drapeConstraint';
 import {buildMesh,type MeshData} from './geometry';
 import type {SkirtDesign} from './model';
-import {loadAvatar,GarmentBinding,sampleClip,type AvatarAsset,type PreviewAction} from './avatar';
+import {loadAvatar,GarmentBinding,sampleClip,type AvatarAsset,type PreviewAction,type AvatarAction} from './avatar';
 export type {PreviewAction} from './avatar';
 export type PreviewRenderMode='material'|'toon';
 const MODE_KEY='pleated-skirt-preview-render-mode';
@@ -52,6 +53,7 @@ export class SkirtPreview {
  private garment?:GPU;private body?:GPU;private mesh?:MeshData;private binding?:GarmentBinding;private avatar?:AvatarAsset;
  private bodyPositions=new Float32Array();private bodyNormals=new Float32Array();private cage=new Float32Array();
  private bench?:GPU;private benchData?:BenchMesh;private constraint?:DrapeConstraint;private design?:SkirtDesign;
+ private motion={...defaultMotionOptions};
  private key='';private length=88;private action:PreviewAction='stand';private worn=true;private playing=true;private progress=0;private elapsed=0;private raf=0;private last=0;
  private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private renderMode:PreviewRenderMode=readPreviewRenderMode();private observer:ResizeObserver;private events=new AbortController();private disposed=false;
  private drag?:{id:number;x:number;y:number;button:number};
@@ -86,17 +88,19 @@ export class SkirtPreview {
  }
  private bindGarment(){if(!this.mesh||!this.avatar)return;this.binding=new GarmentBinding(this.mesh,this.avatar.manifest.cage,this.length);this.binding.deform(new Float32Array(this.avatar.manifest.cage.restPositions));this.constraint=new DrapeConstraint(this.mesh,this.binding.positions);}
  setAction(action:PreviewAction){this.action=action;this.release(this.bench);this.bench=undefined;this.benchData=undefined;this.benchSit=undefined;this.benchLie=undefined;if(action==='sit'||action==='lie'){const load=action==='lie'?Promise.all([loadBench(false),loadBench(true)]):loadBench(false).then(b=>[b]);void load.then(([sit,lie])=>{if(this.disposed||this.action!==action)return;this.benchSit=sit;this.benchLie=lie??sit;this.benchData={...sit,positions:sit.positions.slice()};this.bench=this.upload(this.benchData.positions,this.benchData.normals,this.benchData.uvs,this.benchData.colors,this.benchData.indices);this.pose();this.draw();}).catch(error=>this.canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true})));}this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();}
+ setMotionOptions(patch:Partial<MotionOptions>){this.motion=motionOptions(this.motion,patch);this.pose();this.draw();}
  getRenderMode(){return this.renderMode;}
  setRenderMode(mode:PreviewRenderMode){this.renderMode=mode;try{localStorage.setItem(MODE_KEY,mode);}catch{/* Preview remains usable with storage disabled. */}this.canvas.dataset.renderMode=mode;this.draw();}
  setWorn(worn:boolean){this.worn=worn;this.pose();this.draw();this.schedule();}
  setPlaying(playing:boolean){this.playing=playing;this.last=0;this.onProgress?.(this.progress,playing);if(!playing){cancelAnimationFrame(this.raf);this.raf=0;}this.schedule();}
- setProgress(progress:number){this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*1.2;this.setPlaying(false);this.pose();this.draw();}
+ setProgress(progress:number){this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*(this.action==='display'?5:this.action==='spin'?1/this.motion.speed:1.2);this.setPlaying(false);this.pose();this.draw();}
  private pose(){
   if(!this.mesh||!this.garment)return;
   if(!this.worn||!this.avatar||!this.binding||!this.body){this.updateVertices(this.garment,this.mesh.positions,this.mesh.normals);return;}
   const {manifest:m,data}=this.avatar,n=m.vertexCount*3;
-  const sample=(action:PreviewAction,progress:number,index:number)=>{const clip=m.actions[action],s=sampleClip(clip,progress,action==='walk');return data[s.a.offset+index]*(1-s.mix)+data[s.b.offset+index]*s.mix;};
-  let fromAction:PreviewAction=this.action,toAction:PreviewAction=this.action,fromProgress=this.progress,toProgress=this.progress,mix=0;
+  const sample=(action:AvatarAction,progress:number,index:number)=>{const clip=m.actions[action],s=sampleClip(clip,progress,action==='walk');return data[s.a.offset+index]*(1-s.mix)+data[s.b.offset+index]*s.mix;};
+  const base:AvatarAction=this.action==='display'||this.action==='spin'?'stand':this.action;
+  let fromAction:AvatarAction=base,toAction:AvatarAction=base,fromProgress=this.progress,toProgress=this.progress,mix=0;
   if(this.action==='lie'){
    if(this.progress<.4){fromAction='stand';fromProgress=0;toAction='sit';toProgress=1;mix=this.progress/.4;}
    else if(this.progress<.55){fromAction='sit';fromProgress=1;toAction='sit';toProgress=1;mix=0;}
@@ -105,10 +109,42 @@ export class SkirtPreview {
   for(let i=0;i<n;i++){this.bodyPositions[i]=sample(fromAction,fromProgress,i)*(1-mix)+sample(toAction,toProgress,i)*mix;this.bodyNormals[i]=sample(fromAction,fromProgress,n+i)*(1-mix)+sample(toAction,toProgress,n+i)*mix;}
   for(let i=0;i<this.cage.length;i++){const at=n*2+i;this.cage[i]=sample(fromAction,fromProgress,at)*(1-mix)+sample(toAction,toProgress,at)*mix;}
   if(this.bench&&this.benchSit&&this.benchLie&&this.benchData){const benchMix=this.action==='lie'?Math.max(0,Math.min(1,(this.progress-.55)/.45)):0;for(let i=0;i<this.benchData.positions.length;i++)this.benchData.positions[i]=this.benchSit.positions[i]*(1-benchMix)+this.benchLie.positions[i]*benchMix;this.updateVertices(this.bench,this.benchData.positions,this.benchData.normals);}
-  this.binding.deform(this.cage);if(this.design&&this.constraint){this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),this.action==='stand'?.15:this.action==='walk'?.35:this.progress,this.action);this.canvas.dataset.warpError=this.constraint.maxWarpError(this.binding.positions).toFixed(6);}this.updateVertices(this.body,this.bodyPositions,this.bodyNormals);this.updateVertices(this.garment,this.binding.positions,this.binding.normals);
+  this.binding.deform(this.cage);if(this.design&&this.constraint){this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),['stand','display','spin'].includes(this.action)?.15:this.action==='walk'?.35:this.progress,this.action);this.canvas.dataset.warpError=this.constraint.maxWarpError(this.binding.positions).toFixed(6);}this.applyMotion();if(this.constraint&&this.design&&(this.action==='display'||this.action==='spin')){this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),1e-8,'stand');this.canvas.dataset.warpError=this.constraint.maxWarpError(this.binding.positions).toFixed(6);}this.updateVertices(this.body,this.bodyPositions,this.bodyNormals);this.updateVertices(this.garment,this.binding.positions,this.binding.normals);
   this.canvas.dataset.progress=this.progress.toFixed(3);this.onProgress?.(this.progress,this.playing);
  }
- private schedule(){if(this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
+ private applyMotion(){
+  if(!this.avatar||!this.binding||!this.mesh)return;
+  this.canvas.dataset.action=this.action;
+  const p=this.binding.positions,n=this.binding.normals;
+  if(this.action==='spin'){
+   const phase=spinPhase(this.progress,this.motion.uniformity);
+   // Rotate the character, not the inspection camera. Flare follows speed.
+   const strength=Math.min(.16,this.motion.speed*this.motion.speed*.09*phase.rate*phase.rate);
+   for(let i=0;i<p.length/3;i++){const v=this.mesh.uvs[i*2+1],at=i*3,f=1+strength*v*v;p[at]*=f;p[at+2]*=f;p[at+1]+=strength*v*v*.35;}
+   rotateY(p,n,phase.angle);rotateY(this.bodyPositions,this.bodyNormals,phase.angle);
+   this.canvas.dataset.spinAngle=String(phase.angle);this.canvas.dataset.spinRate=String(phase.rate*this.motion.speed);
+  }
+  if(this.action==='display'){
+   const phase=displayPhase(this.progress),m=this.avatar.manifest;
+   const width=this.design!.parameters.pleat_count*8+1,hem=24*width;
+   for(const side of [-1,1]){
+    const col=Math.round((side>0?.25:.75)*(width-1)),at=(hem+col)*3;
+    const pivot=[side*.24,1.66,0],restHand=[side*.30,1.17,.025];
+    const elevation=this.motion.armAngle*Math.PI/180,spread=this.motion.spread*Math.PI/360;
+    const hand=[side*(.30+.26*Math.sin(spread)*Math.sin(elevation)),1.17+.42*Math.sin(elevation),.025+.24*Math.cos(spread)*Math.sin(elevation)];
+    const lifted=hand.map((x,k)=>restHand[k]+(x-restHand[k])*phase.lift);
+    const target=[p[at],p[at+1],p[at+2]].map((x,k)=>x+(lifted[k]-x)*Math.max(phase.grip,phase.lift));
+    // Localized hem grips taper toward the pinned waist; the release envelope
+    // lets the fabric settle after the hands have let go.
+    const delta=target.map((x,k)=>x-p[at+k]);
+    for(let i=0;i<p.length/3;i++){const u=this.mesh.uvs[i*2],v=this.mesh.uvs[i*2+1],du=Math.min(Math.abs(u-col/(width-1)),1-Math.abs(u-col/(width-1))),w=Math.exp(-du*du/.026)*v*v;for(let k=0;k<3;k++)p[i*3+k]+=delta[k]*w;}
+    const armHand=restHand.map((x,k)=>x+(lifted[k]-x)*Math.max(phase.grip,phase.lift));
+    for(const part of m.parts){if(!['CuffBinding','CuffThickness','SleeveLining','Mitten','Thumb','TailoredShell'].includes(part.name))continue;moveArm(this.bodyPositions,this.bodyNormals,part.vertexOffset,part.vertexCount,pivot,restHand,armHand,i=>{const x=this.bodyPositions[i*3],y=this.bodyPositions[i*3+1];if(x*side<=0)return 0;return part.name==='TailoredShell'?Math.max(0,Math.min(1,(Math.abs(x)-.20)/.10))*Math.max(0,Math.min(1,(1.85-y)/.15)):1;});}
+   }
+   this.canvas.dataset.grip=String(phase.grip);this.canvas.dataset.lift=String(phase.lift);
+  }
+ }
+ private schedule(){if(this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='display')this.progress=(this.elapsed%5)/5;else if(this.action==='spin')this.progress=(this.progress+delta*this.motion.speed)%1;else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
  reset(){this.yaw=.3;this.pitch=.07;this.zoom=1;this.panX=0;this.panY=0;this.draw();}
  draw(){
   if(this.disposed||!this.mesh||!this.garment)return;const gl=this.gl,r=this.canvas.getBoundingClientRect();if(!r.width||!r.height)return;

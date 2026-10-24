@@ -971,3 +971,9 @@
     height: 198px;
   }
 }
+.skirt-motion-controls { padding: 2px 10px; }
+.skirt-motion-controls > div { max-width: 360px; }
+.skirt-motion-controls .field { display:flex; flex-direction:row; align-items:center; gap:8px; margin:3px 0; }
+.skirt-motion-controls .field > span { flex:0 0 110px; }
+.skirt-motion-controls .skirt-range { flex:1; min-width:0; }
+.skirt-motion-controls[hidden], .skirt-motion-controls > [hidden] { display:none; }
