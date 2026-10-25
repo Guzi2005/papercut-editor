@@ -15,6 +15,7 @@ interface Host {get:()=>SkirtDesign|undefined;commit:(label:string,d:SkirtDesign
 type PreviewAction='stand'|'walk'|'sit'|'lie'|'display'|'spin';
 export class SkirtStudio {
   element=el('div','skirt-studio');private controls=el('aside','skirt-controls');private tabs=el('div','skirt-views');private tools=el('div','skirt-tools');
+  navigation=el('nav','skirt-mobile-nav');
   private pattern:PatternCanvas;private preview?:SkirtPreview;private texture=el('canvas');private info=el('p','skirt-info');private source=el('p','skirt-source');
   private selected='';private tool:'turn'|'select'|'pen'|'patch'='turn';private ink='#c54d70';private brush=.009;
   private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
@@ -49,7 +50,7 @@ export class SkirtStudio {
     option(spinControls,'转速 / 圈每秒','speed',.4,.1,1.5,.1,'每秒平均转圈次数');
     option(spinControls,'匀速程度 / %','uniformity',35,0,100,1,'0：明显加减速；100：匀速');
     const stancePanel=createStanceEditor(s=>this.preview?.setStance(s));stancePanel.hidden=true;
-    const stanceToggle=button('摆布',()=>{stancePanel.hidden=!stancePanel.hidden;stanceToggle.setAttribute('aria-expanded',String(!stancePanel.hidden));},'拖动脚印调节站位；拖动双手调节手臂张角');stanceToggle.setAttribute('aria-label','站姿摆布');stanceToggle.setAttribute('aria-expanded','false');previewTitle.append(stanceToggle);stage.append(stancePanel);
+    const stanceToggle=button('摆布',()=>{stancePanel.hidden=!stancePanel.hidden;stanceToggle.setAttribute('aria-expanded',String(!stancePanel.hidden));},'拖动脚印调节站位；拖动双手调节手臂张角');stanceToggle.setAttribute('aria-label','站姿摆布');stanceToggle.setAttribute('aria-expanded','false');previewTitle.append(stanceToggle);
     const showMotion=()=>{motionControls.hidden=!worn||!['display','spin'].includes(chosen);displayControls.hidden=chosen!=='display';spinControls.hidden=chosen!=='spin';stanceToggle.hidden=!worn||chosen!=='stand';if(stanceToggle.hidden){stancePanel.hidden=true;stanceToggle.setAttribute('aria-expanded','false');}};
     const actionTabs=el('div','skirt-action-tabs');for(const [id,name] of [['stand','站立'],['walk','行走'],['sit','坐下'],['lie','躺下'],['display','裙摆展示'],['spin','转圈圈']] as [PreviewAction,string][]) {const b=button(name,()=>{chosen=id;showMotion();this.preview?.setAction(id);actionTabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));});b.dataset.action=id;b.title=`预览${name}动作`;if(id==='stand')b.classList.add('active');actionTabs.append(b);}
     const playback=el('div','skirt-preview-tools');let worn=true,playing=true;
@@ -57,10 +58,10 @@ export class SkirtStudio {
     const play=button('暂停',()=>{playing=!playing;this.preview?.setPlaying(playing);},'播放 / 暂停动作');play.setAttribute('aria-label','播放或暂停动作');
     const timeline=el('input');timeline.type='range';timeline.min='0';timeline.max='1';timeline.step='.01';timeline.value='0';timeline.setAttribute('aria-label','动作进度');timeline.oninput=()=>this.preview?.setProgress(Number(timeline.value));
     if(this.preview)this.preview.onProgress=(progress,isPlaying)=>{timeline.value=String(progress);playing=isPlaying;play.textContent=isPlaying?'暂停':'播放';};
-    stage.append(motionControls);
-    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,stage,playback,this.info,this.source);
+    const details=el('div','skirt-preview-details');details.append(motionControls,stancePanel);
+    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,stage,playback,details,this.info,this.source);
     this.tabs.setAttribute('role','tablist');this.tabs.setAttribute('aria-label','裙子展开图');
-    const mobileNav=el('nav','skirt-mobile-nav');mobileNav.setAttribute('aria-label','素材制作工作区');
+    const mobileNav=this.navigation;mobileNav.setAttribute('aria-label','素材制作工作区');
     this.element.dataset.mobilePane='paper';
     for(const [pane,name] of [['paper','图纸'],['preview','三维'],['controls','参数']]){
       const b=button(name,()=>{
@@ -68,18 +69,19 @@ export class SkirtStudio {
         mobileNav.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
         if(matchMedia('(max-width: 640px)').matches){
           const target=this.element.querySelector<HTMLElement>(`.skirt-${pane==='paper'?'paper-panel':pane==='preview'?'preview-panel':'controls'}`);
-          target?.scrollIntoView({behavior:'smooth',block:'start'});
+          const scroller=this.element.closest<HTMLElement>('.skirt-native-content');
+          if(target&&scroller)scroller.scrollTo({top:target.getBoundingClientRect().top-scroller.getBoundingClientRect().top+scroller.scrollTop,behavior:'auto'});
         }
       });
       b.dataset.pane=pane;b.setAttribute('aria-label',`工作区：${name}`);b.setAttribute('aria-pressed',String(pane==='paper'));mobileNav.append(b);
     }
-    layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout,mobileNav);
+    layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout);
     matchMedia('(max-width: 640px)').addEventListener('change',e=>{if(!e.matches&&this.element.dataset.mobilePane==='controls')mobileNav.querySelector<HTMLButtonElement>('[data-pane="paper"]')?.click();},{signal:this.mobileEvents.signal});
     this.pattern.onDown=(uv,e)=>this.down(uv,e);this.pattern.onMove=(uv,e)=>this.move(uv,e);this.pattern.onUp=()=>this.up();this.pattern.onCancel=()=>this.cancel();
   }
   refresh(){const d=this.host.get();if(!d)return;this.draft=undefined;this.start=undefined;this.pointer=-1;this.buildControls(d);this.buildTools(d);this.display(d);}
   restoreTabFocus(){if(this.element.closest('[inert]'))return;if(this.focusView){this.tabs.querySelector<HTMLButtonElement>('button[data-view='+this.focusView+']')?.focus();this.focusView=null;}if(this.focusHem){this.controls.querySelector<SVGElement>(`[data-hem-handle="${this.focusHem}"]`)?.focus();this.focusHem=null;}}
-  dispose(){this.mobileEvents.abort();cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.element.remove();}
+  dispose(){this.mobileEvents.abort();cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.navigation.remove();this.element.remove();}
   private display(d:SkirtDesign){paintTexture(this.texture,d,this.host.overlay(d));this.pattern.update(d,this.texture,this.selected);this.preview?.update(d,this.texture);
     this.info.textContent=`${d.parameters.pleat_count} 道褶 · ${d.parameters.length_cm} cm 裙长 · ${d.parameters.thickness_mm} mm 布厚`;
     this.source.textContent='参考来源 ⓘ';this.source.dataset.tip=d.source.references.map(x=>x.title).join(' / ')||'自由设计 · 尚未添加来源';

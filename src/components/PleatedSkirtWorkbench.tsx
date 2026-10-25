@@ -17,6 +17,7 @@ export function PleatedSkirtWorkbench(props:Props){
   useEffect(()=>{
     const instance=new SkirtStudio({get:()=>latest.current.project.pleatedSkirt,commit:(_,d)=>latest.current.onDesign(d),overlay:()=>overlay.current,paintLayer:()=>latest.current.onPaint(),status:setStatus});
     studio.current=instance;host.current!.append(instance.element);
+    host.current!.after(instance.navigation);
     const onError=(e:Event)=>setStatus((e as CustomEvent).detail);window.addEventListener('skirt-error',onError);
     return()=>{window.removeEventListener('skirt-error',onError);instance.dispose();studio.current=null;};
   },[]);

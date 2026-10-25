@@ -9,10 +9,10 @@ try{
  await page.getByRole('button',{name:'工作模式：剪贴画板',exact:true}).click();await page.getByRole('menuitemradio',{name:'Weave & Wander 资产',exact:true}).click();await page.getByRole('button',{name:/参数化百褶裙/}).click();
  const preview=page.getByTestId('skirt-preview');await expect(preview).toHaveAttribute('data-avatar','ready');await page.getByRole('button',{name:'站姿摆布',exact:true}).click();
  const before=await preview.evaluate(c=>c.toDataURL()),left=page.getByRole('slider',{name:'左脚占位',exact:true}),rightArm=page.getByRole('slider',{name:'右手臂张开角度',exact:true});
- const box=await left.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x-5,box.y+box.height/2+18,{steps:6});await page.mouse.up();
+ await left.scrollIntoViewIfNeeded();const box=await left.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x-5,box.y+box.height/2+18,{steps:6});await page.mouse.up();
  expect(JSON.parse(await preview.getAttribute('data-stance')).left.x).toBeLessThan(-.15);
  // Drag the wrist to a known 90-degree rotation around its drawn shoulder.
- const figure=page.locator('.skirt-stance-figure'),target=await figure.evaluate(e=>{
+ await rightArm.scrollIntoViewIfNeeded();const figure=page.locator('.skirt-stance-figure'),target=await figure.evaluate(e=>{
   const shoulder=e.querySelectorAll('.stance-joint')[3],x=Number(shoulder.getAttribute('cx'))+.49*74,y=Number(shoulder.getAttribute('cy'))-.06*74;
   const p=new DOMPoint(x,y).matrixTransform(e.getScreenCTM());return {x:p.x,y:p.y};
  });

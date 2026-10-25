@@ -217,6 +217,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const [copiedToast, setCopiedToast] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showCanvasSubmenu, setShowCanvasSubmenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -241,6 +242,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [customHeight, setCustomHeight] = useState(currentHeight);
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  const zoomMenuRef = useRef<HTMLDivElement>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
 
@@ -263,6 +265,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      if (zoomMenuRef.current && !zoomMenuRef.current.contains(target)) setShowZoomMenu(false);
       if (exportMenuRef.current && !exportMenuRef.current.contains(target)) {
         setShowExportMenu(false);
       }
@@ -274,8 +277,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         setShowSettingsMenu(false);
       }
     };
-    window.addEventListener('mousedown', handleClickOutside);
-    return () => window.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('pointerdown', handleClickOutside);
+    return () => window.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
   const handleApplyCanvasSize = () => {
@@ -287,7 +290,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-40 shrink-0 px-2 sm:px-4 gap-2">
+    <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-60 shrink-0 px-2 sm:px-4 gap-1 sm:gap-2">
       {/* 1. Left: Brand Icon + 文件 / 设置 (皮肤选择) Menu Tabs */}
       <div className="flex items-center gap-1.5 shrink-0">
         <div className="flex items-center gap-1.5 pr-2 border-r border-(--ui-divider)">
@@ -661,7 +664,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 2. Center: SAI-Style Document Tabs (多文件选项卡栏，点击切换) */}
-      <div data-document-tabs className="flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
+      <div data-document-tabs className="min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
         {documents.map((doc) => {
           const isActive = doc.id === activeDocId;
           const color = tabColor(doc.id);
@@ -720,9 +723,12 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 3. Right: Zoom (放缩) + Unified Export Square Button */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         {/* Zoom Controls */}
-        <div className="flex items-center text-(--ui-text-2)">
+        <div className="relative" ref={zoomMenuRef}>
+        <button type="button" aria-label="画布缩放设置" aria-expanded={showZoomMenu} onClick={()=>setShowZoomMenu(!showZoomMenu)}
+          className="sm:hidden w-12 h-9 rounded-lg text-[11px] text-(--ui-text-2) hover:bg-(--ui-hover)">{Math.round(zoom*100)}%</button>
+        <div role="group" aria-label="画布缩放控件" className={`${showZoomMenu?'flex':'hidden'} absolute right-0 top-full mt-1 p-2 rounded-lg border border-(--ui-border) bg-(--ui-panel) shadow-lg sm:static sm:mt-0 sm:p-0 sm:border-0 sm:bg-transparent sm:shadow-none sm:flex items-center text-(--ui-text-2)`}>
           <button
             onClick={() => onZoomChange(zoom / ZOOM_STEP)}
             className="p-1.5 rounded-lg hover:bg-(--ui-hover) hover:text-(--ui-strong) transition-colors"
@@ -750,6 +756,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
         </div>
 
         {compact && (
