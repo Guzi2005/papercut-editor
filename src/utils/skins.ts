@@ -65,12 +65,12 @@ export const SKINS: SkinDefinition[] = [
     id: 'indigo',
     name: '黑白青卡片',
     tone: 'light',
-    desc: '黑色导航、白色画布与浅灰卡片，青色作强调',
+    desc: '浅灰工作台与柔和炭灰按钮，青色标记交互状态',
     colors: {
-      app: '#F1F1F1', panel: '#050505', panel2: '#FFFFFF', input: '#FAFAFA', raised: '#C8C8D0', hover: '#E9F8FA',
-      divider: '#E4E4E4', border: '#D0D0D0', borderStrong: '#141414', strong: '#050505', text: '#171717', text2: '#4F4F4F',
-      muted: '#777777', faint: '#A0A0A0', accent: '#050505', accentHover: '#242424', accentGlow: '#9ADFE8', accent2: '#78C9D5',
-      grid: '#D8D8D8', accentFill: '#050505', accentInk: '#FFFFFF', accentFillHover: '#242424',
+      app: '#E8EAEB', panel: '#F3F4F4', panel2: '#FAFAFA', input: '#FFFFFF', raised: '#E0E3E4', hover: '#D7EDF0',
+      divider: '#D9D9D9', border: '#C8C8C8', borderStrong: '#505050', strong: '#242424', text: '#303030', text2: '#626262',
+      muted: '#686E70', faint: '#858C8F', accent: '#343A3D', accentHover: '#4B5458', accentGlow: '#9ADFE8', accent2: '#246F7A',
+      grid: '#D2D2D2', accentFill: '#343A3D', accentInk: '#FFFFFF', accentFillHover: '#4B5458',
     },
   },
   {
