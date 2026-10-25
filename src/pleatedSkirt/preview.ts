@@ -1,4 +1,5 @@
 import {SkirtInertia,naturalEnvelope} from './skirtDynamics';
+import {PoseTransition} from './poseTransition';
 import {graspSkirt} from './grasp';
 import {defaultMotionOptions,motionOptions,rotateY,moveArm,type MotionOptions} from './motion';
 import {loadBench,type BenchMesh} from './bench';
@@ -62,6 +63,10 @@ export class SkirtPreview {
  private drag?:{id:number;x:number;y:number;button:number};
  private touches=new Map<number,{x:number;y:number}>();private multiTouch=false;
  private visible=true;
+ private transition=new PoseTransition(.48);private renderedRoot=0;private renderedCut=0;
+ private fromCut=0;private benchVisibility=0;private fromBenchVisibility=0;private benchAppearance=1;
+ private fromBench?:Float32Array;private benchRequest=0;
+ private frame?:{center:number[];radius:number};private fromFrame?:{center:number[];radius:number};
  private benchSit?:BenchMesh;private benchLie?:BenchMesh;
  onProgress?:(progress:number,playing:boolean)=>void;
  constructor(private canvas:HTMLCanvasElement){
@@ -101,13 +106,29 @@ export class SkirtPreview {
   gl.useProgram(this.program);gl.uniform1f(gl.getUniformLocation(this.program,'roughness'),{cotton:.86,linen:.95,silk:.32,wool:1}[p.fabric]);gl.uniform1f(gl.getUniformLocation(this.program,'grain'),{cotton:.012,linen:.032,silk:.006,wool:.04}[p.fabric]);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,texture);this.draw();
  }
  private bindGarment(){if(!this.mesh||!this.avatar)return;this.binding=new GarmentBinding(this.mesh,this.avatar.manifest.cage,this.length);this.binding.deform(new Float32Array(this.avatar.manifest.cage.restPositions));this.fittedRest=this.binding.positions.slice();this.constraint=new DrapeConstraint(this.mesh,this.binding.positions);this.inertia=new SkirtInertia();}
- setAction(action:PreviewAction){this.action=action;this.inertia=new SkirtInertia();this.release(this.bench);this.bench=undefined;this.benchData=undefined;this.benchSit=undefined;this.benchLie=undefined;if(action==='sit'||action==='lie'){const load=action==='lie'?Promise.all([loadBench(false),loadBench(true)]):loadBench(false).then(b=>[b]);void load.then(([sit,lie])=>{if(this.disposed||this.action!==action)return;this.benchSit=sit;this.benchLie=lie??sit;this.benchData={...sit,positions:sit.positions.slice()};this.bench=this.upload(this.benchData.positions,this.benchData.normals,this.benchData.uvs,this.benchData.colors,this.benchData.indices);this.pose();this.draw();}).catch(error=>this.canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true})));}this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();}
+ setAction(action:PreviewAction){
+  if(this.action===action)return;
+  if(this.worn&&this.body&&this.binding){
+   this.transition.start({bodyPositions:this.bodyPositions,bodyNormals:this.bodyNormals,garmentPositions:this.binding.positions,garmentNormals:this.binding.normals,rootAngle:this.renderedRoot});
+   this.fromCut=this.renderedCut;this.fromFrame=this.frame?{center:[...this.frame.center],radius:this.frame.radius}:undefined;
+   this.fromBench=this.benchData?.positions.slice();this.fromBenchVisibility=this.benchVisibility;
+  }
+  this.action=action;this.inertia=new SkirtInertia();const request=++this.benchRequest;
+  if((action==='sit'||action==='lie')&&!this.benchData){
+   void Promise.all([loadBench(false),loadBench(true)]).then(([sit,lie])=>{
+    if(this.disposed||request!==this.benchRequest)return;
+    this.benchSit=sit;this.benchLie=lie;this.benchData={...sit,positions:sit.positions.slice()};this.benchAppearance=this.playing?0:1;
+    this.bench=this.upload(this.benchData.positions,this.benchData.normals,this.benchData.uvs,this.benchData.colors,this.benchData.indices);this.pose();this.draw();this.schedule();
+   }).catch(error=>{if(!this.disposed&&request===this.benchRequest)this.canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
+  }
+  this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();
+ }
  setMotionOptions(patch:Partial<MotionOptions>){this.motion=motionOptions(this.motion,patch);if(!this.playing)this.inertia=new SkirtInertia();this.pose();this.draw();}
  getRenderMode(){return this.renderMode;}
  setRenderMode(mode:PreviewRenderMode){this.renderMode=mode;try{localStorage.setItem(MODE_KEY,mode);}catch{/* Preview remains usable with storage disabled. */}this.canvas.dataset.renderMode=mode;this.draw();}
- setWorn(worn:boolean){this.worn=worn;this.pose();this.draw();this.schedule();}
+ setWorn(worn:boolean){this.worn=worn;this.transition.cancel();this.pose();this.draw();this.schedule();}
  setPlaying(playing:boolean){this.playing=playing;this.last=0;this.onProgress?.(this.progress,playing);if(!playing){cancelAnimationFrame(this.raf);this.raf=0;}this.schedule();}
- setProgress(progress:number){this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*(this.action==='display'?5:this.action==='spin'?1/this.motion.speed:1.2);this.setPlaying(false);this.pose();this.draw();}
+ setProgress(progress:number){this.transition.cancel();this.benchAppearance=1;this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*(this.action==='display'?5:this.action==='spin'?1/this.motion.speed:1.2);this.setPlaying(false);this.pose();this.draw();}
  private pose(){
   if(!this.mesh||!this.garment)return;
   if(!this.worn||!this.avatar||!this.binding||!this.body){this.updateVertices(this.garment,this.standalone!.positions,this.standalone!.normals);return;}
@@ -122,7 +143,14 @@ export class SkirtPreview {
   }
   for(let i=0;i<n;i++){this.bodyPositions[i]=sample(fromAction,fromProgress,i)*(1-mix)+sample(toAction,toProgress,i)*mix;this.bodyNormals[i]=sample(fromAction,fromProgress,n+i)*(1-mix)+sample(toAction,toProgress,n+i)*mix;}
   for(let i=0;i<this.cage.length;i++){const at=n*2+i;this.cage[i]=sample(fromAction,fromProgress,at)*(1-mix)+sample(toAction,toProgress,at)*mix;}
-  if(this.bench&&this.benchSit&&this.benchLie&&this.benchData){const benchMix=this.action==='lie'?Math.max(0,Math.min(1,(this.progress-.55)/.45)):0;for(let i=0;i<this.benchData.positions.length;i++)this.benchData.positions[i]=this.benchSit.positions[i]*(1-benchMix)+this.benchLie.positions[i]*benchMix;this.updateVertices(this.bench,this.benchData.positions,this.benchData.normals);}
+  const weight=this.transition.weight,needsBench=this.action==='sit'||this.action==='lie';
+  this.benchVisibility=this.fromBenchVisibility*(1-weight)+(needsBench?this.benchAppearance:0)*weight;
+  if(this.bench&&this.benchSit&&this.benchLie&&this.benchData){
+   const benchMix=this.action==='lie'?Math.max(0,Math.min(1,(this.progress-.55)/.45)):0;
+   for(let i=0;i<this.benchData.positions.length;i++){const target=this.benchSit.positions[i]*(1-benchMix)+this.benchLie.positions[i]*benchMix;this.benchData.positions[i]=this.fromBench&&this.fromBench.length===this.benchData.positions.length?this.fromBench[i]*(1-weight)+target*weight:target;}
+   this.updateVertices(this.bench,this.benchData.positions,this.benchData.normals);
+   if(!needsBench&&!this.transition.active){this.release(this.bench);this.bench=undefined;this.benchData=undefined;this.benchSit=this.benchLie=undefined;this.fromBench=undefined;}
+  }
   this.binding.deform(this.cage);
   if(this.design&&this.constraint){
    if(['stand','display','spin'].includes(this.action)){
@@ -136,6 +164,12 @@ export class SkirtPreview {
    }
   }
   this.applyMotion();
+  const wasMixing=this.transition.active;
+  this.renderedRoot=this.transition.apply({bodyPositions:this.bodyPositions,bodyNormals:this.bodyNormals,garmentPositions:this.binding.positions,garmentNormals:this.binding.normals,rootAngle:this.action==='spin'?this.inertia.angle:0});
+  if(wasMixing&&this.constraint)this.constraint.projectLengths(this.binding.positions);
+  const targetCut=1.31-this.length/100*(1.11/.88)+.025-(this.action==='lie'?this.progress*.25:0);
+  this.renderedCut=this.fromCut*(1-this.transition.weight)+targetCut*this.transition.weight;
+  this.canvas.dataset.mix=this.transition.weight.toFixed(4);this.canvas.dataset.rootAngle=String(this.renderedRoot);
   if(this.constraint){this.constraint.finishSurface(this.binding.positions,this.binding.normals);this.canvas.dataset.warpError=this.constraint.maxWarpError(this.binding.positions).toFixed(6);}
   this.updateVertices(this.body,this.bodyPositions,this.bodyNormals);this.updateVertices(this.garment,this.binding.positions,this.binding.normals);
   this.canvas.dataset.progress=this.progress.toFixed(3);this.onProgress?.(this.progress,this.playing);
@@ -158,7 +192,19 @@ export class SkirtPreview {
    this.canvas.dataset.grip=String(hands[0].contact);this.canvas.dataset.gripRow=String(hands[0].row);
   }
  }
- private schedule(){if(!this.visible||this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(!this.visible)return;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='display')this.progress=(this.elapsed%5)/5;else if(this.action==='spin')this.progress=(this.elapsed*this.motion.speed)%1;else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
+ private schedule(){
+  if(!this.visible||this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||(this.action==='stand'&&!this.transition.active)||document.hidden)return;
+  this.raf=requestAnimationFrame(t=>{
+   this.raf=0;if(!this.visible)return;if(this.last&&t-this.last<32){this.schedule();return;}
+   const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;this.transition.advance(delta);this.benchAppearance=Math.min(1,this.benchAppearance+delta/.2);
+   if(this.action==='display')this.progress=(this.elapsed%5)/5;
+   else if(this.action==='spin')this.progress=(this.elapsed*this.motion.speed)%1;
+   else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;
+   else if(this.action==='stand')this.progress=0;
+   else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}
+   this.pose();this.draw();this.schedule();
+  });
+ }
  reset(){this.yaw=.3;this.pitch=.07;this.zoom=1;this.panX=0;this.panY=0;this.draw();}
  draw(){
   if(this.disposed||!this.mesh||!this.garment)return;const gl=this.gl,r=this.canvas.getBoundingClientRect();if(!r.width||!r.height)return;
@@ -169,13 +215,15 @@ export class SkirtPreview {
   // Stable framing for standing procedural actions: the camera must not breathe
   // as the skirt flares or hands move. User orbit/zoom still applies.
   if(dressed&&['stand','spin','display'].includes(this.action)){min[0]=min[2]=-1.05;max[0]=max[2]=1.05;min[1]=Math.min(0,1.31-this.length/100*1.4);max[1]=2.68;}
-  const center=min.map((v,i)=>(v+max[i])/2);center[0]-=this.panX;center[1]-=this.panY;const radius=Math.max(.1,Math.hypot(...max.map((v,i)=>(v-min[i])/2))),aspect=w/h;
+  let center=min.map((v,i)=>(v+max[i])/2),radius=Math.max(.1,Math.hypot(...max.map((v,i)=>(v-min[i])/2)));const aspect=w/h;
+  if(this.transition.active&&this.fromFrame){const weight=this.transition.weight;center=center.map((v,i)=>this.fromFrame!.center[i]*(1-weight)+v*weight);radius=this.fromFrame.radius*(1-weight)+radius*weight;}
+  this.frame={center:[...center],radius};center[0]-=this.panX;center[1]-=this.panY;
   const distance=radius*Math.sqrt(1+(2.9/Math.min(1,aspect))**2)*1.03*this.zoom;
   for(const [name,value] of Object.entries({yaw:this.yaw,pitch:this.pitch,distance,aspect}))gl.uniform1f(gl.getUniformLocation(this.program,name),value);gl.uniform1f(gl.getUniformLocation(this.program,'renderMode'),this.renderMode==='toon'?1:0);this.canvas.dataset.renderMode=this.renderMode;gl.uniform3fv(gl.getUniformLocation(this.program,'center'),center);gl.bindTexture(gl.TEXTURE_2D,this.texture);
-  gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),1);gl.uniform1f(gl.getUniformLocation(this.program,'coverCut'),1.31-this.length/100*(1.11/.88)+.025-(this.action==='lie'?this.progress*.25:0));
+  gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),1);gl.uniform1f(gl.getUniformLocation(this.program,'coverCut'),this.renderedCut);
   if(dressed){gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.bindVertexArray(this.body!.vao);gl.drawElements(gl.TRIANGLES,this.body!.count,gl.UNSIGNED_INT,0);}
   gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),1);gl.bindVertexArray(this.garment.vao);gl.drawElements(gl.TRIANGLES,this.garment.count,gl.UNSIGNED_INT,0);
-  if(dressed&&this.bench){const alpha=Math.cos(this.yaw)<.2||this.pitch<-.25?.22:1;gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),alpha);this.canvas.dataset.benchOpacity=String(alpha);gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.bindVertexArray(this.bench.vao);gl.drawElements(gl.TRIANGLES,this.bench.count,gl.UNSIGNED_INT,0);gl.depthMask(true);gl.disable(gl.BLEND);}this.canvas.dataset.bench=String(Boolean(dressed&&this.bench));
+  if(dressed&&this.bench){const alpha=(Math.cos(this.yaw)<.2||this.pitch<-.25?.22:1)*this.benchVisibility;gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),alpha);this.canvas.dataset.benchOpacity=String(alpha);gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.bindVertexArray(this.bench.vao);gl.drawElements(gl.TRIANGLES,this.bench.count,gl.UNSIGNED_INT,0);gl.depthMask(true);gl.disable(gl.BLEND);}this.canvas.dataset.bench=String(Boolean(dressed&&this.bench));
  }
  dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.events.abort();this.observer.disconnect();this.release(this.garment);this.release(this.body);this.release(this.bench);this.gl.deleteTexture(this.texture);this.gl.deleteProgram(this.program);}
 }

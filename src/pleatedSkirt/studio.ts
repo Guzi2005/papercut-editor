@@ -54,7 +54,8 @@ export class SkirtStudio {
     const play=button('暂停',()=>{playing=!playing;this.preview?.setPlaying(playing);},'播放 / 暂停动作');play.setAttribute('aria-label','播放或暂停动作');
     const timeline=el('input');timeline.type='range';timeline.min='0';timeline.max='1';timeline.step='.01';timeline.value='0';timeline.setAttribute('aria-label','动作进度');timeline.oninput=()=>this.preview?.setProgress(Number(timeline.value));
     if(this.preview)this.preview.onProgress=(progress,isPlaying)=>{timeline.value=String(progress);playing=isPlaying;play.textContent=isPlaying?'暂停':'播放';};
-    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,motionControls,stage,playback,this.info,this.source);
+    stage.append(motionControls);
+    playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,stage,playback,this.info,this.source);
     this.tabs.setAttribute('role','tablist');this.tabs.setAttribute('aria-label','裙子展开图');
     const mobileNav=el('nav','skirt-mobile-nav');mobileNav.setAttribute('aria-label','素材制作工作区');
     this.element.dataset.mobilePane='paper';
