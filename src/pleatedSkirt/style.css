@@ -1304,18 +1304,23 @@
 .skirt-mobile-nav[hidden] { display: none !important; }
 
 /* Short landscape screens need one tool row rather than a wrapped tool palette. */
-.skirt-stance-editor { position:absolute; top:8px; right:8px; width:180px; max-width:48%; max-height:calc(100% - 16px); overflow-y:auto; z-index:2; border-radius:6px; background:color-mix(in srgb,var(--ui-panel) 88%,transparent); backdrop-filter:blur(8px); padding:6px; color:var(--ui-text-2); }
+.skirt-stance-editor { position:absolute; top:8px; right:8px; width:208px; max-width:48%; max-height:calc(100% - 16px); overflow-y:auto; z-index:2; border-radius:8px; background:color-mix(in srgb,var(--ui-panel) 92%,transparent); backdrop-filter:blur(8px); padding:8px 10px; color:var(--ui-text-2); }
 .skirt-stance-heading { display:flex; align-items:center; justify-content:space-between; font-size:11px; }
 .skirt-stance-editor svg { display:block; width:100%; overflow:visible; }
 .skirt-stance-plan { aspect-ratio:1; background:color-mix(in srgb,var(--ui-panel-2) 55%,transparent); border-radius:3px; }
-.stance-construction { stroke:var(--ui-muted); fill:none; stroke-width:.7; opacity:.4; stroke-dasharray:2 3; }
 .stance-axis { stroke:var(--ui-muted); stroke-width:.8; opacity:.3; fill:none; }
 .stance-grid { stroke:var(--ui-muted); stroke-width:.5; opacity:.15; fill:none; }
-.stance-anatomy { stroke:var(--ui-text-2); stroke-width:1.4; fill:none; stroke-linecap:round; }
-.stance-arm { stroke:var(--ui-accent); stroke-width:2; fill:none; stroke-linecap:round; }
-.stance-hand { fill:var(--ui-accent); stroke:transparent; stroke-width:18; paint-order:stroke; touch-action:none; cursor:grab; }
+.stance-solid { fill:var(--ui-text-2); pointer-events:none; }
+.stance-limb { fill:none; stroke:var(--ui-text-2); stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.stance-upper-arm { stroke-width:14; }
+.stance-forearm { stroke-width:11; }
+.stance-leg { stroke-width:14; }
+.stance-joint { fill:var(--ui-panel); stroke:var(--ui-text-2); stroke-width:1; opacity:.8; pointer-events:none; }
+.stance-hand { fill:transparent; stroke:transparent; stroke-width:16; touch-action:none; cursor:grab; outline:none; }
+.stance-hand:hover,.stance-hand:focus-visible { fill:color-mix(in srgb,var(--ui-accent) 18%,transparent); }
 .stance-foot { fill:color-mix(in srgb,var(--ui-accent) 20%,var(--ui-panel-2)); stroke:var(--ui-accent); stroke-width:1.4; touch-action:none; cursor:grab; }
-.stance-foot:focus-visible,.stance-hand:focus-visible { outline:1.5px solid var(--ui-accent); outline-offset:3px; }
+.stance-sole-line { fill:none; stroke:var(--ui-accent); stroke-width:1; opacity:.45; pointer-events:none; }
+.stance-foot:focus-visible { outline:1.5px solid var(--ui-accent); outline-offset:3px; }
 .stance-foot:active,.stance-hand:active { cursor:grabbing; }
 .stance-value { fill:var(--ui-muted); font:10px sans-serif; pointer-events:none; }
 @media (pointer:coarse) { .skirt-stance-editor { width:200px; max-width:55%; } }

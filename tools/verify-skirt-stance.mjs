@@ -11,11 +11,19 @@ try{
  const before=await preview.evaluate(c=>c.toDataURL()),left=page.getByRole('slider',{name:'左脚占位',exact:true}),rightArm=page.getByRole('slider',{name:'右手臂张开角度',exact:true});
  const box=await left.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x-5,box.y+box.height/2+18,{steps:6});await page.mouse.up();
  expect(JSON.parse(await preview.getAttribute('data-stance')).left.x).toBeLessThan(-.15);
+ // Drag the wrist to a known 90-degree rotation around its drawn shoulder.
+ const figure=page.locator('.skirt-stance-figure'),target=await figure.evaluate(e=>{
+  const shoulder=e.querySelectorAll('.stance-joint')[3],x=Number(shoulder.getAttribute('cx'))+.49*74,y=Number(shoulder.getAttribute('cy'))-.06*74;
+  const p=new DOMPoint(x,y).matrixTransform(e.getScreenCTM());return {x:p.x,y:p.y};
+ });
+ const wrist=await rightArm.boundingBox();await page.mouse.move(wrist.x+wrist.width/2,wrist.y+wrist.height/2);await page.mouse.down();await page.mouse.move(target.x,target.y,{steps:8});await page.mouse.up();
+ await expect(rightArm).toHaveAttribute('aria-valuenow','90');expect(Math.abs(JSON.parse(await preview.getAttribute('data-stance')).right.arm-90)).toBeLessThan(.1);
+ await rightArm.press('Home');
  await rightArm.focus();await rightArm.press('ArrowUp');await rightArm.press('Shift+ArrowUp');await expect(rightArm).toHaveAttribute('aria-valuenow','11');
  expect(await preview.evaluate(c=>c.toDataURL())).not.toBe(before);expect(Number(await preview.getAttribute('data-warp-error'))).toBeLessThan(.0001);
  await rightArm.press('Shift+ArrowUp');await rightArm.press('Shift+ArrowUp');await rightArm.press('Shift+ArrowUp');await rightArm.press('Shift+ArrowUp');
  await page.screenshot({path:join(tmpdir(),'papercut-stance.png')});
  await page.getByRole('button',{name:'坐下',exact:true}).click();await expect(page.locator('.skirt-stance-editor')).toBeHidden();await page.getByRole('button',{name:'站立',exact:true}).click();await page.getByRole('button',{name:'站姿摆布',exact:true}).click();await expect(rightArm).toHaveAttribute('aria-valuenow','51');
  await page.locator('.skirt-stance-editor').getByRole('button',{name:'复位',exact:true}).click();await expect(rightArm).toHaveAttribute('aria-valuenow','0');
- expect(errors).toEqual([]);console.log('PASS tab baseline, foot dragging, arm keyboard controls, reset, action visibility, cloth length');
+ expect(errors).toEqual([]);console.log('PASS tab baseline, foot dragging, wrist dragging/90 degree mapping, keyboard controls, reset, action visibility, cloth length');
 }finally{await browser.close();}

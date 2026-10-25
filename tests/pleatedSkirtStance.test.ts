@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {defaultStance,limitStance,stanceLeg,stanceDrop,poseStance} from '../src/pleatedSkirt/stance';
+import {defaultStance,limitStance,stanceLeg,stanceDrop,poseStance,stanceArm,stanceProject,stanceArmAngle} from '../src/pleatedSkirt/stance';
 import {readFileSync} from 'node:fs';
 test('foot layout keeps anatomical sides and finite limits',()=>{
  const s=limitStance({left:{x:1,z:-5,arm:200},right:{x:-1,z:NaN,arm:Infinity}});
@@ -10,6 +10,17 @@ test('standing leg IK preserves both segments and keeps feet on the ground',()=>
   const s=defaultStance();s.left.x=-x;s.left.z=z;s.right.x=.42;
   for(const side of [-1,1]){const {hip,knee,ankle}=stanceLeg(s,side),distance=(a:number[],b:number[])=>Math.hypot(...a.map((v,k)=>v-b[k]));assert.ok(Math.abs(distance(hip,knee)-.5)<1e-8);assert.ok(Math.abs(distance(knee,ankle)-.5)<1e-8);assert.equal(ankle[1],.16);}
   assert.ok(stanceDrop(s)>=0);
+ }
+});
+test('diagram wrist handles and preview arm vertices use the same joints and angle',()=>{
+ for(const side of [-1,1])for(const angle of [0,15,45,90,110]){
+  const s=defaultStance(),key=side<0?'left':'right';s[key].arm=angle;s[key].x=side*.4;
+  const drop=stanceDrop(s),rest=stanceArm(side,0),target=stanceArm(side,angle,drop);
+  const positions=new Float32Array([...rest.elbow,...rest.wrist,...rest.hand]),normals=new Float32Array([0,0,1,0,0,1,0,0,1]);
+  poseStance(positions,normals,[{name:'Mitten',vertexOffset:0,vertexCount:3}],s);
+  for(const [index,point] of [target.elbow,target.wrist,target.hand].entries())for(let k=0;k<3;k++)assert.ok(Math.abs(positions[index*3+k]-point[k])<1e-6,'joint projection matches preview transform');
+  const [x,y]=stanceProject(target.wrist);assert.ok(Math.abs(stanceArmAngle(side,x,y,drop)-angle)<1e-8,'pointer mapping round-trips displayed angle');
+  assert.ok(Math.abs(Math.hypot(...target.wrist.map((v,k)=>v-target.shoulder[k]))-Math.hypot(...rest.wrist.map((v,k)=>v-rest.shoulder[k])))<1e-8,'arm length stays constant');
  }
 });
 test('standing preview keeps default pose unchanged and moves shoes without scaling',()=>{
