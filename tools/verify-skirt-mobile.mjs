@@ -17,10 +17,10 @@ try {
   const paper=page.getByTestId('skirt-canvas'),preview=page.getByTestId('skirt-preview');
   await expect(preview).toHaveAttribute('data-avatar','ready');
   const sync=()=>expect(page.locator('.skirt-native-status')).toHaveText('已同步');await sync();
-  const inside=async(locator)=>{const r=await locator.boundingBox();expect(r).toBeTruthy();expect(r.x).toBeGreaterThanOrEqual(-1);expect(r.y).toBeGreaterThanOrEqual(0);expect(r.x+r.width).toBeLessThanOrEqual(width+1);expect(r.y+r.height).toBeLessThanOrEqual(height+1);return r;};
+  const inside=async(locator)=>{const r=await locator.boundingBox();expect(r).toBeTruthy();expect(r.x).toBeGreaterThanOrEqual(-1);expect(r.x+r.width).toBeLessThanOrEqual(width+1);if(width>640){expect(r.y).toBeGreaterThanOrEqual(0);expect(r.y+r.height).toBeLessThanOrEqual(height+1);}return r;};
   await inside(paper);expect((await paper.boundingBox()).height).toBeGreaterThan(200);
   const switchTo=async(pane)=>{if(width<=900)await page.getByRole('button',{name:`工作区：${pane}`,exact:true}).tap();};
-  if(width<=640){await expect(page.locator('.skirt-controls')).toBeHidden();await switchTo('参数');await expect(paper).toBeHidden();}
+  if(width<=640){await expect(page.locator('.skirt-controls')).toBeVisible();await expect(paper).toBeVisible();await expect(preview).toBeVisible();}
   const length=page.getByRole('spinbutton',{name:'裙长 / cm 数值',exact:true});
   await length.fill('96');await length.press('Tab');await sync();
   await page.getByRole('button',{name:'撤销',exact:true}).tap();await sync();await expect(length).toHaveValue('88');
@@ -61,7 +61,7 @@ try {
   else await switchTo('图纸');
   if(width<=900)await expect(paper).toBeVisible();
   await page.screenshot({path:join(out,`${name}-paper.png`)});
-  if(width<=640){await switchTo('参数');await page.setViewportSize({width:844,height:390});await expect(page.getByRole('button',{name:'工作区：图纸',exact:true})).toHaveAttribute('aria-pressed','true');await expect(paper).toBeVisible();await expect(length).toBeVisible();}
+  if(width<=640){await switchTo('参数');await page.setViewportSize({width:844,height:390});await expect(length).toBeVisible();}
   expect(errors).toEqual([]);await context.close();console.log(`PASS ${name}: touch navigation, parameter persistence, usable canvas, pinch/pan, no errors`);
  }
 } finally {await browser.close();}

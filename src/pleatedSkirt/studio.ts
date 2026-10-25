@@ -66,6 +66,10 @@ export class SkirtStudio {
       const b=button(name,()=>{
         this.element.dataset.mobilePane=pane;
         mobileNav.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+        if(matchMedia('(max-width: 640px)').matches){
+          const target=this.element.querySelector<HTMLElement>(`.skirt-${pane==='paper'?'paper-panel':pane==='preview'?'preview-panel':'controls'}`);
+          target?.scrollIntoView({behavior:'smooth',block:'start'});
+        }
       });
       b.dataset.pane=pane;b.setAttribute('aria-label',`工作区：${name}`);b.setAttribute('aria-pressed',String(pane==='paper'));mobileNav.append(b);
     }

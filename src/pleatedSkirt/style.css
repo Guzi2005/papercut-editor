@@ -1330,3 +1330,30 @@
   .skirt-host .skirt-tools > * { flex-shrink: 0; }
   .skirt-host .skirt-heading { height: 42px; min-height: 42px; }
 }
+
+/* Phone workflow: keep all three surfaces in one continuous inspection stream.
+   The bottom buttons are anchors only; they never remove a surface from view. */
+@media (max-width: 640px) {
+  .skirt-host .skirt-native-content { overflow-x: hidden; overflow-y: auto; }
+  .skirt-host .skirt-studio { height: auto; min-height: 100%; max-height:none; overflow:visible; }
+  .skirt-host .skirt-layout { display:flex; flex-direction:column; flex:none; min-height:0; overflow:visible; }
+  .skirt-host .skirt-layout > .skirt-paper-panel,
+  .skirt-host .skirt-layout > .skirt-preview-panel,
+  .skirt-host .skirt-layout > .skirt-controls {
+    display:flex !important; position:relative; inset:auto; grid-column:auto; grid-row:auto; width:100%; height:auto; max-height:none; min-height:0; flex:none; border:0; border-bottom:1px solid var(--ui-divider);
+  }
+  .skirt-studio[data-mobile-pane="paper"] .skirt-layout > .skirt-preview-panel,
+  .skirt-studio[data-mobile-pane="paper"] .skirt-layout > .skirt-controls,
+  .skirt-studio[data-mobile-pane="preview"] .skirt-layout > .skirt-paper-panel,
+  .skirt-studio[data-mobile-pane="preview"] .skirt-layout > .skirt-controls,
+  .skirt-studio[data-mobile-pane="controls"] .skirt-layout > .skirt-paper-panel,
+  .skirt-studio[data-mobile-pane="controls"] .skirt-layout > .skirt-preview-panel { display:flex !important; }
+  .skirt-host .skirt-layout > .skirt-paper-panel { order:1; min-height:390px; overflow:hidden; }
+  .skirt-host .skirt-layout > .skirt-preview-panel { order:2; min-height:390px; overflow:visible; }
+  .skirt-host .skirt-layout > .skirt-controls { order:3; display:block !important; width:100%; min-width:0; flex:0 0 auto; max-height:none; overflow:visible; padding:10px 10px calc(18px + env(safe-area-inset-bottom,0px)); }
+  .skirt-host .skirt-controls > .skirt-control-group { display:block; width:100%; min-width:0; }
+  .skirt-host .skirt-canvas-wrap { min-height:320px; flex:none; aspect-ratio:1; }
+  .skirt-host .skirt-stage { min-height:340px; height:340px; flex:none; }
+  .skirt-host .skirt-mobile-nav { position:sticky; bottom:0; z-index:8; border:1px solid var(--ui-divider); box-shadow:0 -4px 14px color-mix(in srgb,var(--ui-strong) 10%,transparent); background:color-mix(in srgb,var(--ui-panel-2) 94%,transparent); backdrop-filter:blur(8px); }
+  .skirt-host .skirt-mobile-nav button[aria-pressed="true"] { background:color-mix(in srgb,var(--ui-accent) 15%,transparent); color:var(--ui-accent); }
+}
