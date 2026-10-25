@@ -1,5 +1,6 @@
 import type {MeshData} from './geometry';
 import type {DrapeValues} from './drape';
+import {seatedEnvelope,supportSeatedBody} from './seatedDrape';
 /** Deterministic, waist-pinned length constraints for the preview surface.
  * Each longitudinal material edge keeps its reference arc length. Fine pleat
  * relaxation provides an art-directed opening control.
@@ -19,17 +20,12 @@ export class DrapeConstraint {
   // Use a monotone garment envelope for seated/lying poses instead, then
   // enforce material lengths below. The cage still owns the waist attachment.
   const source=p.slice(0,this.shell*3),blend=amount*amount*(3-2*amount);
+  if(action==='sit')seatedEnvelope(p,shapeRest,w,rows,d,blend);
   for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
    const v=row/rows,at=(row*w+col)*3;
-   if(action==='sit'||action==='lie'){
+   if(action==='lie'){
     const rx=shapeRest[at],ry=shapeRest[at+1],rz=shapeRest[at+2];
-    const front=(1-Math.cos(col/cols*Math.PI*2))*.5;
-    // A rounded lap/knee support, with less support at the sides. The hem
-    // drops beyond the knee instead of following one straight lifted cone.
-    const lap=Math.sin(Math.PI*v)*(.12+.24*front);
-    const target=action==='sit'
-     ? [rx*(1-.12*v*blend),ry+.18*v+lap,rz*(1-.30*v)+.58*Math.sin(v*Math.PI/2)]
-     : [-1.31+(1.31-ry),rx*(1-.75*v)-.10*v,rz*(1-.40*v)+.24*v];
+    const target=[-1.31+(1.31-ry),rx*(1-.75*v)-.10*v,rz*(1-.40*v)+.24*v];
     for(let k=0;k<3;k++)p[at+k]=source[at+k]*(1-blend)+target[k]*blend;
    }
   }
@@ -62,7 +58,12 @@ export class DrapeConstraint {
     p[at+1]-=side*band*seated*d.weight*softness*.09;
    }
   }
-  this.projectLengths(p);this.finishSurface(p,n);
+  if(action==='sit'){
+   // Alternate contact and inextensible material constraints. End on length
+   // projection so broad folds consume spare cloth instead of stretching it.
+   for(let i=0;i<3;i++){supportSeatedBody(p,w,rows,blend);this.projectLengths(p);}
+  }else this.projectLengths(p);
+  this.finishSurface(p,n);
  }
  projectLengths(p:Float32Array){const w=this.width,cols=w-1,rows=this.rows;
   // Reconstruct each material column from the target tangent field, starting

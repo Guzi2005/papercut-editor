@@ -12,7 +12,7 @@ export async function loadBench(lying:boolean):Promise<BenchMesh>{
   if(m.version!==1||!Number.isInteger(m.vertexCount)||m.vertexCount<1||m.vertexCount>500000||!Number.isInteger(m.indexCount)||m.indexCount<1||buffer.byteLength!==(n*3+m.indexCount)*4)throw Error('长椅模型格式无效');
   return {positions:new Float32Array(buffer,0,n),normals:new Float32Array(buffer,n*4,n),colors:new Float32Array(buffer,n*8,n),indices:new Uint32Array(buffer,n*12,m.indexCount),uvs:new Float32Array(m.vertexCount*2)};
  }).catch(e=>{pending=undefined;throw e;}));
- const positions=asset.positions.slice(),offset=lying?[-.90,-1.04,-.18]:[0,.22,-.30];
+ const positions=asset.positions.slice(),offset=lying?[-.90,-1.04,-.18]:[0,.32,-.30];
  for(let i=0;i<positions.length;i++)positions[i]+=offset[i%3];
  return {...asset,positions};
 }

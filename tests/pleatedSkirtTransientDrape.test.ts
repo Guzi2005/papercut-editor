@@ -21,3 +21,17 @@ test('seated gathers preserve pinned waist and material length, are deterministi
   const repeat=source.slice();solver.apply(repeat,normals,{weight:.6,bending:.1,opening:.7},1,'sit');assert.deepEqual(repeat,soft);
  }
 });
+
+test('seated cloth wraps pelvic volume and draws the rear hem upward into seat folds',()=>{
+ const manifest=JSON.parse(readFileSync('public/pleated-avatar/manifest.json','utf8')),bytes=readFileSync('public/pleated-avatar/frames.bin'),data=new Float32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/4);
+ const design=createDesign(),mesh=buildMesh(design.parameters),binding=new GarmentBinding(mesh,manifest.cage,88);
+ binding.deform(new Float32Array(manifest.cage.restPositions));const rest=binding.positions.slice(),solver=new DrapeConstraint(mesh,rest);
+ const frame=manifest.actions.sit.frames.at(-1),offset=frame.offset+manifest.vertexCount*6;binding.deform(data.subarray(offset,offset+manifest.cage.vertexCount*3));
+ solver.apply(binding.positions,binding.normals,{weight:.6,bending:.5,opening:.5},1,'sit',rest);
+ const width=design.parameters.pleat_count*8+1,rear=(24*width)*3,front=(24*width+(width-1)/2)*3;
+ assert.ok(binding.positions[rear+1]>rest[rear+1]+.2,'rear cloth is gathered upward instead of hanging as a standing cone');
+ assert.ok(binding.positions[rear+1]>binding.positions[front+1]+.1,'rear folds use more material than the front drape');
+ let minHipDistance=Infinity;
+ for(let i=width*3;i<25*width*3;i+=3){const p=binding.positions;minHipDistance=Math.min(minHipDistance,Math.hypot(p[i]/.295,(p[i+1]-1.17)/.15,(p[i+2]+.015)/.245));}
+ assert.ok(minHipDistance>.99,'cloth retains a finite envelope around the pelvis');assert.ok(solver.maxWarpError(binding.positions)<1e-4);
+});

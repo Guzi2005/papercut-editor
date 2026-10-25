@@ -1,5 +1,6 @@
 import {SkirtInertia,naturalEnvelope} from './skirtDynamics';
 import {PoseTransition} from './poseTransition';
+import {defaultStance,limitStance,poseStance,stanceDrop,type Stance} from './stance';
 import {graspSkirt} from './grasp';
 import {defaultMotionOptions,motionOptions,rotateY,moveArm,type MotionOptions} from './motion';
 import {loadBench,type BenchMesh} from './bench';
@@ -67,6 +68,7 @@ export class SkirtPreview {
  private fromCut=0;private benchVisibility=0;private fromBenchVisibility=0;private benchAppearance=1;
  private fromBench?:Float32Array;private benchRequest=0;
  private frame?:{center:number[];radius:number};private fromFrame?:{center:number[];radius:number};
+ private stance=defaultStance();
  private benchSit?:BenchMesh;private benchLie?:BenchMesh;
  onProgress?:(progress:number,playing:boolean)=>void;
  constructor(private canvas:HTMLCanvasElement){
@@ -124,6 +126,7 @@ export class SkirtPreview {
   this.progress=this.elapsed=this.last=0;this.playing=true;this.pose();this.draw();this.schedule();
  }
  setMotionOptions(patch:Partial<MotionOptions>){this.motion=motionOptions(this.motion,patch);if(!this.playing)this.inertia=new SkirtInertia();this.pose();this.draw();}
+ setStance(value:Stance){this.stance=limitStance(value);this.transition.cancel();this.pose();this.draw();}
  getRenderMode(){return this.renderMode;}
  setRenderMode(mode:PreviewRenderMode){this.renderMode=mode;try{localStorage.setItem(MODE_KEY,mode);}catch{/* Preview remains usable with storage disabled. */}this.canvas.dataset.renderMode=mode;this.draw();}
  setWorn(worn:boolean){this.worn=worn;this.transition.cancel();this.pose();this.draw();this.schedule();}
@@ -164,6 +167,13 @@ export class SkirtPreview {
    }
   }
   this.applyMotion();
+  if(this.action==='stand'){
+   poseStance(this.bodyPositions,this.bodyNormals,this.avatar.manifest.parts,this.stance);
+   const drop=stanceDrop(this.stance),p=this.binding.positions;
+   for(let i=0;i<p.length;i+=3){const v=this.mesh.uvs[i/3*2+1],side=p[i]<0?-1:1,foot=side<0?this.stance.left:this.stance.right,follow=v*v*.7;p[i]+=(foot.x-side*.15)*follow;p[i+1]-=drop;p[i+2]+=(foot.z-.045)*follow;}
+   this.constraint?.projectLengths(p);
+   this.canvas.dataset.stance=JSON.stringify(this.stance);
+  }
   const wasMixing=this.transition.active;
   this.renderedRoot=this.transition.apply({bodyPositions:this.bodyPositions,bodyNormals:this.bodyNormals,garmentPositions:this.binding.positions,garmentNormals:this.binding.normals,rootAngle:this.action==='spin'?this.inertia.angle:0});
   if(wasMixing&&this.constraint)this.constraint.projectLengths(this.binding.positions);

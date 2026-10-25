@@ -4,6 +4,7 @@ import {el,button,field,row,select,chooseFile,report,download} from './ui';
 import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,silhouettes,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
 import {effectiveShape,effectiveHem,setHemParameters,shapeControls,setShapeParameter} from './shape';
 import {createHemEditor} from './hemEditor';
+import {createStanceEditor} from './stanceEditor';
 import {PatternCanvas} from './canvas';
 import {SkirtPreview,readPreviewRenderMode} from './preview';
 import {paintTexture} from './texture';
@@ -47,7 +48,9 @@ export class SkirtStudio {
     option(displayControls,'双手 XY 夹角 / °','spread',90,20,150,1,'双手抓住手边裙料后，在正面 XY 平面缓缓展开');
     option(spinControls,'转速 / 圈每秒','speed',.4,.1,1.5,.1,'每秒平均转圈次数');
     option(spinControls,'匀速程度 / %','uniformity',35,0,100,1,'0：明显加减速；100：匀速');
-    const showMotion=()=>{motionControls.hidden=!worn||!['display','spin'].includes(chosen);displayControls.hidden=chosen!=='display';spinControls.hidden=chosen!=='spin';};
+    const stancePanel=createStanceEditor(s=>this.preview?.setStance(s));stancePanel.hidden=true;
+    const stanceToggle=button('摆布',()=>{stancePanel.hidden=!stancePanel.hidden;stanceToggle.setAttribute('aria-expanded',String(!stancePanel.hidden));},'拖动脚印调节站位；拖动双手调节手臂张角');stanceToggle.setAttribute('aria-label','站姿摆布');stanceToggle.setAttribute('aria-expanded','false');previewTitle.append(stanceToggle);stage.append(stancePanel);
+    const showMotion=()=>{motionControls.hidden=!worn||!['display','spin'].includes(chosen);displayControls.hidden=chosen!=='display';spinControls.hidden=chosen!=='spin';stanceToggle.hidden=!worn||chosen!=='stand';if(stanceToggle.hidden){stancePanel.hidden=true;stanceToggle.setAttribute('aria-expanded','false');}};
     const actionTabs=el('div','skirt-action-tabs');for(const [id,name] of [['stand','站立'],['walk','行走'],['sit','坐下'],['lie','躺下'],['display','裙摆展示'],['spin','转圈圈']] as [PreviewAction,string][]) {const b=button(name,()=>{chosen=id;showMotion();this.preview?.setAction(id);actionTabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));});b.dataset.action=id;b.title=`预览${name}动作`;if(id==='stand')b.classList.add('active');actionTabs.append(b);}
     const playback=el('div','skirt-preview-tools');let worn=true,playing=true;
     const mode=button('穿着',()=>{worn=!worn;mode.textContent=worn?'穿着':'单裙';this.preview?.setWorn(worn);actionTabs.hidden=!worn;showMotion();timeline.disabled=!worn;},'切换穿着 / 单裙');
