@@ -47,7 +47,7 @@ try{
  await select(shape,'relaxed');await set('松量 / %',20);
  const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'导入设计',exact:true}).click();await (await chooser).setFiles(join(out,'design.json'));await sync();
  await expect(shape).toHaveValue('trumpet');await expect(page.getByRole('spinbutton',{name:'长轴朝向 / ° 数值',exact:true})).toHaveValue('37');await expect(page.getByRole('spinbutton',{name:'尾摆扩张 / % 数值',exact:true})).toHaveValue('80');
- await page.setViewportSize({width:800,height:1000});await page.screenshot({path:join(out,'narrow.png')});
+ await page.setViewportSize({width:800,height:1000});await page.getByRole('button',{name:'工作区：三维',exact:true}).click();await page.screenshot({path:join(out,'narrow.png')});
  expect(await p.evaluate(el=>{const r=el.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===el;})).toBe(true);
  const sizes=await page.locator('.skirt-controls').evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth}));expect(sizes.scroll).toBeLessThanOrEqual(sizes.client);
  const [a,b]=await Promise.all([shape.boundingBox(),hem.boundingBox()]);expect(Math.abs(a.width-b.width)).toBeLessThan(1);expect(Math.abs(a.y-b.y)).toBeLessThan(1);

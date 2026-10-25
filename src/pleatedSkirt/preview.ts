@@ -60,6 +60,8 @@ export class SkirtPreview {
  private key='';private length=88;private action:PreviewAction='stand';private worn=true;private playing=true;private progress=0;private elapsed=0;private raf=0;private last=0;
  private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private renderMode:PreviewRenderMode=readPreviewRenderMode();private observer:ResizeObserver;private events=new AbortController();private disposed=false;
  private drag?:{id:number;x:number;y:number;button:number};
+ private touches=new Map<number,{x:number;y:number}>();private multiTouch=false;
+ private visible=true;
  private benchSit?:BenchMesh;private benchLie?:BenchMesh;
  onProgress?:(progress:number,playing:boolean)=>void;
  constructor(private canvas:HTMLCanvasElement){
@@ -67,10 +69,17 @@ export class SkirtPreview {
   const shader=(type:number,source:string)=>{const s=gl.createShader(type)!;gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)??'3D shader error');return s;};
   this.program=gl.createProgram()!;const vs=shader(gl.VERTEX_SHADER,vertex),fs=shader(gl.FRAGMENT_SHADER,fragment);gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error('3D 预览初始化失败');
   this.texture=gl.createTexture()!;gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  this.observer=new ResizeObserver(()=>this.draw());this.observer.observe(canvas);const signal=this.events.signal;
-  canvas.addEventListener('pointerdown',e=>{if(![0,1,2].includes(e.button))return;this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:e.button};canvas.setPointerCapture(e.pointerId);},{signal});
-  canvas.addEventListener('pointermove',e=>{if(!this.drag||this.drag.id!==e.pointerId)return;const dx=e.clientX-this.drag.x,dy=e.clientY-this.drag.y;if(this.drag.button===1){this.panX+=dx*.003*this.zoom;this.panY-=dy*.003*this.zoom;}else{this.yaw+=dx*.009;this.pitch=Math.max(-1.25,Math.min(1.25,this.pitch+dy*.008));}this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:this.drag.button};this.draw();},{signal});
-  for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,()=>{this.drag=undefined;},{signal});
+  this.observer=new ResizeObserver(entries=>{const rect=entries[0].contentRect;this.visible=rect.width>0&&rect.height>0;this.last=0;this.draw();this.schedule();});this.observer.observe(canvas);const signal=this.events.signal;
+  canvas.addEventListener('pointerdown',e=>{if(![0,1,2].includes(e.button))return;if(e.pointerType==='touch'){this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.touches.size>1)this.multiTouch=true;}if(!this.multiTouch)this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:e.button};else this.drag=undefined;canvas.setPointerCapture(e.pointerId);},{signal});
+  canvas.addEventListener('pointermove',e=>{
+   if(this.touches.has(e.pointerId)){
+    const before=[...this.touches.values()];this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});const after=[...this.touches.values()];
+    if(before.length===2){const distance=(p:{x:number;y:number}[])=>Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const oldDistance=distance(before),newDistance=distance(after);if(oldDistance>1&&newDistance>1)this.zoom=Math.max(.3,Math.min(3,this.zoom*oldDistance/newDistance));this.panX+=((after[0].x+after[1].x-before[0].x-before[1].x)/2)*.003*this.zoom;this.panY-=((after[0].y+after[1].y-before[0].y-before[1].y)/2)*.003*this.zoom;this.draw();return;}
+    if(this.multiTouch)return;
+   }
+   if(!this.drag||this.drag.id!==e.pointerId)return;const dx=e.clientX-this.drag.x,dy=e.clientY-this.drag.y;if(this.drag.button===1){this.panX+=dx*.003*this.zoom;this.panY-=dy*.003*this.zoom;}else{this.yaw+=dx*.009;this.pitch=Math.max(-1.25,Math.min(1.25,this.pitch+dy*.008));}this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,button:this.drag.button};this.draw();
+  },{signal});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,e=>{const id=(e as PointerEvent).pointerId;this.touches.delete(id);if(!this.touches.size)this.multiTouch=false;if(this.drag?.id===id)this.drag=undefined;},{signal});
   canvas.addEventListener('contextmenu',e=>e.preventDefault(),{signal});
   canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.3,Math.min(3,this.zoom*Math.exp(e.deltaY*.001)));this.draw();},{passive:false,signal});
   document.addEventListener('visibilitychange',()=>{this.last=0;if(document.hidden){cancelAnimationFrame(this.raf);this.raf=0;}else this.schedule();},{signal});
@@ -149,7 +158,7 @@ export class SkirtPreview {
    this.canvas.dataset.grip=String(hands[0].contact);this.canvas.dataset.gripRow=String(hands[0].row);
   }
  }
- private schedule(){if(this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='display')this.progress=(this.elapsed%5)/5;else if(this.action==='spin')this.progress=(this.elapsed*this.motion.speed)%1;else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
+ private schedule(){if(!this.visible||this.raf||this.disposed||!this.playing||!this.worn||!this.avatar||this.action==='stand'||document.hidden)return;this.raf=requestAnimationFrame(t=>{this.raf=0;if(!this.visible)return;if(this.last&&t-this.last<32){this.schedule();return;}const delta=this.last?Math.min(.1,(t-this.last)/1000):0;this.last=t;this.elapsed+=delta;if(this.action==='display')this.progress=(this.elapsed%5)/5;else if(this.action==='spin')this.progress=(this.elapsed*this.motion.speed)%1;else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}this.pose();this.draw();this.schedule();});}
  reset(){this.yaw=.3;this.pitch=.07;this.zoom=1;this.panX=0;this.panY=0;this.draw();}
  draw(){
   if(this.disposed||!this.mesh||!this.garment)return;const gl=this.gl,r=this.canvas.getBoundingClientRect();if(!r.width||!r.height)return;

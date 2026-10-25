@@ -1026,3 +1026,282 @@
 .skirt-control-group .skirt-group-heading { align-items:center; justify-content:space-between; }
 .skirt-group-heading .skirt-group-title { margin:0; }
 .skirt-subtitle { color:var(--ui-muted); font-size:10.5px; }
+
+/* Responsive asset studio: split view on tablets, pane switcher on phones.
+   Appended after the legacy breakpoints so these rules take precedence. */
+
+.skirt-host .skirt-mobile-nav { display: none; }
+
+/* Tablet: controls stay docked left; paper and preview share the right cell. */
+@media (max-width: 900px) {
+  .skirt-host .skirt-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .skirt-host .skirt-controls {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .skirt-host .skirt-paper-panel,
+  .skirt-host .skirt-preview-panel {
+    grid-column: 2;
+    grid-row: 1;
+    height: 100%;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .skirt-host .skirt-paper-panel { display: flex; }
+  .skirt-host .skirt-preview-panel { display: none; }
+  .skirt-studio[data-mobile-pane="preview"] .skirt-paper-panel { display: none; }
+  .skirt-studio[data-mobile-pane="preview"] .skirt-preview-panel { display: flex; }
+
+  .skirt-host .skirt-mobile-nav {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    height: auto;
+    min-height: 32px;
+    padding: 3px 8px calc(3px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--ui-divider);
+    background: var(--ui-panel-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .skirt-host .skirt-mobile-nav::-webkit-scrollbar { display: none; }
+
+  .skirt-host .skirt-mobile-nav button {
+    flex: 0 0 auto;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ui-text-2);
+    font-size: 11px;
+  }
+
+  .skirt-host .skirt-mobile-nav button:hover:not(:disabled) {
+    background: var(--ui-hover);
+    border-color: transparent;
+    color: var(--ui-strong);
+  }
+
+  .skirt-host .skirt-mobile-nav button[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+    border-color: transparent;
+    color: var(--ui-accent);
+  }
+
+  .skirt-host .skirt-mobile-nav button[aria-pressed="true"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ui-accent) 20%, transparent);
+    border-color: transparent;
+    color: var(--ui-accent);
+  }
+
+  /* The controls are always visible beside the right pane on tablets. */
+  .skirt-host .skirt-mobile-nav button[data-pane="controls"] { display: none; }
+}
+
+/* Phone: fixed studio shell with exactly one scrollable workspace visible. */
+@media (max-width: 640px) {
+  .skirt-host { overflow: hidden; }
+
+  .skirt-host .skirt-native-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .skirt-host .skirt-studio {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .skirt-host .skirt-heading {
+    height: auto;
+    min-height: 38px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px 8px;
+    overflow: hidden;
+  }
+
+  .skirt-host .skirt-heading > div:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+    overflow: hidden;
+  }
+
+  /* Drop the eyebrow so the heading stays a single compact row. */
+  .skirt-host .skirt-eyebrow { display: none; }
+  .skirt-host .skirt-heading h1 {
+    margin: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .skirt-host .skirt-heading .row {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .skirt-host .skirt-heading .row::-webkit-scrollbar { display: none; }
+
+  .skirt-host .skirt-heading button,
+  .skirt-host .skirt-heading .row > * { flex: 0 0 auto; }
+
+  .skirt-host .skirt-layout {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .skirt-host .skirt-layout > .skirt-controls,
+  .skirt-host .skirt-layout > .skirt-paper-panel,
+  .skirt-host .skirt-layout > .skirt-preview-panel {
+    display: none;
+    grid-column: 1;
+    grid-row: 1;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .skirt-studio[data-mobile-pane="paper"] .skirt-layout > .skirt-paper-panel,
+  .skirt-studio:not([data-mobile-pane]) .skirt-layout > .skirt-paper-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    overflow: hidden;
+  }
+
+  .skirt-studio[data-mobile-pane="preview"] .skirt-layout > .skirt-preview-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .skirt-studio[data-mobile-pane="controls"] .skirt-layout > .skirt-controls {
+    display: block;
+    padding: 8px 10px calc(12px + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .skirt-host .skirt-paper-panel,
+  .skirt-host .skirt-preview-panel { min-height: 0; }
+
+  .skirt-host .skirt-canvas-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .skirt-host .skirt-stage { min-height: 0; }
+
+  .skirt-host .skirt-mobile-nav {
+    flex: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    min-height: 44px;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .skirt-host .skirt-mobile-nav button {
+    flex: 1 1 0;
+    width: auto;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .skirt-host .skirt-mobile-nav button[data-pane="controls"] { display: inline-flex; }
+}
+
+/* Touch devices: larger hit targets while keeping the compact visual language. */
+@media (pointer: coarse) {
+  .skirt-host button,
+  .skirt-host select { min-height: 40px !important; }
+  .skirt-host button { font-size: 12px; }
+  .skirt-host select { font-size: 16px; }
+  .skirt-host .skirt-hem-handle { stroke-width: 18; }
+
+  .skirt-host input[type=range] { min-height: 36px; }
+
+  .skirt-host .skirt-range input[type=number] {
+    flex: 0 0 56px;
+    width: 56px;
+    min-height: 36px;
+    font-size: 16px;
+  }
+
+  .skirt-host .field > span,
+  .skirt-host .skirt-range-ends { font-size: 12px; }
+
+  .skirt-host .skirt-controls,
+  .skirt-host .skirt-preview-panel { touch-action: pan-y; }
+
+  .skirt-host .skirt-native-toolbar {
+    height: auto;
+    min-height: 44px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .skirt-host .skirt-native-toolbar > * { flex: 0 0 auto; }
+}
+
+/* Hidden panels and inline controls always stay hidden, even when a pane rule
+   would otherwise give them a display value. */
+.skirt-host [hidden],
+.skirt-host[hidden],
+.skirt-studio[hidden],
+.skirt-mobile-nav[hidden] { display: none !important; }
+
+/* Short landscape screens need one tool row rather than a wrapped tool palette. */
+@media (max-width: 900px) and (max-height: 500px) {
+  .skirt-host .skirt-paper-panel > .skirt-panel-title { display: none; }
+  .skirt-host .skirt-tools { flex-wrap: nowrap; overflow-x: auto; flex: none; }
+  .skirt-host .skirt-tools > * { flex-shrink: 0; }
+  .skirt-host .skirt-heading { height: 42px; min-height: 42px; }
+}

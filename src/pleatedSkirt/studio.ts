@@ -20,6 +20,7 @@ export class SkirtStudio {
   private mirror=true;private strokeStart=0;private patchStart=0;private pendingFrame=0;private patchPieces:string[]=[];private patchU=0;private patchLastU=0;private focusView:string|null=null;
   private shapeOpen=false;private readonly shapeDetailsId=`skirt-shape-details-${crypto.randomUUID()}`;
   private focusHem:string|null=null;
+  private mobileEvents=new AbortController();
   constructor(private host:Host){
     this.texture.width=this.texture.height=1024;
     const heading=el('div','skirt-heading'),title=el('div');title.append(el('h1','','百褶裙'));
@@ -55,12 +56,22 @@ export class SkirtStudio {
     if(this.preview)this.preview.onProgress=(progress,isPlaying)=>{timeline.value=String(progress);playing=isPlaying;play.textContent=isPlaying?'暂停':'播放';};
     playback.append(mode,play,timeline);previewPanel.append(previewTitle,actionTabs,motionControls,stage,playback,this.info,this.source);
     this.tabs.setAttribute('role','tablist');this.tabs.setAttribute('aria-label','裙子展开图');
-    layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout);
+    const mobileNav=el('nav','skirt-mobile-nav');mobileNav.setAttribute('aria-label','素材制作工作区');
+    this.element.dataset.mobilePane='paper';
+    for(const [pane,name] of [['paper','图纸'],['preview','三维'],['controls','参数']]){
+      const b=button(name,()=>{
+        this.element.dataset.mobilePane=pane;
+        mobileNav.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+      });
+      b.dataset.pane=pane;b.setAttribute('aria-label',`工作区：${name}`);b.setAttribute('aria-pressed',String(pane==='paper'));mobileNav.append(b);
+    }
+    layout.append(this.controls,workspace,previewPanel);this.element.append(heading,layout,mobileNav);
+    matchMedia('(max-width: 640px)').addEventListener('change',e=>{if(!e.matches&&this.element.dataset.mobilePane==='controls')mobileNav.querySelector<HTMLButtonElement>('[data-pane="paper"]')?.click();},{signal:this.mobileEvents.signal});
     this.pattern.onDown=(uv,e)=>this.down(uv,e);this.pattern.onMove=(uv,e)=>this.move(uv,e);this.pattern.onUp=()=>this.up();this.pattern.onCancel=()=>this.cancel();
   }
   refresh(){const d=this.host.get();if(!d)return;this.draft=undefined;this.start=undefined;this.pointer=-1;this.buildControls(d);this.buildTools(d);this.display(d);}
   restoreTabFocus(){if(this.element.closest('[inert]'))return;if(this.focusView){this.tabs.querySelector<HTMLButtonElement>('button[data-view='+this.focusView+']')?.focus();this.focusView=null;}if(this.focusHem){this.controls.querySelector<SVGElement>(`[data-hem-handle="${this.focusHem}"]`)?.focus();this.focusHem=null;}}
-  dispose(){cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.element.remove();}
+  dispose(){this.mobileEvents.abort();cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.element.remove();}
   private display(d:SkirtDesign){paintTexture(this.texture,d,this.host.overlay(d));this.pattern.update(d,this.texture,this.selected);this.preview?.update(d,this.texture);
     this.info.textContent=`${d.parameters.pleat_count} 道褶 · ${d.parameters.length_cm} cm 裙长 · ${d.parameters.thickness_mm} mm 布厚`;
     this.source.textContent='参考来源 ⓘ';this.source.dataset.tip=d.source.references.map(x=>x.title).join(' / ')||'自由设计 · 尚未添加来源';

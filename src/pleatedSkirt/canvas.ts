@@ -9,27 +9,41 @@ export class PatternCanvas {
  design?:SkirtDesign;texture?:HTMLCanvasElement;selected='';guides=true;turnTool=true;
  private turn=0;private viewScale=1;private viewPanX=0;private viewPanY=0;
  private viewDrag?:{id:number;x:number;y:number;pan:boolean};private drawing=false;private frame=0;
+ private touches=new Map<number,{x:number;y:number}>();private multiTouch=false;private drawingPointer=-1;
  onDown:(uv:UV,e:PointerEvent)=>void=()=>{};onMove:(uv:UV|null,e:PointerEvent)=>void=()=>{};onUp:()=>void=()=>{};onCancel:()=>void=()=>{};
  constructor(public canvas:HTMLCanvasElement){
   this.unsubscribeDimensions=subscribeDimensionMode(()=>this.draw());
   this.observer=new ResizeObserver(()=>this.draw());this.observer.observe(canvas);const signal=this.events.signal;
   canvas.addEventListener('pointerdown',e=>{
+   if(e.pointerType==='touch'){
+    this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});canvas.setPointerCapture(e.pointerId);
+    if(this.touches.size>1){this.multiTouch=true;this.viewDrag=undefined;if(this.drawing){this.drawing=false;this.onCancel();}e.preventDefault();return;}
+    if(this.multiTouch)return;
+   }
    if(this.viewDrag||this.drawing)return;
    const flat=this.design?.canvas_view==='front';
    if(flat&&(e.button===1||e.button===2||(e.button===0&&this.turnTool))){this.viewDrag={id:e.pointerId,x:e.clientX,y:e.clientY,pan:e.button===1};canvas.setPointerCapture(e.pointerId);e.preventDefault();return;}
    if(e.button!==0)return;const uv=this.hit(e);if(!uv)return;
-   this.drawing=true;e.preventDefault();canvas.setPointerCapture(e.pointerId);this.onDown(uv,e);
+   this.drawing=true;this.drawingPointer=e.pointerId;e.preventDefault();canvas.setPointerCapture(e.pointerId);this.onDown(uv,e);
   },{signal});
   canvas.addEventListener('pointermove',e=>{
+   if(this.touches.has(e.pointerId)){
+    const before=[...this.touches.values()];this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});const after=[...this.touches.values()];
+    if(before.length===2){
+     if(this.design?.canvas_view==='front'){const distance=(p:{x:number;y:number}[])=>Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);const a=distance(before),b=distance(after);if(a>1&&b>1)this.viewScale=Math.max(.7,Math.min(2.2,this.viewScale*b/a));this.viewPanX+=(after[0].x+after[1].x-before[0].x-before[1].x)/2;this.viewPanY+=(after[0].y+after[1].y-before[0].y-before[1].y)/2;this.applyViewTransform();}
+     return;
+    }
+    if(this.multiTouch)return;
+   }
    if(this.viewDrag?.id===e.pointerId){
     const dx=e.clientX-this.viewDrag.x,dy=e.clientY-this.viewDrag.y;
     if(this.viewDrag.pan){this.viewPanX+=dx;this.viewPanY+=dy;}else this.turn=wrapU(this.turn-dx/(this.canvas.clientWidth*this.viewScale)*.5);
     this.viewDrag={...this.viewDrag,x:e.clientX,y:e.clientY};this.applyViewTransform();this.drawSoon();return;
    }
-   if(this.drawing)this.onMove(this.hit(e),e);
+   if(this.drawing&&this.drawingPointer===e.pointerId)this.onMove(this.hit(e),e);
   },{signal});
-  canvas.addEventListener('pointerup',e=>{if(this.viewDrag?.id===e.pointerId){this.viewDrag=undefined;this.draw();return;}if(this.drawing){this.drawing=false;this.onUp();}},{signal});
-  for(const name of ['pointercancel','lostpointercapture'])canvas.addEventListener(name,()=>{this.viewDrag=undefined;if(this.drawing){this.drawing=false;this.onCancel();}},{signal});
+  canvas.addEventListener('pointerup',e=>{this.touches.delete(e.pointerId);if(!this.touches.size)this.multiTouch=false;if(this.viewDrag?.id===e.pointerId){this.viewDrag=undefined;this.draw();return;}if(this.drawing&&this.drawingPointer===e.pointerId){this.drawing=false;this.onUp();}},{signal});
+  for(const name of ['pointercancel','lostpointercapture'])canvas.addEventListener(name,e=>{const id=(e as PointerEvent).pointerId;this.touches.delete(id);if(!this.touches.size)this.multiTouch=false;if(this.viewDrag?.id===id)this.viewDrag=undefined;if(this.drawing&&this.drawingPointer===id){this.drawing=false;this.onCancel();}},{signal});
   canvas.addEventListener('wheel',e=>{if(this.design?.canvas_view!=='front'||this.drawing)return;e.preventDefault();this.viewScale=Math.max(.7,Math.min(2.2,this.viewScale*Math.exp(-e.deltaY*.001)));this.applyViewTransform();},{passive:false,signal});
   canvas.addEventListener('contextmenu',e=>e.preventDefault(),{signal});
  }
