@@ -42,6 +42,20 @@ body {
   touch-action: manipulation;
 }
 
+/* Solid accent controls use the fill/ink pair so vivid accents stay readable.
+   Exact class tokens keep translucent accent backgrounds and drawing colors untouched. */
+.bg-\(--ui-accent\) {
+  background-color: var(--ui-accent-fill, var(--ui-accent));
+  color: var(--ui-accent-ink, #FFFFFF);
+}
+.hover\:bg-\(--ui-accent-hover\):hover {
+  background-color: var(--ui-accent-fill-hover, var(--ui-accent-hover));
+}
+.bg-\(--ui-accent\) .text-white,
+.hover\:bg-\(--ui-accent-hover\):hover .text-white {
+  color: var(--ui-accent-ink, #FFFFFF);
+}
+
 /* Brief highlight of an item picked from the items tab. */
 @keyframes item-flash {
   0% { opacity: 0; }

@@ -482,13 +482,14 @@ export const TopBar: React.FC<TopBarProps> = ({
                     return (
                       <button
                         key={sk.id}
+                        aria-label={sk.name}
                         onClick={() => onSelectSkin?.(sk.id)}
                         data-tip={sk.name}
                         className={`w-7 h-7 rounded-full p-0.5 border-2 transition-colors ${
                           currentSkin === sk.id ? 'border-(--ui-accent)' : 'border-transparent hover:border-(--ui-border-strong)'
                         }`}
                       >
-                        <span className="block w-full h-full rounded-full" style={{ background: `conic-gradient(${c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }} />
+                        <span className="block w-full h-full rounded-full" style={{ background: `conic-gradient(${c.accentFill ?? c.accent} 0 34%, ${c.panel} 0 67%, ${c.accent2} 0)` }} />
                       </button>
                     );
                   })}

@@ -27,6 +27,9 @@ interface SkinColors {
   accentGlow: string;
   accent2: string;
   grid: string;
+  accentFill?: string;
+  accentInk?: string;
+  accentFillHover?: string;
 }
 
 export interface SkinDefinition {
@@ -67,16 +70,16 @@ export const SKINS: SkinDefinition[] = [
   },
   {
     id: 'songyan',
-    name: '松烟墨',
-    tone: 'dark',
-    desc: '石墨灰与印泥红，安静的深色',
-    colors: dark(
-      { accent: '#A9483A', accentHover: '#913C30', accentGlow: '#BE5B4C', accent2: '#B89B6A' },
-      {
-        app: '#141413', panel: '#1B1B1A', panel2: '#171716', input: '#111110', raised: '#222221', hover: '#2A2A28',
-        divider: '#2A2927', border: '#32312E', borderStrong: '#46443F', strong: '#ECE8E1', text: '#CFCAC1', text2: '#DAD4CA', muted: '#8F8A81', faint: '#625E58', grid: '#3A3834',
-      }
-    ),
+    name: '苔纸荧光',
+    tone: 'light',
+    desc: '浅色：暖米纸、淡薄荷与墨黑，青柠荧光和珊瑚点缀',
+    // Reference coral #D58B80 is deepened to a readable #A65348 for text and lines.
+    colors: {
+      app: '#F0EBE1', panel: '#D4E0DA', panel2: '#EAF0EA', input: '#FFFDF8', raised: '#E9E4D8', hover: '#C6D6CC',
+      divider: '#C2CEC5', border: '#B5C3B9', borderStrong: '#93A294', strong: '#20231F', text: '#2E352D', text2: '#3E4A40',
+      muted: '#55635A', faint: '#748277', accent: '#52651D', accentHover: '#3F4F16', accentGlow: '#C5FF39', accent2: '#A65348',
+      grid: '#B9C4B7', accentFill: '#C5FF39', accentInk: '#20231F', accentFillHover: '#AEE62B',
+    },
   },
   {
     id: 'xuan',
@@ -124,6 +127,9 @@ export function skinVariables(id: WorkbenchSkin): React.CSSProperties {
     '--ui-accent-hover': c.accentHover,
     '--ui-accent-glow': c.accentGlow,
     '--ui-accent-2': c.accent2,
+    '--ui-accent-fill': c.accentFill ?? c.accent,
+    '--ui-accent-ink': c.accentInk ?? '#FFFFFF',
+    '--ui-accent-fill-hover': c.accentFillHover ?? c.accentHover,
     '--ui-grid': c.grid,
     colorScheme: skin.tone,
   } as React.CSSProperties;
