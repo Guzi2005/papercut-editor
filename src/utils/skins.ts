@@ -63,10 +63,15 @@ const dark = (c: Partial<SkinColors> & Pick<SkinColors, 'accent' | 'accentHover'
 export const SKINS: SkinDefinition[] = [
   {
     id: 'indigo',
-    name: '扎染蓝印',
-    tone: 'dark',
-    desc: '靛青与紫藤，默认工作台',
-    colors: dark({ accent: '#2652D0', accentHover: '#1E43B8', accentGlow: '#3A6DF0', accent2: '#EB8E88' }),
+    name: '黑白青卡片',
+    tone: 'light',
+    desc: '黑色导航、白色画布与浅灰卡片，青色作强调',
+    colors: {
+      app: '#F1F1F1', panel: '#050505', panel2: '#FFFFFF', input: '#FAFAFA', raised: '#C8C8D0', hover: '#E9F8FA',
+      divider: '#E4E4E4', border: '#D0D0D0', borderStrong: '#141414', strong: '#050505', text: '#171717', text2: '#4F4F4F',
+      muted: '#777777', faint: '#A0A0A0', accent: '#050505', accentHover: '#242424', accentGlow: '#9ADFE8', accent2: '#78C9D5',
+      grid: '#D8D8D8', accentFill: '#050505', accentInk: '#FFFFFF', accentFillHover: '#242424',
+    },
   },
   {
     id: 'songyan',
