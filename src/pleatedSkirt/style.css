@@ -1010,3 +1010,7 @@
 .skirt-hem-handle { fill:var(--ui-panel-2); stroke:var(--ui-accent); stroke-width:2; cursor:grab; }
 .skirt-hem-handle:hover, .skirt-hem-handle:focus { fill:var(--ui-accent); outline:none; stroke:var(--ui-strong); }
 .skirt-hem-handle:active { cursor:grabbing; }
+.skirt-hem-grid line { fill:none; stroke:var(--ui-muted); stroke-width:.6; }
+.skirt-hem-grid-minor { opacity:.12; }
+.skirt-hem-grid-major { opacity:.23; }
+.skirt-hem-head { fill:color-mix(in srgb,var(--ui-muted) 10%,transparent); stroke:var(--ui-muted); stroke-width:1.2; stroke-dasharray:3 3; opacity:.6; }

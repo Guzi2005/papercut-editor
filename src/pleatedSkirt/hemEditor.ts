@@ -61,6 +61,26 @@ export function createHemEditor(
   svg.setAttribute('role','group');
   svg.setAttribute('aria-label','下摆轮廓编辑器');
 
+  // Fixed drafting references stay behind the editable hem, independent of
+  // its size and rotation. The head is a schematic standing-position guide.
+  const grid=svgElement('g');
+  grid.setAttribute('class','skirt-hem-grid');
+  grid.setAttribute('aria-hidden','true');
+  grid.setAttribute('pointer-events','none');
+  for(let i=-12;i<=12;i++)for(const vertical of [true,false]){
+    const position=(vertical?CX:CY)+i*10*SCALE;
+    if(position<0||position>(vertical?VIEW_W:VIEW_H))continue;
+    const line=svgElement('line');
+    line.setAttribute('x1',String(vertical?position:0));line.setAttribute('x2',String(vertical?position:VIEW_W));
+    line.setAttribute('y1',String(vertical?0:position));line.setAttribute('y2',String(vertical?VIEW_H:position));
+    line.setAttribute('class',i%5===0?'skirt-hem-grid-major':'skirt-hem-grid-minor');grid.append(line);
+  }
+  const head=svgElement('circle');
+  head.setAttribute('class','skirt-hem-head');
+  head.setAttribute('cx',String(CX));head.setAttribute('cy',String(CY+3.5*SCALE));
+  head.setAttribute('r',String(16*SCALE));
+  head.setAttribute('pointer-events','none');head.setAttribute('aria-hidden','true');
+
   const outline=svgElement('ellipse');
   outline.setAttribute('class','skirt-hem-outline');
   outline.setAttribute('fill','none');
@@ -108,7 +128,7 @@ export function createHemEditor(
     handles[name]=handle;
   }
 
-  svg.append(outline,majorAxis,minorAxis,front,handles.major,handles.minor,handles.rotation);
+  svg.append(grid,outline,majorAxis,minorAxis,head,front,handles.major,handles.minor,handles.rotation);
 
   let current=design;
   let drag:DragState|null=null;
