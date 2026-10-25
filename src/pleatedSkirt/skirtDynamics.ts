@@ -1,7 +1,7 @@
 import type {SkirtDesign} from './model';
 import {effectiveDrape} from './drape';
 import type {MotionOptions} from './motion';
-import {defaultShapeSettings,type ShapeSettings} from './shape';
+import {defaultShapeSettings,effectiveHem,ellipsePerimeter} from './shape';
 const TAU=Math.PI*2;
 const clamp=(x:number,a:number,b:number)=>Math.max(a,Math.min(b,x));
 export const smooth=(x:number)=>{x=clamp(x,0,1);return x*x*(3-2*x);};
@@ -53,17 +53,15 @@ export function restOpening(design:SkirtDesign,v:number){
   default:return clamp(fabric+(s.relaxed.fullness-.5)*.4-(s.relaxed.taper-.5)*.25*v,.16,.9);
  }
 }
-const ellipsePerimeter=(a:number,b:number)=>{
- const h=((a-b)/(a+b))**2;return Math.PI*(a+b)*(1+3*h/(10+Math.sqrt(4-3*h)));
-};
-/** Keep the row's outline perimeter while moving from body fit to the chosen
- * hem axes. Waist stays fixed, and the change grows gradually toward the hem. */
-function ellipseScales(rx:number,rz:number,v:number,hem:ShapeSettings['hem']):[number,number]{
- if(hem.mode==='body')return [1,1];
- const a=hem.mode==='deep'?hem.ratio:1,b=hem.mode==='wide'?hem.ratio:1;
- const perimeter=ellipsePerimeter(rx,rz),scale=perimeter/ellipsePerimeter(a,b),blend=smooth(v);
- const x=rx+(a*scale-rx)*blend,z=rz+(b*scale-rz)*blend,correction=perimeter/ellipsePerimeter(x,z);
- return [x*correction/rx,z*correction/rz];
+/** A symmetric ellipse transform changes the silhouette without rotating the
+ * material seam. Blend from the body at the waist to the designed hem axes. */
+function ellipseTransform(rx:number,rz:number,v:number,design:SkirtDesign):[number,number,number]{
+ if((design.shape??defaultShapeSettings).hem.mode==='body')return [rx,0,rz];
+ const hem=effectiveHem(design),angle=hem.angle_deg*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle);
+ const perimeter=ellipsePerimeter(rx,rz),a=perimeter/ellipsePerimeter(1,hem.ratio),b=a*hem.ratio,blend=smooth(v);
+ const xx=rx+(a*c*c+b*s*s-rx)*blend,xz=(a-b)*c*s*blend,zz=rz+(a*s*s+b*c*c-rz)*blend;
+ const center=(xx+zz)*.5,spread=Math.hypot((xx-zz)*.5,xz),correction=perimeter/ellipsePerimeter(center+spread,center-spread);
+ return [xx*correction,xz*correction,zz*correction];
 }
 export function naturalEnvelope(p:Float32Array,rest:Float32Array,design:SkirtDesign,width:number,inertia?:SkirtInertia){
  const columns=width-1,capacity=new Float64Array(25);
@@ -73,21 +71,21 @@ export function naturalEnvelope(p:Float32Array,rest:Float32Array,design:SkirtDes
   const a=(row*width+col)*3,b=(row*width+(col+1)%columns)*3;
   capacity[row]+=Math.hypot(rest[a]-rest[b],rest[a+1]-rest[b+1],rest[a+2]-rest[b+2])/TAU;
  }
- const hem=(design.shape??defaultShapeSettings).hem;
  for(let row=1;row<=24;row++){
   const v=row/24,open=inertia?.opening[row]??0;
   const fraction=restOpening(design,v)*(1-open)+open;
   const side=Math.round(columns*.25)*3,back=2;
   const rx=Math.abs(rest[side]+(rest[row*width*3+side]-rest[side])*fraction);
   const rz=Math.abs(rest[back]+(rest[row*width*3+back]-rest[back])*fraction);
-  const [sx,sz]=ellipseScales(Math.max(rx,.001),Math.max(rz,.001),v,hem);
+  const [xx,xz,zz]=ellipseTransform(Math.max(rx,.001),Math.max(rz,.001),v,design);
   const meanRadius=(Math.abs(rest[row*width*3+side])+Math.abs(rest[row*width*3+back]))*.5;
   // One target radius for the whole row, so the original ellipse does not
   // survive as an angularly varying centrifugal target.
-  const circular=Math.max(Math.sqrt(rx*sx*rz*sz),meanRadius*fraction+(capacity[row]-meanRadius)*open);
+  const circular=Math.max(Math.sqrt(Math.max(0,xx*zz-xz*xz)),meanRadius*fraction+(capacity[row]-meanRadius)*open);
   for(let col=0;col<columns;col++){
   const at=(row*width+col)*3,waist=col*3;
-  let x=(rest[waist]+(rest[at]-rest[waist])*fraction)*sx,z=(rest[waist+2]+(rest[at+2]-rest[waist+2])*fraction)*sz;
+  const qx=(rest[waist]+(rest[at]-rest[waist])*fraction)/Math.max(rx,.001),qz=(rest[waist+2]+(rest[at+2]-rest[waist+2])*fraction)/Math.max(rz,.001);
+  let x=xx*qx+xz*qz,z=xz*qx+zz*qz;
   // Circularize the elliptical body fit as centrifugal loading opens pleats.
   const angle=col/columns*TAU;
   x=x*(1-open)+Math.sin(angle)*circular*open;z=z*(1-open)-Math.cos(angle)*circular*open;

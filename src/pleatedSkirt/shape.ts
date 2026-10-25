@@ -1,14 +1,14 @@
 import type {Silhouette, SkirtDesign} from './model';
 
-export type HemShape = 'body' | 'circle' | 'wide' | 'deep';
+export type HemShape = 'body' | 'circle' | 'wide' | 'deep' | 'custom';
 export interface ShapeSettings {
   relaxed:{fullness:number;taper:number};
   a_line:{flare:number;curve:number};
   bell:{volume:number;peak:number};
   trumpet:{fit:number;flare_start:number;flare:number};
-  hem:{mode:HemShape;ratio:number};
+  hem:{mode:HemShape;ratio:number;angle_deg?:number};
 }
-export const hemShapes:Record<HemShape,string>={body:'自然椭圆',circle:'正圆',wide:'横向椭圆',deep:'纵向椭圆'};
+export const hemShapes:Record<HemShape,string>={body:'自然椭圆',circle:'正圆',wide:'横向椭圆',deep:'纵向椭圆',custom:'自定义'};
 export const defaultShapeSettings:ShapeSettings={
   relaxed:{fullness:.5,taper:.5},a_line:{flare:.5,curve:.5},
   bell:{volume:.5,peak:.6},trumpet:{fit:.5,flare_start:.5,flare:.6},
@@ -28,6 +28,25 @@ export const shapeControls:Record<Silhouette,readonly {key:string;label:string;m
 /** Fresh copy: editing one profile keeps the other profiles and hem settings. */
 export function effectiveShape(design:SkirtDesign):ShapeSettings {
   return structuredClone(design.shape??defaultShapeSettings);
+}
+/** Legacy presets remain readable; new edits use continuous ratio + angle. */
+export function effectiveHem(design:SkirtDesign){
+  const hem=(design.shape??defaultShapeSettings).hem;
+  return {ratio:hem.mode==='body'?1.87/2.59:hem.mode==='circle'?1:hem.ratio,
+    angle_deg:hem.mode==='deep'?90:hem.mode==='custom'?((hem.angle_deg??0)%180):0};
+}
+export function setHemParameters(design:SkirtDesign,patch:Partial<{ratio:number;angle_deg:number}>){
+  const current=effectiveHem(design),shape=effectiveShape(design);
+  const ratio=patch.ratio??current.ratio,angle=patch.angle_deg??current.angle_deg;
+  if(!Number.isFinite(ratio)||!Number.isFinite(angle))throw Error('下摆参数无效');
+  shape.hem={mode:'custom',ratio:Math.max(.35,Math.min(1,ratio)),angle_deg:((angle%180)+180)%180};design.shape=shape;
+}
+export function ellipsePerimeter(a:number,b:number){
+  const h=((a-b)/(a+b))**2;return Math.PI*(a+b)*(1+3*h/(10+Math.sqrt(4-3*h)));
+}
+export function hemAxes(design:SkirtDesign){
+  const hem=effectiveHem(design),major=design.parameters.hem_cm/ellipsePerimeter(1,hem.ratio);
+  return {...hem,major,minor:major*hem.ratio};
 }
 export function setShapeParameter(design:SkirtDesign,profile:Silhouette,key:string,value:number){
   const control=shapeControls[profile].find(c=>c.key===key);

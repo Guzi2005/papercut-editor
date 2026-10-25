@@ -2,7 +2,8 @@ import {mirrorGesture,mirrorNewMarks,splitSeamSpan} from './mirror';
 import {effectiveDrape} from './drape';
 import {el,button,field,row,select,chooseFile,report,download} from './ui';
 import {createDesign,parseDesign,newId,templates,views,fabrics,patterns,silhouettes,limits,type SkirtDesign,type UV,type Template,type CanvasView,type Pattern,type Fabric} from './model';
-import {effectiveShape,hemShapes,shapeControls,setShapeParameter} from './shape';
+import {effectiveShape,effectiveHem,setHemParameters,shapeControls,setShapeParameter} from './shape';
+import {createHemEditor} from './hemEditor';
 import {PatternCanvas} from './canvas';
 import {SkirtPreview,readPreviewRenderMode} from './preview';
 import {paintTexture} from './texture';
@@ -18,6 +19,7 @@ export class SkirtStudio {
   private draft?:SkirtDesign;private start?:UV;private pointer=-1;private bandStart=0;private bandWidth=0;private dirtyStroke=false;
   private mirror=true;private strokeStart=0;private patchStart=0;private pendingFrame=0;private patchPieces:string[]=[];private patchU=0;private patchLastU=0;private focusView:string|null=null;
   private shapeOpen=false;private readonly shapeDetailsId=`skirt-shape-details-${crypto.randomUUID()}`;
+  private focusHem:string|null=null;
   constructor(private host:Host){
     this.texture.width=this.texture.height=1024;
     const heading=el('div','skirt-heading'),title=el('div');title.append(el('h1','','百褶裙'));
@@ -57,7 +59,7 @@ export class SkirtStudio {
     this.pattern.onDown=(uv,e)=>this.down(uv,e);this.pattern.onMove=(uv,e)=>this.move(uv,e);this.pattern.onUp=()=>this.up();this.pattern.onCancel=()=>this.cancel();
   }
   refresh(){const d=this.host.get();if(!d)return;this.draft=undefined;this.start=undefined;this.pointer=-1;this.buildControls(d);this.buildTools(d);this.display(d);}
-  restoreTabFocus(){if(this.focusView&&!this.element.closest('[inert]')){this.tabs.querySelector<HTMLButtonElement>('button[data-view='+this.focusView+']')?.focus();this.focusView=null;}}
+  restoreTabFocus(){if(this.element.closest('[inert]'))return;if(this.focusView){this.tabs.querySelector<HTMLButtonElement>('button[data-view='+this.focusView+']')?.focus();this.focusView=null;}if(this.focusHem){this.controls.querySelector<SVGElement>(`[data-hem-handle="${this.focusHem}"]`)?.focus();this.focusHem=null;}}
   dispose(){cancelAnimationFrame(this.pendingFrame);this.preview?.dispose();this.pattern.dispose();this.element.remove();}
   private display(d:SkirtDesign){paintTexture(this.texture,d,this.host.overlay(d));this.pattern.update(d,this.texture,this.selected);this.preview?.update(d,this.texture);
     this.info.textContent=`${d.parameters.pleat_count} 道褶 · ${d.parameters.length_cm} cm 裙长 · ${d.parameters.thickness_mm} mm 布厚`;
@@ -82,7 +84,7 @@ export class SkirtStudio {
     this.controls.append(el('h2','','裙型与布料'),field('参考起点',this.choice(templates,d.template_id,(id:Template)=>{
       const next=createDesign(id);Object.assign(next,{design_id:d.design_id,item_id:d.item_id,component_id:d.component_id,collection_id:d.collection_id,canvas_view:d.canvas_view});this.selected='';this.commit('应用裙子模板',next);
     })));
-    const shape=effectiveShape(d),profile=d.silhouette??'relaxed';
+    const profile=d.silhouette??'relaxed';
     const details=el('div','skirt-shape-details');details.id=this.shapeDetailsId;
     const toggle=button('',()=>{},'');
     const syncToggle=()=>{const open=this.shapeOpen;toggle.textContent=open?'▲ 参数':'▼ 参数';toggle.dataset.tip=open?'收起廓形参数':'展开廓形与下摆形状参数';toggle.setAttribute('aria-expanded',String(open));details.hidden=!open;};
@@ -92,16 +94,23 @@ export class SkirtStudio {
         const item=this.slider(control.label,Math.round(values[control.key]*100),Math.round(control.min*100),Math.round(control.max*100),1,(next,v)=>{setShapeParameter(next,current,control.key,v/100);});
         item.dataset.tip=control.tip;details.append(item);
       }
-      if(settings.hem.mode==='wide'||settings.hem.mode==='deep'){
-        const ratio=this.slider('短长轴比 / %',Math.round(settings.hem.ratio*100),35,100,1,(next,v)=>{next.shape=effectiveShape(next);next.shape.hem.ratio=v/100;});
-        ratio.dataset.tip='100 为正圆；数值越小越扁；横向椭圆为左右方向，纵向椭圆为前后方向。';details.append(ratio);
-      }
+      const hem=effectiveHem(design),graphic=el('div','skirt-hem-graphic');
+      const syncNumbers=(next:SkirtDesign)=>{const h=effectiveHem(next);for(const [label,value] of [['短长轴比 / %',Math.round(h.ratio*100)],['长轴朝向 / °',Math.round(h.angle_deg)],['裙摆大小 / cm',Math.round(next.parameters.hem_cm)]] as const){for(const input of this.controls.querySelectorAll<HTMLInputElement>('input'))if(input.getAttribute('aria-label')===label||input.getAttribute('aria-label')===label+' 数值')input.value=String(value);}};
+      const drawGraphic=(next:SkirtDesign)=>graphic.replaceChildren(createHemEditor(next,
+        candidate=>{this.draft=candidate;this.displaySoon();syncNumbers(candidate);},
+        candidate=>{this.focusHem=document.activeElement?.getAttribute('data-hem-handle')??null;this.commit('调整下摆轮廓',candidate);},
+        ()=>{cancelAnimationFrame(this.pendingFrame);this.pendingFrame=0;this.draft=undefined;const current=this.host.get();if(current){this.display(current);syncNumbers(current);}}));
+      drawGraphic(design);details.append(graphic);
+      const ratio=this.slider('短长轴比 / %',Math.round(hem.ratio*100),35,100,1,(next,v)=>{setHemParameters(next,{ratio:v/100});drawGraphic(next);});
+      ratio.dataset.tip='连续调节椭圆率；100 为正圆，越小越扁。';
+      const angle=this.slider('长轴朝向 / °',Math.round(hem.angle_deg),0,179,1,(next,v)=>{setHemParameters(next,{angle_deg:v});drawGraphic(next);});
+      angle.dataset.tip='0° 左右方向，90° 前后方向；可直接拖图上的外侧圆点旋转。';details.append(ratio,angle);
     };
     const previewDesign=(change:(next:SkirtDesign)=>void)=>{const next=structuredClone(this.host.get()??d);change(next);return next;};
     const silhouette=field('廓形',this.choice(silhouettes,profile,(v)=>{this.shapeOpen=true;this.edit('选择廓形',next=>next.silhouette=v);renderDetails(previewDesign(next=>next.silhouette=v));syncToggle();}));
     silhouette.dataset.tip='静止时裙摆自然垂落的廓形；不改变纹样，也不改变腰围或下摆尺寸。';
-    const hemShape=field('下摆形状',this.choice(hemShapes,shape.hem.mode,(v)=>{this.shapeOpen=true;this.edit('选择下摆形状',next=>{next.shape=effectiveShape(next);next.shape.hem.mode=v;});renderDetails(previewDesign(next=>{next.shape=effectiveShape(next);next.shape.hem.mode=v;}));syncToggle();}));
-    hemShape.dataset.tip='下摆椭圆的横向或纵向；不改变腰围与下摆周长。';
+    const hemButton=button('编辑轮廓',()=>{this.shapeOpen=true;syncToggle();},'展开下摆俯视编辑图：拖动轴端调节大小、椭圆率，拖外侧点旋转。');hemButton.setAttribute('aria-label','编辑下摆轮廓');hemButton.classList.add('skirt-hem-open');
+    const hemShape=field('下摆',hemButton);
     toggle.classList.add('skirt-shape-toggle');toggle.setAttribute('aria-label','廓形参数');toggle.setAttribute('aria-controls',this.shapeDetailsId);toggle.onclick=()=>{this.shapeOpen=!this.shapeOpen;syncToggle();};
     this.controls.append(row(silhouette,hemShape),toggle,details);renderDetails(d);syncToggle();
     const labels={length_cm:'裙长 / cm',waist_cm:'腰围 / cm',hem_cm:'裙摆大小 / cm',pleat_count:'褶子数量',pleat_depth_cm:'褶深 / cm',sharpness:'褶子锋利程度',thickness_mm:'布料厚度 / mm'};

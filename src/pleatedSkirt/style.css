@@ -3,7 +3,7 @@
 .skirt-host {
   position: fixed;
   inset: 52px 0 20px;
-  z-index: 35;
+  z-index: 45;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1000,3 +1000,13 @@
 
 .skirt-host .skirt-shape-toggle[aria-expanded="true"] { color: var(--ui-accent); }
 .skirt-shape-details[hidden] { display: none; }
+
+.skirt-host .skirt-hem-open { width:100%; height:24px; justify-content:space-between; color:var(--ui-accent); }
+.skirt-hem-graphic { width:100%; margin:4px 0; }
+.skirt-hem-editor { display:block; width:100%; aspect-ratio:200/190; overflow:visible; color:var(--ui-accent); touch-action:none; user-select:none; }
+.skirt-hem-outline { fill:color-mix(in srgb,var(--ui-accent) 5%,transparent); stroke:var(--ui-accent); stroke-width:1.5; }
+.skirt-hem-axis { stroke:var(--ui-border-strong); stroke-width:1; stroke-dasharray:3 3; }
+.skirt-hem-editor text { fill:var(--ui-faint); font-size:10px; }
+.skirt-hem-handle { fill:var(--ui-panel-2); stroke:var(--ui-accent); stroke-width:2; cursor:grab; }
+.skirt-hem-handle:hover, .skirt-hem-handle:focus { fill:var(--ui-accent); outline:none; stroke:var(--ui-strong); }
+.skirt-hem-handle:active { cursor:grabbing; }

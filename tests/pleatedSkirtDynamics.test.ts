@@ -3,7 +3,7 @@ import {SkirtInertia,naturalEnvelope,restOpening} from '../src/pleatedSkirt/skir
 import {createDesign,parseDesign,type Silhouette} from '../src/pleatedSkirt/model';import {defaultMotionOptions,moveArm} from '../src/pleatedSkirt/motion';
 import {buildMesh} from '../src/pleatedSkirt/geometry';import {GarmentBinding} from '../src/pleatedSkirt/avatar';import {DrapeConstraint} from '../src/pleatedSkirt/drapeConstraint';
 import {effectiveDrape} from '../src/pleatedSkirt/drape';
-import {effectiveShape,shapeControls,setShapeParameter,type HemShape} from '../src/pleatedSkirt/shape';
+import {effectiveShape,shapeControls,setShapeParameter,effectiveHem,setHemParameters,hemAxes,ellipsePerimeter,type HemShape} from '../src/pleatedSkirt/shape';
 const manifest=JSON.parse(readFileSync('public/pleated-avatar/manifest.json','utf8'));
 function fixture(shape:Silhouette='relaxed',length=88,hem=230){const d=createDesign();d.silhouette=shape;d.parameters.length_cm=length;d.parameters.hem_cm=hem;const mesh=buildMesh(d.parameters),binding=new GarmentBinding(mesh,manifest.cage,length);binding.deform(new Float32Array(manifest.cage.restPositions));const rest=binding.positions.slice(),constraint=new DrapeConstraint(mesh,rest),width=d.parameters.pleat_count*8+1;naturalEnvelope(binding.positions,rest,d,width);constraint.projectLengths(binding.positions);return {d,rest,constraint,width,natural:binding.positions.slice()};}
 test('silhouettes persist while legacy documents remain without an injected field',()=>{const legacy=createDesign();assert.equal(Object.hasOwn(parseDesign(legacy),'silhouette'),false);for(const silhouette of ['relaxed','a_line','bell','trumpet'] as Silhouette[])assert.equal(parseDesign({...legacy,silhouette}).silhouette,silhouette);assert.throws(()=>parseDesign({...legacy,silhouette:'other'}));});
@@ -69,4 +69,24 @@ test('hand fitting reaches the contact even for a collinear target',()=>{
   moveArm(p,n,0,1,[0,0,0],[0,-.5,0],target);
   for(let k=0;k<3;k++)assert.ok(Math.abs(p[k]-target[k])<1e-6);assert.ok(n.every(Number.isFinite));
  }
+});
+
+test('continuous hem parameters read old presets and preserve precise rotated shapes on roundtrip',()=>{
+ const d=createDesign();d.shape=effectiveShape(d);
+ for(const [mode,angle] of [['wide',0],['deep',90],['circle',0]] as const){d.shape.hem={mode,ratio:.45};assert.equal(effectiveHem(d).angle_deg,angle);assert.equal(effectiveHem(d).ratio,mode==='circle'?1:.45);}
+ setHemParameters(d,{ratio:.53,angle_deg:37});
+ const axes=hemAxes(d);assert.ok(Math.abs(ellipsePerimeter(axes.major,axes.minor)-d.parameters.hem_cm)<1e-8);
+ assert.deepEqual(parseDesign(JSON.parse(JSON.stringify(d))).shape,d.shape);
+ assert.throws(()=>parseDesign({...d,shape:{...d.shape,hem:{mode:'custom',ratio:.53,angle_deg:200}}}));
+ setHemParameters(d,{angle_deg:-20});assert.equal(effectiveHem(d).angle_deg,160);assert.equal(effectiveHem(d).ratio,.53);
+});
+test('rotated hem transforms preserve waist and warp while changing the diagonal footprint',()=>{
+ const {d,rest,width,constraint}=fixture();
+ const moments:number[]=[];
+ for(const angle of [0,45,90,135]){
+  setHemParameters(d,{ratio:.45,angle_deg:angle});const p=rest.slice();naturalEnvelope(p,rest,d,width);constraint.projectLengths(p);
+  assert.deepEqual(p.subarray(0,width*3),rest.subarray(0,width*3));assert.ok(constraint.maxWarpError(p)<1e-4);assert.ok(p.every(Number.isFinite));
+  let xz=0;for(let c=0;c<width-1;c++){const i=(24*width+c)*3;xz+=p[i]*p[i+2]/(width-1);}moments.push(xz);
+ }
+ assert.ok(moments[1]>.005);assert.ok(moments[3]<-.005);assert.ok(Math.abs(moments[0])<.001);assert.ok(Math.abs(moments[2])<.001);
 });

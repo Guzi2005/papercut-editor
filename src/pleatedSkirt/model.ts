@@ -64,7 +64,7 @@ export function parseDesign(value:unknown):SkirtDesign {
       const values=object(x[profile]),controls=shapeControls[profile];exact(values,controls.map(c=>c.key).join(' '));
       for(const c of controls)Object.assign(shape[profile],{[c.key]:num(values[c.key],c.min,c.max)});
     }
-    const hem=object(x.hem);exact(hem,'mode ratio');shape.hem={mode:enumValue(hem.mode,hemShapes),ratio:num(hem.ratio,.35,1)};
+    const hem=object(x.hem);exact(hem,'mode ratio'+(Object.hasOwn(hem,'angle_deg')?' angle_deg':''));shape.hem={mode:enumValue(hem.mode,hemShapes),ratio:num(hem.ratio,.35,1),...(Object.hasOwn(hem,'angle_deg')?{angle_deg:num(hem.angle_deg,0,180)}:{})};
   }
   exact(p,'length_cm waist_cm hem_cm pleat_count pleat_depth_cm sharpness thickness_mm fabric base_color');exact(s,'note references');exact(uv,'origin seam u v');
   const id=(value:unknown)=>{const str=text(value,128);if(ids.has(str))throw Error('裙子片段 ID 重复');ids.add(str);return str;};
