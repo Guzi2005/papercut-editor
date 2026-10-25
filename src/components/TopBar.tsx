@@ -661,7 +661,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 2. Center: SAI-Style Document Tabs (多文件选项卡栏，点击切换) */}
-      <div className="flex-1 flex items-center overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
+      <div data-document-tabs className="flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
         {documents.map((doc) => {
           const isActive = doc.id === activeDocId;
           const color = tabColor(doc.id);
@@ -711,7 +711,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Plus Button to Quick Create New Document Tab */}
         <button
           onClick={() => onNewDocument()}
-          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
+          className="w-7 h-7 mb-1 flex items-center justify-center rounded-lg hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
           aria-label="新建空白画布"
           data-tip="新建空白画布"
         >
