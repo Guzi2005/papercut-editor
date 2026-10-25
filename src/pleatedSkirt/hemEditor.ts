@@ -111,6 +111,7 @@ export function createHemEditor(
     rotation:{label:'下摆朝向',title:'拖动调整下摆朝向（0°–180°）'},
   };
   const handles={} as Record<HandleName,SVGCircleElement>;
+  const handleMarks=new Map<SVGCircleElement,SVGCircleElement>();
   for(const name of ['major','minor','rotation'] as const){
     const handle=svgElement('circle'),definition=definitions[name];
     handle.setAttribute('class','skirt-hem-handle');
@@ -121,14 +122,16 @@ export function createHemEditor(
     handle.setAttribute('aria-label',definition.label);
     handle.setAttribute('fill','currentColor');
     handle.setAttribute('stroke','currentColor');
-    handle.setAttribute('r','5');
+    handle.setAttribute('r','3');
+    const mark=svgElement('circle');mark.setAttribute('r','3');mark.setAttribute('class','skirt-hem-handle-mark');mark.setAttribute('pointer-events','none');mark.setAttribute('aria-hidden','true');handleMarks.set(handle,mark);
     const title=svgElement('title');
     title.textContent=definition.title;
     handle.append(title);
     handles[name]=handle;
   }
 
-  svg.append(grid,outline,majorAxis,minorAxis,head,front,handles.major,handles.minor,handles.rotation);
+  svg.append(grid,outline,majorAxis,minorAxis,head,front);
+  for(const handle of Object.values(handles))svg.append(handle,handleMarks.get(handle)!);
 
   let current=design;
   let drag:DragState|null=null;
@@ -148,6 +151,7 @@ export function createHemEditor(
   function setHandle(handle:SVGCircleElement,at:Point){
     handle.setAttribute('cx',ariaNumber(at.x));
     handle.setAttribute('cy',ariaNumber(at.y));
+    const mark=handleMarks.get(handle)!;mark.setAttribute('cx',ariaNumber(at.x));mark.setAttribute('cy',ariaNumber(at.y));
   }
   function draw(next:SkirtDesign){
     const geometry=hemAxes(next);

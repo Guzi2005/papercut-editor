@@ -81,7 +81,9 @@ export class SkirtStudio {
   }
   private colorControl(label:string,value:string,fn:(d:SkirtDesign,color:string)=>void){const input=el('input');input.type='color';input.value=value;input.setAttribute('aria-label',label);input.oninput=()=>{const d=structuredClone(this.host.get()!);fn(d,input.value);this.draft=d;this.displaySoon();};input.onchange=()=>this.edit(label,d=>fn(d,input.value));return field(label,input);}
   private buildControls(d:SkirtDesign){this.controls.replaceChildren();
-    this.controls.append(el('h2','','裙型与布料'),field('参考起点',this.choice(templates,d.template_id,(id:Template)=>{
+    const group=(name:string,tone:string)=>{const section=el('section','skirt-control-group');section.dataset.tone=tone;section.setAttribute('aria-label',name);section.append(el('h2','skirt-group-title',name));this.controls.append(section);return section;};
+    const shapeGroup=group('廓形与下摆','shape');
+    shapeGroup.append(field('参考起点',this.choice(templates,d.template_id,(id:Template)=>{
       const next=createDesign(id);Object.assign(next,{design_id:d.design_id,item_id:d.item_id,component_id:d.component_id,collection_id:d.collection_id,canvas_view:d.canvas_view});this.selected='';this.commit('应用裙子模板',next);
     })));
     const profile=d.silhouette??'relaxed';
@@ -112,26 +114,28 @@ export class SkirtStudio {
     const hemButton=button('编辑轮廓',()=>{this.shapeOpen=true;syncToggle();},'展开下摆俯视编辑图：拖动轴端调节大小、椭圆率，拖外侧点旋转。');hemButton.setAttribute('aria-label','编辑下摆轮廓');hemButton.classList.add('skirt-hem-open');
     const hemShape=field('下摆',hemButton);
     toggle.classList.add('skirt-shape-toggle');toggle.setAttribute('aria-label','廓形参数');toggle.setAttribute('aria-controls',this.shapeDetailsId);toggle.onclick=()=>{this.shapeOpen=!this.shapeOpen;syncToggle();};
-    this.controls.append(row(silhouette,hemShape),toggle,details);renderDetails(d);syncToggle();
+    shapeGroup.append(row(silhouette,hemShape),toggle,details);renderDetails(d);syncToggle();
+    const sizeGroup=group('尺寸与褶子','size'),fabricGroup=group('面料与垂坠','fabric');
     const labels={length_cm:'裙长 / cm',waist_cm:'腰围 / cm',hem_cm:'裙摆大小 / cm',pleat_count:'褶子数量',pleat_depth_cm:'褶深 / cm',sharpness:'褶子锋利程度',thickness_mm:'布料厚度 / mm'};
     const ends:Partial<Record<keyof typeof limits,[string,string]>>={length_cm:['短裙 · 40','长裙 · 120'],hem_cm:['收拢 · 100','宽摆 · 360']};
-    for(const key of Object.keys(limits) as (keyof typeof limits)[]){const [min,max]=limits[key];const control=this.slider(labels[key],d.parameters[key],min,max,['sharpness'].includes(key)?.01:['thickness_mm','pleat_depth_cm'].includes(key)?.1:1,(next,v)=>{next.parameters[key]=v;},ends[key]);if(key==='hem_cm')control.dataset.tip='下摆外轮廓周长 100–360 cm；越大，裙摆越展开。';this.controls.append(control);
+    for(const key of Object.keys(limits) as (keyof typeof limits)[]){const [min,max]=limits[key];const control=this.slider(labels[key],d.parameters[key],min,max,['sharpness'].includes(key)?.01:['thickness_mm','pleat_depth_cm'].includes(key)?.1:1,(next,v)=>{next.parameters[key]=v;},ends[key]);if(key==='hem_cm')control.dataset.tip='下摆外轮廓周长 100–360 cm；越大，裙摆越展开。';(key==='thickness_mm'?fabricGroup:sizeGroup).append(control);
     }
-    this.controls.append(row(this.colorControl('底色',d.parameters.base_color,(next,c)=>next.parameters.base_color=c),field('布料',this.choice(fabrics,d.parameters.fabric,(v:Fabric)=>this.edit('选择布料',next=>next.parameters.fabric=v)))));
+    fabricGroup.append(row(this.colorControl('底色',d.parameters.base_color,(next,c)=>next.parameters.base_color=c),field('布料',this.choice(fabrics,d.parameters.fabric,(v:Fabric)=>this.edit('选择布料',next=>next.parameters.fabric=v)))));
     const drape=effectiveDrape(d);
-    this.controls.append(row(el('h2','','垂坠'),button(d.drape?.mode==='manual'?'恢复面料默认':'面料默认',()=>this.edit('恢复垂坠默认',next=>{delete next.drape;}),'默认值随面料、布厚、裙长和裙摆计算；改数值后为手动。')));
-    for(const [key,label] of [['weight','下垂重量'],['bending','抗弯挺度'],['opening','褶子开放']] as const){this.controls.append(this.slider(label,drape[key],0,1,.01,(next,value)=>{next.drape={...effectiveDrape(next),mode:'manual',[key]:value};}));}
-    const bandHead=row(el('h2','','拼接与镶边'),button('+ 镶边',()=>this.edit('新增镶边',next=>{if(next.bands.length>=32)throw Error('最多 32 条镶边');const b={id:newId(),start:.84,end:.88,color:this.ink,pattern:'solid' as Pattern,repeat:32};next.bands.push(b);this.selected=b.id;})));
-    bandHead.classList.add('skirt-section-title');this.controls.append(bandHead);
-    const list=el('div','skirt-band-list');d.bands.forEach((b,i)=>{const item=button(`${String(i+1).padStart(2,'0')}　${Math.round(b.start*100)}–${Math.round(b.end*100)}%　${patterns[b.pattern]}`,()=>{this.selected=b.id;this.buildControls(this.host.get()!);this.pattern.update(d,this.texture,this.selected);});item.style.borderLeft=`5px solid ${b.color}`;item.classList.toggle('active',b.id===this.selected);list.append(item);});this.controls.append(list);
+    fabricGroup.append(row(el('span','skirt-subtitle','垂坠'),button(d.drape?.mode==='manual'?'恢复面料默认':'面料默认',()=>this.edit('恢复垂坠默认',next=>{delete next.drape;}),'默认值随面料、布厚、裙长和裙摆计算；改数值后为手动。')));
+    for(const [key,label] of [['weight','下垂重量'],['bending','抗弯挺度'],['opening','褶子开放']] as const){fabricGroup.append(this.slider(label,drape[key],0,1,.01,(next,value)=>{next.drape={...effectiveDrape(next),mode:'manual',[key]:value};}));}
+    const bandGroup=group('拼接与镶边','bands');bandGroup.replaceChildren();
+    const bandHead=row(el('h2','skirt-group-title','拼接与镶边'),button('+ 镶边',()=>this.edit('新增镶边',next=>{if(next.bands.length>=32)throw Error('最多 32 条镶边');const b={id:newId(),start:.84,end:.88,color:this.ink,pattern:'solid' as Pattern,repeat:32};next.bands.push(b);this.selected=b.id;})));
+    bandHead.classList.add('skirt-group-heading');bandGroup.append(bandHead);
+    const list=el('div','skirt-band-list');d.bands.forEach((b,i)=>{const item=button(`${String(i+1).padStart(2,'0')}　${Math.round(b.start*100)}–${Math.round(b.end*100)}%　${patterns[b.pattern]}`,()=>{this.selected=b.id;this.buildControls(this.host.get()!);this.pattern.update(d,this.texture,this.selected);});item.style.borderLeft=`5px solid ${b.color}`;item.classList.toggle('active',b.id===this.selected);list.append(item);});bandGroup.append(list);
     const b=d.bands.find(x=>x.id===this.selected);if(b){
-      this.controls.append(this.slider('镶边位置 / %',Math.round(b.start*1000)/10,0,99.5,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!,width=x.end-x.start;x.start=Math.min(n/100,1-width);x.end=x.start+width;}));
-      this.controls.append(this.slider('镶边宽度 / %',Math.round((b.end-b.start)*1000)/10,.5,30,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!;x.end=Math.min(1,x.start+n/100);if(x.end-x.start<.005)x.start=x.end-.005;}));
-      this.controls.append(row(this.colorControl('镶边颜色',b.color,(next,c)=>next.bands.find(x=>x.id===b.id)!.color=c),field('纹样',this.choice(patterns,b.pattern,(v:Pattern)=>this.edit('镶边纹样',next=>next.bands.find(x=>x.id===b.id)!.pattern=v)))));
-      this.controls.append(this.slider('纹样重复',b.repeat,4,64,1,(next,n)=>next.bands.find(x=>x.id===b.id)!.repeat=n));
-      this.controls.append(button('删除所选镶边',()=>this.edit('删除镶边',next=>{next.bands=next.bands.filter(x=>x.id!==b.id);this.selected='';})));
+      bandGroup.append(this.slider('镶边位置 / %',Math.round(b.start*1000)/10,0,99.5,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!,width=x.end-x.start;x.start=Math.min(n/100,1-width);x.end=x.start+width;}));
+      bandGroup.append(this.slider('镶边宽度 / %',Math.round((b.end-b.start)*1000)/10,.5,30,.1,(next,n)=>{const x=next.bands.find(x=>x.id===b.id)!;x.end=Math.min(1,x.start+n/100);if(x.end-x.start<.005)x.start=x.end-.005;}));
+      bandGroup.append(row(this.colorControl('镶边颜色',b.color,(next,c)=>next.bands.find(x=>x.id===b.id)!.color=c),field('纹样',this.choice(patterns,b.pattern,(v:Pattern)=>this.edit('镶边纹样',next=>next.bands.find(x=>x.id===b.id)!.pattern=v)))));
+      bandGroup.append(this.slider('纹样重复',b.repeat,4,64,1,(next,n)=>next.bands.find(x=>x.id===b.id)!.repeat=n));
+      bandGroup.append(button('删除所选镶边',()=>this.edit('删除镶边',next=>{next.bands=next.bands.filter(x=>x.id!==b.id);this.selected='';})));
     }
-    this.controls.append(row(button('清除笔迹',()=>this.edit('清除笔迹',next=>next.strokes=[]),`清除 ${d.strokes.length} 条工作台笔迹`),button('清除拼色',()=>this.edit('清除拼色',next=>next.patches=[]),`清除 ${d.patches.length} 个拼色片`)));
+    bandGroup.append(row(button('清除笔迹',()=>this.edit('清除笔迹',next=>next.strokes=[]),`清除 ${d.strokes.length} 条工作台笔迹`),button('清除拼色',()=>this.edit('清除拼色',next=>next.patches=[]),`清除 ${d.patches.length} 个拼色片`)));
   }
   private buildTools(d:SkirtDesign){this.tabs.replaceChildren();const entries=Object.entries(views);for(const [index,[id,name]] of entries.entries()){const b=button(name.replace(/^\d+ /,''),()=>this.edit('切换裙子画布',next=>next.canvas_view=id as CanvasView));b.classList.add('skirt-view-tab');b.dataset.view=id;b.id=`skirt-tab-${id}`;b.style.setProperty('--tab-color',['#5272df','#d0758e','#9b74ce'][index]);b.setAttribute('role','tab');b.setAttribute('aria-controls','skirt-pattern-panel');b.setAttribute('aria-selected',String(d.canvas_view===id));b.tabIndex=d.canvas_view===id?0:-1;b.classList.toggle('active',d.canvas_view===id);b.onkeydown=e=>{let target=index;if(e.key==='ArrowRight')target=(index+1)%entries.length;else if(e.key==='ArrowLeft')target=(index+entries.length-1)%entries.length;else if(e.key==='Home')target=0;else if(e.key==='End')target=entries.length-1;else return;e.preventDefault();this.focusView=entries[target][0];this.edit('切换裙子画布',next=>next.canvas_view=entries[target][0] as CanvasView);};this.tabs.append(b);}
     this.tools.replaceChildren();this.pattern.turnTool=this.tool==='turn';if(d.canvas_view==='front'){const turn=button('转裙面',()=>{this.tool='turn';this.buildTools(this.host.get()!);},'左右拖动循环查看裙面；绘制时也可用右键拖动');turn.classList.toggle('active',this.tool==='turn');this.tools.append(turn,button('一键反面',()=>this.pattern.flip(),'切到当前面的对面（转半圈）'),button('复位平铺',()=>this.pattern.resetView(),'回到正面并复位缩放和平移')); const link=button(this.mirror?'正反同步':'独立绘制',()=>{this.mirror=!this.mirror;this.buildTools(this.host.get()!);},'只同步之后新画的笔迹与拼色；已有图案不受影响');link.setAttribute('aria-pressed',String(this.mirror));this.tools.append(link);}for(const [id,label] of [['select','移动镶边'],['pen','画笔'],['patch','拼色片']] as const){const b=button(label,()=>{this.tool=id;this.buildTools(this.host.get()!);});b.classList.toggle('active',this.tool===id);this.tools.append(b);}

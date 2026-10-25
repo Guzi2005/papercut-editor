@@ -1007,10 +1007,22 @@
 .skirt-hem-outline { fill:color-mix(in srgb,var(--ui-accent) 5%,transparent); stroke:var(--ui-accent); stroke-width:1.5; }
 .skirt-hem-axis { stroke:var(--ui-border-strong); stroke-width:1; stroke-dasharray:3 3; }
 .skirt-hem-editor text { fill:var(--ui-faint); font-size:10px; }
-.skirt-hem-handle { fill:var(--ui-panel-2); stroke:var(--ui-accent); stroke-width:2; cursor:grab; }
-.skirt-hem-handle:hover, .skirt-hem-handle:focus { fill:var(--ui-accent); outline:none; stroke:var(--ui-strong); }
+.skirt-hem-handle { fill:transparent; stroke:transparent; stroke-width:10; pointer-events:all; cursor:grab; outline:none; }
+.skirt-hem-handle-mark { fill:var(--ui-panel-2); stroke:var(--ui-accent); stroke-width:1.3; }
+.skirt-hem-handle:hover + .skirt-hem-handle-mark, .skirt-hem-handle:focus + .skirt-hem-handle-mark { fill:var(--ui-accent); stroke:var(--ui-strong); }
 .skirt-hem-handle:active { cursor:grabbing; }
 .skirt-hem-grid line { fill:none; stroke:var(--ui-muted); stroke-width:.6; }
 .skirt-hem-grid-minor { opacity:.12; }
 .skirt-hem-grid-major { opacity:.23; }
 .skirt-hem-head { fill:color-mix(in srgb,var(--ui-muted) 10%,transparent); stroke:var(--ui-muted); stroke-width:1.2; stroke-dasharray:3 3; opacity:.6; }
+
+/* Quiet color rails and matching slider accents make long controls scannable. */
+.skirt-control-group { --group-color:#8970b4; margin-bottom:14px; padding-left:8px; border-left:2px solid color-mix(in srgb,var(--group-color) 55%,transparent); }
+.skirt-control-group[data-tone="size"] { --group-color:#5272b9; }
+.skirt-control-group[data-tone="fabric"] { --group-color:#508d83; }
+.skirt-control-group[data-tone="bands"] { --group-color:#b56b81; }
+.skirt-controls .skirt-group-title { color:color-mix(in srgb,var(--group-color) 75%,var(--ui-text)); margin-bottom:6px; }
+.skirt-control-group .skirt-range input[type=range] { accent-color:var(--group-color); }
+.skirt-control-group .skirt-group-heading { align-items:center; justify-content:space-between; }
+.skirt-group-heading .skirt-group-title { margin:0; }
+.skirt-subtitle { color:var(--ui-muted); font-size:10.5px; }
