@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Layers, Plus, Scissors } from 'lucide-react';
+import { ArrowLeftRight, ArrowRight, Check, Plus } from 'lucide-react';
 
 interface AssetModeEntryProps {
   onOpenAssets?: () => void;
@@ -30,6 +30,13 @@ const CrossStitchPerson: React.FC = () => (
       <path d="M13.7 17.5l3.1 3.1M16.8 17.5l-3.1 3.1" />
     </g>
   </svg>
+);
+
+/** Both destinations share the same square badge as the mode trigger. */
+const ModeBadge: React.FC<{assets:boolean;className?:string}> = ({assets,className=''}) => (
+  <span aria-hidden="true" data-mode-badge={assets?'assets':'paper'} className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--ui-accent) text-(--ui-accent-ink) ${className}`}>
+    {assets ? <CrossStitchPerson /> : <svg viewBox="0 0 24 24" className="h-5 w-5" focusable="false"><path fill="currentColor" d="M12 2l4 4-4 4-4-4zM6 8l4 4-4 4-4-4zM18 8l4 4-4 4-4-4zM12 14l4 4-4 4-4-4z"/></svg>}
+  </span>
 );
 
 /**
@@ -123,7 +130,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
   };
 
   const modeItemClass = (active: boolean) =>
-    `flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors ${
+    `flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
       active
         ? 'bg-(--ui-hover) text-(--ui-strong)'
         : 'text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
@@ -154,9 +161,10 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
         aria-haspopup="menu"
         aria-expanded={open}
         data-tip="切换剪贴画板与资产模式"
-        className="flex h-6 w-6 items-center justify-center rounded-lg bg-(--ui-accent) text-white text-[12px] font-bold transition-colors hover:bg-(--ui-accent-hover)"
+        className="group relative flex h-6 w-6 items-center justify-center rounded-md transition-colors outline-offset-4"
       >
-        {assetMode ? <CrossStitchPerson /> : <span aria-hidden="true">❖</span>}
+        <ModeBadge assets={assetMode}/>
+        <span aria-hidden="true" className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-(--ui-panel) text-(--ui-text-2) ring-1 ring-(--ui-border)"><ArrowLeftRight size={8} strokeWidth={2}/></span>
       </button>
 
       {open && (
@@ -167,7 +175,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
           onKeyDown={moveFocus}
           className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl border border-(--ui-border-strong) bg-(--ui-panel) py-1 text-xs shadow-2xl"
         >
-          <div role="presentation" className="px-2.5 pb-1 pt-1 text-[10px] text-(--ui-muted)">工作模式</div>
+          <div role="presentation" className="flex items-center gap-2 px-3 pb-1 pt-1 text-[10px] text-(--ui-muted)"><ArrowLeftRight size={12} aria-hidden="true"/>切换模式</div>
 
           <button
             type="button"
@@ -178,11 +186,9 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
             data-tip="在画布上绘制、编排与剪贴"
             className={modeItemClass(!assetMode)}
           >
-            <span className="flex w-3.5 shrink-0 justify-center text-(--ui-accent)">
-              {!assetMode && <Check className="h-3.5 w-3.5" />}
-            </span>
-            <Scissors className="h-3.5 w-3.5 shrink-0 text-(--ui-muted)" />
+            <ModeBadge assets={false}/>
             <span className="flex-1">剪贴画板</span>
+            {!assetMode ? <Check aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-accent)"/> : <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-muted)"/>}
           </button>
 
           <button
@@ -196,11 +202,9 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
             data-tip={assetsAvailable ? '浏览、制作与复用资产' : '资产库加载中…'}
             className={`${modeItemClass(assetMode)} disabled:opacity-40`}
           >
-            <span className="flex w-3.5 shrink-0 justify-center text-(--ui-accent)">
-              {assetMode && <Check className="h-3.5 w-3.5" />}
-            </span>
-            <Layers className="h-3.5 w-3.5 shrink-0 text-(--ui-muted)" />
+            <ModeBadge assets/>
             <span className="flex-1">Weave &amp; Wander 资产</span>
+            {assetMode ? <Check aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-accent)"/> : <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-muted)"/>}
           </button>
 
           {assetMode && (
@@ -216,8 +220,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
                 data-tip={assetsAvailable ? '制作新的剪贴或百褶裙资产' : '资产库加载中…'}
                 className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-(--ui-text-2) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-strong) disabled:opacity-40"
               >
-                <span className="w-3.5 shrink-0" />
-                <Plus className="h-3.5 w-3.5 shrink-0 text-(--ui-accent)" />
+                <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center"><Plus className="h-3.5 w-3.5 text-(--ui-accent)" /></span>
                 <span className="flex-1">新建资产</span>
               </button>
             </>
