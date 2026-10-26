@@ -2,7 +2,9 @@ import {createRequire} from 'node:module';import {tmpdir} from 'node:os';import 
 const require=createRequire('D:/GodotProjects/weave-and-wander/asset-workbench/package.json'),{chromium,expect}=require('@playwright/test');
 const browser=await chromium.launch({channel:'msedge',headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000}});
 try{
- await page.goto('http://127.0.0.1:3119/');const strip=page.locator('[data-document-tabs]'),tabs=strip.getByRole('tab');
+ await page.goto('http://127.0.0.1:3119/');
+ await page.locator('button[data-tip="文件"]').click();await page.getByRole('button',{name:'预设',exact:true}).hover();await page.getByRole('button',{name:'吉庆有余 · 双鱼窗花',exact:true}).click();
+ const strip=page.locator('[data-document-tabs]'),tabs=strip.getByRole('tab');
  await expect(tabs).toHaveCount(2);const active=strip.locator('[data-active="true"]'),inactive=strip.locator('[data-active="false"]');
  await expect(tabs.locator('img')).toHaveCount(2);expect(await tabs.first().innerText()).toBe('');
  const seam=await tabs.evaluateAll(items=>items.slice(1).map((item,i)=>item.getBoundingClientRect().left-items[i].getBoundingClientRect().right));expect(seam.every(gap=>Math.abs(gap)<.1)).toBe(true);

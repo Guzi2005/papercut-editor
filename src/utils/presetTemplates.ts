@@ -4,7 +4,8 @@
  */
 
 import { PapercutProject, Layer, LayerGroup, CanvasBackground } from '../types/papercut';
-import { createWeaveCharactersPreset, createPolishAngelPreset, createDoubleFishPreset } from './weavePresets';
+import { createDoubleFishPreset } from './weavePresets';
+import { createUkrainianTreePreset } from './ukrainianPreset';
 
 /** Weave and Wander 色卡：取样自「针脚与远方」设定图 */
 export const FOLK_PALETTE = [
@@ -100,16 +101,10 @@ export function createBlankCanvas(opts: BlankCanvasOptions = {}): PapercutProjec
 
 export const PRESET_PROJECTS: { id: string; name: string; desc: string; factory: () => PapercutProject }[] = [
   {
-    id: 'weave_characters',
-    name: '织游角色 · 造型拼装',
-    desc: 'Weave and Wander 角色与柜台，已按物件打组',
-    factory: createWeaveCharactersPreset,
-  },
-  {
-    id: 'polish_angel',
-    name: '波兰剪纸 · 夜骑白马的天使',
-    desc: '深蓝夜空、金银箔翅膀与彩条长裙的拼贴剪纸',
-    factory: createPolishAngelPreset,
+    id: 'ukrainian_tree',
+    name: '乌克兰剪纸 · 生命树',
+    desc: '蓝底白纸，双鸟、人物与生命树的左右对称剪纸',
+    factory: createUkrainianTreePreset,
   },
   {
     id: 'double_fish',

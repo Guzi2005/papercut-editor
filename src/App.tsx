@@ -116,13 +116,8 @@ function makeDocument(id: string, name: string, project: PapercutProject, zoom =
 }
 
 function initialDocuments(): DocumentItem[] {
-  const find = (id: string) => PRESET_PROJECTS.find((p) => p.id === id)!;
-  const chars = find('weave_characters');
-  const polish = find('polish_angel');
-  return [
-    makeDocument('doc_characters', chars.name, chars.factory(), 0.85),
-    makeDocument('doc_polish', polish.name, polish.factory(), 0.85),
-  ];
+  const preset = PRESET_PROJECTS[0];
+  return [makeDocument(`doc_${preset.id}`, preset.name, preset.factory(), 0.65)];
 }
 
 export default function App() {
