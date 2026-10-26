@@ -243,6 +243,17 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
+  const documentTabsRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const strip=documentTabsRef.current,tab=strip?.querySelector<HTMLElement>('[data-active="true"]');
+    if(!strip||!tab)return;
+    const frame=requestAnimationFrame(()=>{
+      const left=tab.getBoundingClientRect().left-strip.getBoundingClientRect().left+strip.scrollLeft,right=left+tab.offsetWidth;
+      if(left<strip.scrollLeft)strip.scrollLeft=left;
+      else if(right>strip.scrollLeft+strip.clientWidth)strip.scrollLeft=right-strip.clientWidth;
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[activeDocId]);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
 
@@ -664,35 +675,52 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 2. Center: SAI-Style Document Tabs (多文件选项卡栏，点击切换) */}
-      <div data-document-tabs className="min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
-        {documents.map((doc) => {
+      <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
+        {documents.map((doc,index) => {
           const isActive = doc.id === activeDocId;
           const color = tabColor(doc.id);
 
           return (
             <div
               key={doc.id}
+              role="tab"
+              aria-label={doc.name}
+              aria-selected={isActive}
+              tabIndex={isActive?0:-1}
+              data-document-tab
+              data-active={isActive}
+              onKeyDown={event=>{
+                if(event.target!==event.currentTarget)return;
+                let target=index;
+                if(event.key==='ArrowRight')target=(index+1)%documents.length;
+                else if(event.key==='ArrowLeft')target=(index+documents.length-1)%documents.length;
+                else if(event.key==='Home')target=0;
+                else if(event.key==='End')target=documents.length-1;
+                else if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelectDocument(doc.id);return;}
+                else return;
+                event.preventDefault();const tabs=event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[data-document-tab]');tabs?.[target]?.focus();onSelectDocument(documents[target].id);
+              }}
               onClick={() => {
                 hideThumb();
                 onSelectDocument(doc.id);
               }}
               onPointerEnter={(e) => e.pointerType === 'mouse' && showThumbSoon(doc.id, e.currentTarget)}
               onPointerLeave={hideThumb}
-              style={{ borderTopColor: color, boxShadow: isActive ? `inset 0 2px 0 ${color}` : undefined }}
-              className={`h-8.5 px-3 flex items-center gap-1.5 rounded-t-lg cursor-pointer transition-all border-t-2 text-xs shrink-0 select-none group relative ${
+              style={{ '--document-color':color,borderTopColor: color } as React.CSSProperties}
+              className={`document-accordion-tab h-8.5 flex items-center gap-1.5 rounded-t-lg cursor-pointer border-t-2 text-xs shrink-0 select-none group relative ${
                 isActive
                   ? 'bg-(--ui-raised) text-(--ui-strong) font-medium'
                   : 'bg-(--ui-panel-2) text-(--ui-muted) opacity-80 hover:opacity-100 hover:bg-(--ui-raised) hover:text-(--ui-text-2)'
               }`}
             >
               {/* Tab Diamond Motif */}
-              <span className="text-[9px] font-bold" style={{ color }}>
+              <span className="document-tab-mark text-[9px] font-bold" style={{ color }}>
                 ❖
               </span>
 
               {/* Title / Inline Edit */}
-              <InlineName value={doc.name} onCommit={name => onRenameDocument(doc.id, name)}
-                label="文档名称" className="max-w-[120px] text-[11px]" />
+              <span className="document-tab-name"><InlineName value={doc.name} onCommit={name => onRenameDocument(doc.id, name)}
+                label="文档名称" className="w-full text-[11px]" /></span>
 
               {/* Close Tab Button (X) */}
               {documents.length > 1 && (
@@ -701,7 +729,8 @@ export const TopBar: React.FC<TopBarProps> = ({
                     e.stopPropagation();
                     onCloseDocument(doc.id);
                   }}
-                  className="p-0.5 rounded hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong) transition-colors"
+                  className="document-tab-close p-0.5 rounded hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong) transition-colors"
+                  aria-label={`关闭 ${doc.name}`}
                   data-tip="关闭标签页"
                 >
                   <X className="w-3 h-3" />

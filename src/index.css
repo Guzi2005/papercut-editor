@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/* Colored document spines unfold on inspection; the working document stays open. */
+.document-accordion-tab {
+  width:34px; padding:0 9px; overflow:hidden;
+  background:color-mix(in srgb,var(--document-color) 14%,var(--ui-panel));
+  transition:width 180ms ease,background-color 120ms ease;
+}
+.document-accordion-tab[data-active="true"],
+.document-accordion-tab:focus-within { width:188px; }
+.document-tab-mark { flex:none; width:14px; text-align:center; }
+.document-tab-name { flex:1; min-width:0; opacity:0; visibility:hidden; transition:opacity 100ms ease; }
+.document-tab-close { flex:none; opacity:0; visibility:hidden; }
+.document-accordion-tab[data-active="true"] .document-tab-name,
+.document-accordion-tab:focus-within .document-tab-name,
+.document-accordion-tab[data-active="true"] .document-tab-close,
+.document-accordion-tab:focus-within .document-tab-close { opacity:1; visibility:visible; }
+.document-accordion-tab:focus-visible { outline:2px solid var(--document-color); outline-offset:-2px; }
+@media (hover:hover) {
+ .document-accordion-tab:hover { width:188px; }
+ .document-accordion-tab:hover .document-tab-name,
+ .document-accordion-tab:hover .document-tab-close { opacity:1; visibility:visible; }
+}
+@media (max-width:640px) {
+ .document-accordion-tab[data-active="true"],.document-accordion-tab:focus-within { width:136px; }
+}
+@media (prefers-reduced-motion:reduce) { .document-accordion-tab,.document-tab-name { transition:none; } }
+
 /* Scroll areas that must scroll (layer lists) get a thin themed thumb and no track. */
 * {
   scrollbar-width: thin;
