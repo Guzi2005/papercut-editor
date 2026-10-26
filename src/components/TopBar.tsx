@@ -48,10 +48,9 @@ import { CanvasBgPanel } from './CanvasBgPanel';
 import { TwinPresetsPanel } from './TwinPresetsPanel';
 import { AspectSizeButton, SIZE_PRESETS } from './AspectSizeButton';
 import { TwinPreset } from '../utils/twinPresets';
-import { DocThumbnail } from './DocThumbnail';
+import { DocThumbnail, DocumentTabImage } from './DocThumbnail';
 import { SHADOW_BLENDS } from '../utils/layerSvg';
 import { WheelNumber } from './WheelNumber';
-import { InlineName } from './InlineName';
 import { SaveSettingsPanel } from './SaveSettingsPanel';
 import { AssetModeEntry } from './AssetModeEntry';
 import { SaveSettings, SaveStatus, describeSaveSettings } from '../utils/saveSettings';
@@ -223,7 +222,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [settingsFlyout, setSettingsFlyout] = useState<'mode' | 'save' | 'twin' | null>(null);
   const [soundOn, setSoundOn] = useState(() => !isSoundMuted());
-  const [thumb, setThumb] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [thumb, setThumb] = useState<{ id: string; x: number; y: number; editing?:boolean } | null>(null);
   const thumbTimer = useRef<number | undefined>(undefined);
   const showThumbSoon = (id: string, el: HTMLElement) => {
     window.clearTimeout(thumbTimer.current);
@@ -236,6 +235,13 @@ export const TopBar: React.FC<TopBarProps> = ({
     window.clearTimeout(thumbTimer.current);
     setThumb(null);
   };
+  const leaveThumb = () => {
+    window.clearTimeout(thumbTimer.current);
+    thumbTimer.current=window.setTimeout(()=>{
+      if(!document.querySelector('[data-document-details]')?.contains(document.activeElement))setThumb(null);
+    },160);
+  };
+  useEffect(()=>()=>window.clearTimeout(thumbTimer.current),[]);
   const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | 'bg' | null>(null);
   // Settings menu fields (canvas size)
   const [customWidth, setCustomWidth] = useState(currentWidth);
@@ -674,8 +680,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* 2. Center: SAI-Style Document Tabs (多文件选项卡栏，点击切换) */}
-      <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-1 px-2 border-x border-(--ui-divider) h-full">
+      {/* The artwork itself identifies each document; names live in details. */}
+      <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" onScroll={hideThumb} className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-px px-1 border-x border-(--ui-divider) h-full">
         {documents.map((doc,index) => {
           const isActive = doc.id === activeDocId;
           const color = tabColor(doc.id);
@@ -696,6 +702,8 @@ export const TopBar: React.FC<TopBarProps> = ({
                 else if(event.key==='ArrowLeft')target=(index+documents.length-1)%documents.length;
                 else if(event.key==='Home')target=0;
                 else if(event.key==='End')target=documents.length-1;
+                else if(event.key==='F2'){event.preventDefault();const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});return;}
+                else if(event.key==='Escape'){hideThumb();return;}
                 else if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelectDocument(doc.id);return;}
                 else return;
                 event.preventDefault();const tabs=event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[data-document-tab]');tabs?.[target]?.focus();onSelectDocument(documents[target].id);
@@ -705,37 +713,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                 onSelectDocument(doc.id);
               }}
               onPointerEnter={(e) => e.pointerType === 'mouse' && showThumbSoon(doc.id, e.currentTarget)}
-              onPointerLeave={hideThumb}
-              style={{ '--document-color':color,borderTopColor: color } as React.CSSProperties}
-              className={`document-accordion-tab h-8.5 flex items-center gap-1.5 rounded-t-lg cursor-pointer border-t-2 text-xs shrink-0 select-none group relative ${
+              onPointerLeave={leaveThumb}
+              onFocus={event=>{if(event.target===event.currentTarget)showThumbSoon(doc.id,event.currentTarget);}}
+              onBlur={leaveThumb}
+              onDoubleClick={event=>{const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});}}
+              style={{ '--document-color':color,'--document-aspect':String(doc.width/doc.height) } as React.CSSProperties}
+              className={`document-mosaic-tab cursor-pointer text-xs select-none relative ${
                 isActive
-                  ? 'bg-(--ui-raised) text-(--ui-strong) font-medium'
-                  : 'bg-(--ui-panel-2) text-(--ui-muted) opacity-80 hover:opacity-100 hover:bg-(--ui-raised) hover:text-(--ui-text-2)'
+                  ? 'text-(--ui-strong)'
+                  : 'text-(--ui-muted)'
               }`}
             >
-              {/* Tab Diamond Motif */}
-              <span className="document-tab-mark text-[9px] font-bold" style={{ color }}>
-                ❖
-              </span>
-
-              {/* Title / Inline Edit */}
-              <span className="document-tab-name"><InlineName value={doc.name} onCommit={name => onRenameDocument(doc.id, name)}
-                label="文档名称" className="w-full text-[11px]" /></span>
-
-              {/* Close Tab Button (X) */}
-              {documents.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseDocument(doc.id);
-                  }}
-                  className="document-tab-close p-0.5 rounded hover:bg-(--ui-hover) text-(--ui-muted) hover:text-(--ui-strong) transition-colors"
-                  aria-label={`关闭 ${doc.name}`}
-                  data-tip="关闭标签页"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+              <DocumentTabImage project={doc.project}/>
             </div>
           );
         })}
@@ -900,7 +889,10 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {thumb && (() => {
         const doc = documents.find((d) => d.id === thumb.id);
-        return doc ? <DocThumbnail project={doc.project} name={doc.name} x={thumb.x} y={thumb.y} /> : null;
+        return doc ? <DocThumbnail key={doc.id} project={doc.project} name={doc.name} x={thumb.x} y={thumb.y} editing={thumb.editing}
+          onEnter={()=>window.clearTimeout(thumbTimer.current)} onLeave={leaveThumb}
+          onRename={name=>onRenameDocument(doc.id,name)}
+          onClose={documents.length>1?()=>{hideThumb();onCloseDocument(doc.id);}:undefined}/> : null;
       })()}
     </header>
   );

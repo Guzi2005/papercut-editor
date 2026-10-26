@@ -4,13 +4,14 @@ const browser=await chromium.launch({channel:'msedge',headless:true}),page=await
 try{
  await page.goto('http://127.0.0.1:3119/');const strip=page.locator('[data-document-tabs]'),tabs=strip.getByRole('tab');
  await expect(tabs).toHaveCount(2);const active=strip.locator('[data-active="true"]'),inactive=strip.locator('[data-active="false"]');
- await expect(active).toHaveCSS('width','188px');await expect(inactive).toHaveCSS('width','34px');
- await inactive.hover();await expect(inactive).toHaveCSS('width','188px');await page.screenshot({path:join(tmpdir(),'document-accordion-hover.png')});
- await page.mouse.move(700,200);await expect(inactive).toHaveCSS('width','34px');
- await active.focus();await page.keyboard.press('ArrowRight');await expect(strip.locator('[data-active="true"]')).toBeFocused();await expect(strip.locator('[data-active="true"]')).toHaveCSS('width','188px');
- const name=strip.locator('[data-active="true"]').getByRole('button',{name:'文档名称',exact:true});await name.dblclick();const input=strip.getByRole('textbox',{name:'文档名称',exact:true});await expect(input).toBeFocused();await page.mouse.move(700,200);await expect(strip.locator('[data-active="true"]')).toHaveCSS('width','188px');await input.press('Escape');
+ await expect(tabs.locator('img')).toHaveCount(2);expect(await tabs.first().innerText()).toBe('');
+ const before=await inactive.boundingBox();await inactive.hover();await expect(page.locator('[data-document-details]')).toBeVisible();expect((await inactive.boundingBox()).width).toBe(before.width);
+ await page.screenshot({path:join(tmpdir(),'document-mosaic.png')});
+ await page.mouse.move(1100,400);await expect(page.locator('[data-document-details]')).toHaveCount(0);
+ await active.focus();await page.keyboard.press('ArrowRight');await expect(strip.locator('[data-active="true"]')).toBeFocused();
+ await page.keyboard.press('F2');const input=page.locator('[data-document-details]').getByRole('textbox',{name:'文档名称',exact:true});await expect(input).toBeFocused();await input.fill('画面拼图测试');await input.press('Enter');await expect(strip.getByRole('tab',{name:'画面拼图测试',exact:true})).toHaveAttribute('aria-selected','true');
  const count=await tabs.count();await page.getByRole('button',{name:'新建空白画布',exact:true}).click();await page.getByRole('button',{name:'创建画布',exact:true}).click();await expect(tabs).toHaveCount(count+1);
- await strip.locator('[data-active="true"] button[aria-label^="关闭 "]').click();await expect(tabs).toHaveCount(count);
- await page.setViewportSize({width:390,height:844});await expect(strip.locator('[data-active="true"]')).toHaveCSS('width','136px');
- console.log('PASS collapsed/hover/active accordion, keyboard selection, inline rename, create/close, compact width');
+ await strip.locator('[data-active="true"]').hover();await page.locator('[data-document-details] button[aria-label^="关闭 "]').click();await expect(tabs).toHaveCount(count);
+ await page.setViewportSize({width:390,height:844});await expect(tabs.locator('img')).toHaveCount(count);const header=await page.locator('header').first().evaluate(e=>[e.clientWidth,e.scrollWidth]);expect(header[1]).toBeLessThanOrEqual(header[0]+1);
+ console.log('PASS artwork mosaic, stable hover details, keyboard selection/rename, create/close, mobile overflow');
 }finally{await browser.close();}
