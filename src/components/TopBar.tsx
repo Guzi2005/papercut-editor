@@ -681,7 +681,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* The artwork itself identifies each document; names live in details. */}
-      <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" onScroll={hideThumb} className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar gap-px px-1 border-x border-(--ui-divider) h-full">
+      <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" onScroll={hideThumb} className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar h-full">
         {documents.map((doc,index) => {
           const isActive = doc.id === activeDocId;
           const color = tabColor(doc.id);
@@ -732,7 +732,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Plus Button to Quick Create New Document Tab */}
         <button
           onClick={() => onNewDocument()}
-          className="w-7 h-7 mb-1 flex items-center justify-center rounded-lg hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
+          className="w-7 h-full flex items-center justify-center hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
           aria-label="新建空白画布"
           data-tip="新建空白画布"
         >
