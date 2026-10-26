@@ -13,29 +13,32 @@ interface AssetModeEntryProps {
   onAssetModeChange?: (enabled: boolean) => void;
 }
 
-/** A cross-stitch figure drawn from X stitches, made to stay legible in a 24px slot. */
-const CrossStitchPerson: React.FC = () => (
-  <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" focusable="false">
-    <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="square">
-      {/* head */}
-      <path d="M9.8 2.6l4.4 4.4M14.2 2.6l-4.4 4.4" />
-      {/* torso, two stacked stitches */}
-      <path d="M9.8 8.3l4.4 4.4M14.2 8.3l-4.4 4.4" />
-      <path d="M9.8 13.7l4.4 4.4M14.2 13.7l-4.4 4.4" />
-      {/* arms */}
-      <path d="M4.3 8.3l3.1 3.1M7.4 8.3l-3.1 3.1" />
-      <path d="M16.6 8.3l3.1 3.1M19.7 8.3l-3.1 3.1" />
-      {/* legs */}
-      <path d="M7.2 17.5l3.1 3.1M10.3 17.5l-3.1 3.1" />
-      <path d="M13.7 17.5l3.1 3.1M16.8 17.5l-3.1 3.1" />
-    </g>
+/** Pixel-for-pixel motif from the supplied woven grid; no tracing grid or labels. */
+const WEAVE_PIXELS = [
+  [4,10],
+  [4,5,9,10],
+  [4,5,6,8,9,10],
+  [1,2,3,5,6,8,9,11,12,13],
+  [2,3,4,6,8,10,11,12],
+  [3,4,5,9,10,11],
+  [7],
+  [3,4,5,9,10,11],
+  [2,3,4,6,8,10,11,12],
+  [1,2,3,5,6,8,9,11,12,13],
+  [4,5,6,8,9,10],
+  [4,5,9,10],
+  [4,10],
+];
+const WeavePixelMark: React.FC = () => (
+  <svg data-weave-pixel-mark viewBox="0 0 15 15" className="h-5 w-5" aria-hidden="true" focusable="false" shapeRendering="crispEdges">
+    <path fill="currentColor" d={WEAVE_PIXELS.flatMap((columns,row)=>columns.map(column=>`M${column} ${row+1}h1v1h-1z`)).join('')}/>
   </svg>
 );
 
 /** Both destinations share the same square badge as the mode trigger. */
 const ModeBadge: React.FC<{assets:boolean;className?:string}> = ({assets,className=''}) => (
   <span aria-hidden="true" data-mode-badge={assets?'assets':'paper'} className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--ui-accent) text-(--ui-accent-ink) ${className}`}>
-    {assets ? <CrossStitchPerson /> : <svg viewBox="0 0 24 24" className="h-5 w-5" focusable="false"><path fill="currentColor" d="M12 2l4 4-4 4-4-4zM6 8l4 4-4 4-4-4zM18 8l4 4-4 4-4-4zM12 14l4 4-4 4-4-4z"/></svg>}
+    {assets ? <WeavePixelMark /> : <svg viewBox="0 0 24 24" className="h-5 w-5" focusable="false"><path fill="currentColor" d="M12 2l4 4-4 4-4-4zM6 8l4 4-4 4-4-4zM18 8l4 4-4 4-4-4zM12 14l4 4-4 4-4-4z"/></svg>}
   </span>
 );
 
@@ -129,7 +132,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
     onOpenAssets?.();
   };
 
-  const modeItemClass = 'flex min-h-8 w-full items-center gap-2 px-2 py-1 text-left text-(--ui-text-2) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-strong)';
+  const modeItemClass = 'flex min-h-8 w-full items-center gap-2 py-1 pr-2 text-left text-(--ui-text-2) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-strong)';
 
   return (
     <div
@@ -167,7 +170,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
           role="menu"
           aria-label="工作模式"
           onKeyDown={moveFocus}
-          className="absolute left-0 top-full z-50 mt-1 w-max max-w-[calc(100vw-16px)] min-w-36 rounded-lg border border-(--ui-border) bg-(--ui-panel) p-0.5 text-xs shadow-lg"
+          className="absolute -left-[3px] top-full z-50 mt-1 w-max max-w-[calc(100vw-16px)] min-w-36 rounded-lg border border-(--ui-border) bg-(--ui-panel) p-0.5 text-xs shadow-lg"
         >
           {assetMode && <button
             type="button"
@@ -178,7 +181,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
             data-tip="在画布上绘制、编排与剪贴"
             className={modeItemClass}
           >
-            <ModeBadge assets={false} className="h-5 w-5 [&>svg]:h-4 [&>svg]:w-4"/>
+            <ModeBadge assets={false}/>
             <span className="flex-1">剪贴画板</span>
           </button>}
 
@@ -193,7 +196,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
             data-tip={assetsAvailable ? '浏览、制作与复用资产' : '资产库加载中…'}
             className={`${modeItemClass} disabled:opacity-40`}
           >
-            <ModeBadge assets className="h-5 w-5 [&>svg]:h-4 [&>svg]:w-4"/>
+            <ModeBadge assets/>
             <span className="flex-1">Weave &amp; Wander 资产</span>
           </button>}
 
@@ -210,7 +213,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
                 data-tip={assetsAvailable ? '制作新的剪贴或百褶裙资产' : '资产库加载中…'}
                 className={`${modeItemClass} disabled:opacity-40`}
               >
-                <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center"><Plus className="h-3.5 w-3.5 text-(--ui-accent)" /></span>
+                <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center"><Plus className="h-3.5 w-3.5 text-(--ui-accent)" /></span>
                 <span className="flex-1">新建资产</span>
               </button>
             </>
