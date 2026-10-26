@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeftRight, ArrowRight, Check, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 interface AssetModeEntryProps {
   onOpenAssets?: () => void;
@@ -129,12 +129,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
     onOpenAssets?.();
   };
 
-  const modeItemClass = (active: boolean) =>
-    `flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-      active
-        ? 'bg-(--ui-hover) text-(--ui-strong)'
-        : 'text-(--ui-text-2) hover:bg-(--ui-hover) hover:text-(--ui-strong)'
-    }`;
+  const modeItemClass = 'flex min-h-8 w-full items-center gap-2 px-2 py-1 text-left text-(--ui-text-2) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-strong)';
 
   return (
     <div
@@ -164,7 +159,6 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
         className="group relative flex h-6 w-6 items-center justify-center rounded-md transition-colors outline-offset-4"
       >
         <ModeBadge assets={assetMode}/>
-        <span aria-hidden="true" className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-(--ui-panel) text-(--ui-text-2) ring-1 ring-(--ui-border)"><ArrowLeftRight size={8} strokeWidth={2}/></span>
       </button>
 
       {open && (
@@ -173,25 +167,22 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
           role="menu"
           aria-label="工作模式"
           onKeyDown={moveFocus}
-          className="absolute left-0 top-full z-50 mt-1 w-56 rounded-xl border border-(--ui-border-strong) bg-(--ui-panel) py-1 text-xs shadow-2xl"
+          className="absolute left-0 top-full z-50 mt-1 w-max max-w-[calc(100vw-16px)] min-w-36 rounded-lg border border-(--ui-border) bg-(--ui-panel) p-0.5 text-xs shadow-lg"
         >
-          <div role="presentation" className="flex items-center gap-2 px-3 pb-1 pt-1 text-[10px] text-(--ui-muted)"><ArrowLeftRight size={12} aria-hidden="true"/>切换模式</div>
-
-          <button
+          {assetMode && <button
             type="button"
             role="menuitemradio"
             aria-checked={!assetMode}
             tabIndex={-1}
             onClick={selectPaper}
             data-tip="在画布上绘制、编排与剪贴"
-            className={modeItemClass(!assetMode)}
+            className={modeItemClass}
           >
-            <ModeBadge assets={false}/>
+            <ModeBadge assets={false} className="h-5 w-5 [&>svg]:h-4 [&>svg]:w-4"/>
             <span className="flex-1">剪贴画板</span>
-            {!assetMode ? <Check aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-accent)"/> : <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-muted)"/>}
-          </button>
+          </button>}
 
-          <button
+          {!assetMode && <button
             type="button"
             role="menuitemradio"
             aria-checked={assetMode}
@@ -200,16 +191,15 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
             tabIndex={-1}
             onClick={selectAssets}
             data-tip={assetsAvailable ? '浏览、制作与复用资产' : '资产库加载中…'}
-            className={`${modeItemClass(assetMode)} disabled:opacity-40`}
+            className={`${modeItemClass} disabled:opacity-40`}
           >
-            <ModeBadge assets/>
+            <ModeBadge assets className="h-5 w-5 [&>svg]:h-4 [&>svg]:w-4"/>
             <span className="flex-1">Weave &amp; Wander 资产</span>
-            {assetMode ? <Check aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-accent)"/> : <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 text-(--ui-muted)"/>}
-          </button>
+          </button>}
 
           {assetMode && (
             <>
-              <div className="my-1 h-px bg-(--ui-divider)" />
+              <div className="my-0.5 h-px bg-(--ui-divider)" />
               <button
                 type="button"
                 role="menuitem"
@@ -218,9 +208,9 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
                 tabIndex={-1}
                 onClick={createAsset}
                 data-tip={assetsAvailable ? '制作新的剪贴或百褶裙资产' : '资产库加载中…'}
-                className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-(--ui-text-2) transition-colors hover:bg-(--ui-hover) hover:text-(--ui-strong) disabled:opacity-40"
+                className={`${modeItemClass} disabled:opacity-40`}
               >
-                <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center"><Plus className="h-3.5 w-3.5 text-(--ui-accent)" /></span>
+                <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center"><Plus className="h-3.5 w-3.5 text-(--ui-accent)" /></span>
                 <span className="flex-1">新建资产</span>
               </button>
             </>
