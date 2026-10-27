@@ -668,14 +668,15 @@
   font-size: 10px;
 }
 
-.skirt-stage:has(canvas[data-avatar="error"])::after,
-.skirt-live-preview:has(canvas[data-avatar="error"])::after {
-  content: '角色载入失败，请重新打开预览';
+.skirt-avatar-retry {
   position: absolute;
   bottom: 4px;
   left: 8px;
   color: var(--ui-accent-2);
-  font-size: 10px;
+  font-size: 11px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .skirt-action-tabs[hidden] { display: none; }

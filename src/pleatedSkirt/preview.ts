@@ -63,7 +63,7 @@ export class SkirtPreview {
  private yaw=.3;private pitch=.07;private zoom=1;private panX=0;private panY=0;private renderMode:PreviewRenderMode=readPreviewRenderMode();private observer:ResizeObserver;private events=new AbortController();private disposed=false;
  private drag?:{id:number;x:number;y:number;button:number};
  private touches=new Map<number,{x:number;y:number}>();private multiTouch=false;
- private visible=true;
+ private visible=true;private avatarLoading=false;private retryButton?:HTMLButtonElement;
  private transition=new PoseTransition(.48);private renderedRoot=0;private renderedCut=0;
  private fromCut=0;private benchVisibility=0;private fromBenchVisibility=0;private benchAppearance=1;
  private fromBench?:Float32Array;private benchRequest=0;
@@ -90,8 +90,17 @@ export class SkirtPreview {
   canvas.addEventListener('contextmenu',e=>e.preventDefault(),{signal});
   canvas.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.3,Math.min(3,this.zoom*Math.exp(e.deltaY*.001)));this.draw();},{passive:false,signal});
   document.addEventListener('visibilitychange',()=>{this.last=0;if(document.hidden){cancelAnimationFrame(this.raf);this.raf=0;}else this.schedule();},{signal});
+  window.addEventListener('online',()=>{if(canvas.dataset.avatar==='error')this.retryAvatar();},{signal});
+  this.retryAvatar();
+ }
+ retryAvatar(){
+  if(this.disposed||this.avatarLoading||this.avatar)return;
+  const canvas=this.canvas;this.avatarLoading=true;this.retryButton?.remove();this.retryButton=undefined;
   canvas.dataset.avatar='loading';
-  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);const bodyUV=new Float32Array(m.vertexCount*2);for(const part of m.parts){if(!['PreviewThigh','Calf','FlatSole','ShoeUpper'].includes(part.name))continue;for(let i=part.vertexOffset;i<part.vertexOffset+part.vertexCount;i++){bodyUV[i*2]=1;bodyUV[i*2+1]=asset.data[m.actions.stand.frames[0].offset+i*3+1];}}this.body=this.upload(this.bodyPositions,this.bodyNormals,bodyUV,new Float32Array(m.colors),new Uint32Array(m.indices),asset.data.subarray(m.actions.stand.frames[0].offset,m.actions.stand.frames[0].offset+m.vertexCount*3));this.bindGarment();canvas.dataset.avatar='ready';this.pose();this.draw();this.schedule();}).catch(error=>{if(this.disposed)return;canvas.dataset.avatar='error';canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));});
+  void loadAvatar().then(asset=>{if(this.disposed)return;this.avatar=asset;const m=asset.manifest;this.bodyPositions=new Float32Array(m.vertexCount*3);this.bodyNormals=new Float32Array(m.vertexCount*3);this.cage=new Float32Array(m.cage.vertexCount*3);const bodyUV=new Float32Array(m.vertexCount*2);for(const part of m.parts){if(!['PreviewThigh','Calf','FlatSole','ShoeUpper'].includes(part.name))continue;for(let i=part.vertexOffset;i<part.vertexOffset+part.vertexCount;i++){bodyUV[i*2]=1;bodyUV[i*2+1]=asset.data[m.actions.stand.frames[0].offset+i*3+1];}}this.body=this.upload(this.bodyPositions,this.bodyNormals,bodyUV,new Float32Array(m.colors),new Uint32Array(m.indices),asset.data.subarray(m.actions.stand.frames[0].offset,m.actions.stand.frames[0].offset+m.vertexCount*3));this.bindGarment();this.pose();this.draw();this.schedule();canvas.dataset.avatar='ready';}).catch(error=>{if(this.disposed)return;this.release(this.body);this.body=undefined;this.avatar=undefined;canvas.dataset.avatar='error';
+   const retry=document.createElement('button');retry.type='button';retry.className='skirt-avatar-retry';retry.textContent='重试载入角色';retry.title=String(error);retry.addEventListener('click',()=>this.retryAvatar(),{signal:this.events.signal});canvas.parentElement?.append(retry);this.retryButton=retry;
+   canvas.dispatchEvent(new CustomEvent('skirt-error',{detail:String(error),bubbles:true}));
+  }).finally(()=>{this.avatarLoading=false;});
  }
  private upload(positions:Float32Array,normals:Float32Array,uvs:Float32Array,colors:Float32Array,indices:Uint32Array,paperPositions=positions):GPU{
   const gl=this.gl,gpu:GPU={vao:gl.createVertexArray()!,buffers:[],count:indices.length};gl.bindVertexArray(gpu.vao);
@@ -235,5 +244,5 @@ export class SkirtPreview {
   gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),1);gl.bindVertexArray(this.garment.vao);gl.drawElements(gl.TRIANGLES,this.garment.count,gl.UNSIGNED_INT,0);
   if(dressed&&this.bench){const alpha=(Math.cos(this.yaw)<.2||this.pitch<-.25?.22:1)*this.benchVisibility;gl.uniform1f(gl.getUniformLocation(this.program,'opacity'),alpha);this.canvas.dataset.benchOpacity=String(alpha);gl.uniform1f(gl.getUniformLocation(this.program,'useTexture'),0);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.bindVertexArray(this.bench.vao);gl.drawElements(gl.TRIANGLES,this.bench.count,gl.UNSIGNED_INT,0);gl.depthMask(true);gl.disable(gl.BLEND);}this.canvas.dataset.bench=String(Boolean(dressed&&this.bench));
  }
- dispose(){this.disposed=true;cancelAnimationFrame(this.raf);this.events.abort();this.observer.disconnect();this.release(this.garment);this.release(this.body);this.release(this.bench);this.gl.deleteTexture(this.texture);this.gl.deleteProgram(this.program);}
+ dispose(){this.disposed=true;this.retryButton?.remove();cancelAnimationFrame(this.raf);this.events.abort();this.observer.disconnect();this.release(this.garment);this.release(this.body);this.release(this.bench);this.gl.deleteTexture(this.texture);this.gl.deleteProgram(this.program);}
 }
