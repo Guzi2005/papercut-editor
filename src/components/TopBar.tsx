@@ -225,8 +225,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [thumb, setThumb] = useState<{ id: string; x: number; y: number; editing?:boolean } | null>(null);
   const thumbTimer = useRef<number | undefined>(undefined);
   const showThumbSoon = (id: string, el: HTMLElement) => {
+    if(thumb?.editing||showFileMenu||showSettingsMenu||showExportMenu||showZoomMenu||el.closest('header')?.querySelector('[aria-expanded="true"]'))return;
     window.clearTimeout(thumbTimer.current);
     thumbTimer.current = window.setTimeout(() => {
+      if(!el.isConnected)return;
       const r = el.getBoundingClientRect();
       setThumb({ id, x: r.left, y: r.bottom + 6 });
     }, 450);
@@ -242,6 +244,14 @@ export const TopBar: React.FC<TopBarProps> = ({
     },160);
   };
   useEffect(()=>()=>window.clearTimeout(thumbTimer.current),[]);
+  useEffect(()=>{hideThumb();setShowFileMenu(false);setShowSettingsMenu(false);setShowExportMenu(false);setShowZoomMenu(false);},[activeDocId]);
+  useEffect(()=>{
+    const dismiss=()=>hideThumb();
+    window.addEventListener('resize',dismiss);
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){hideThumb();setShowFileMenu(false);setShowSettingsMenu(false);setShowExportMenu(false);setShowZoomMenu(false);}};
+    window.addEventListener('keydown',escape);
+    return()=>{window.removeEventListener('resize',dismiss);window.removeEventListener('keydown',escape);};
+  },[]);
   const [fileFlyout, setFileFlyout] = useState<'preset' | 'size' | 'bg' | null>(null);
   // Settings menu fields (canvas size)
   const [customWidth, setCustomWidth] = useState(currentWidth);
@@ -282,6 +292,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      if(!(target instanceof Element)||!target.closest('[data-document-tabs], [data-document-details]'))hideThumb();
       if (zoomMenuRef.current && !zoomMenuRef.current.contains(target)) setShowZoomMenu(false);
       if (exportMenuRef.current && !exportMenuRef.current.contains(target)) {
         setShowExportMenu(false);
@@ -307,9 +318,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-60 shrink-0 px-2 sm:px-4 gap-1 sm:gap-2">
+    <header data-editor-header onPointerOver={event=>{if(!(event.target as Element).closest('[data-document-tabs], [data-document-details]'))hideThumb();}} className="editor-topbar relative h-13 bg-(--ui-panel) border-b border-(--ui-divider) flex items-center justify-between text-(--ui-text) select-none z-60 shrink-0 px-2 sm:px-4 gap-1 sm:gap-2">
       {/* 1. Left: Brand Icon + 文件 / 设置 (皮肤选择) Menu Tabs */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="editor-topbar-start flex items-center gap-1.5 shrink-0">
         <div className="flex items-center gap-1.5 pr-2 border-r border-(--ui-divider)">
           <AssetModeEntry
             onOpenAssets={onOpenAssets}
@@ -681,6 +692,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* The artwork itself identifies each document; names live in details. */}
+      <div className="document-mosaic-strip">
       <div ref={documentTabsRef} data-document-tabs role="tablist" aria-label="文档" onScroll={hideThumb} className="relative min-w-0 flex-1 flex items-end overflow-x-auto no-scrollbar h-full">
         {documents.map((doc,index) => {
           const isActive = doc.id === activeDocId;
@@ -702,7 +714,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 else if(event.key==='ArrowLeft')target=(index+documents.length-1)%documents.length;
                 else if(event.key==='Home')target=0;
                 else if(event.key==='End')target=documents.length-1;
-                else if(event.key==='F2'){event.preventDefault();const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});return;}
+                else if(event.key==='F2'){event.preventDefault();window.clearTimeout(thumbTimer.current);const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});return;}
                 else if(event.key==='Escape'){hideThumb();return;}
                 else if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelectDocument(doc.id);return;}
                 else return;
@@ -716,7 +728,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               onPointerLeave={leaveThumb}
               onFocus={event=>{if(event.target===event.currentTarget)showThumbSoon(doc.id,event.currentTarget);}}
               onBlur={leaveThumb}
-              onDoubleClick={event=>{const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});}}
+              onDoubleClick={event=>{window.clearTimeout(thumbTimer.current);const r=event.currentTarget.getBoundingClientRect();setThumb({id:doc.id,x:r.left,y:r.bottom+6,editing:true});}}
               style={{ '--document-color':color,'--document-aspect':String(doc.width/doc.height) } as React.CSSProperties}
               className={`document-mosaic-tab cursor-pointer text-xs select-none relative ${
                 isActive
@@ -729,7 +741,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           );
         })}
 
-        {/* Plus Button to Quick Create New Document Tab */}
+      </div>
+        {/* New stays reachable while only the document artwork scrolls. */}
         <button
           onClick={() => onNewDocument()}
           className="w-7 h-full flex items-center justify-center hover:bg-(--ui-raised) text-(--ui-muted) hover:text-(--ui-strong) transition-colors shrink-0"
@@ -741,7 +754,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* 3. Right: Zoom (放缩) + Unified Export Square Button */}
-      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+      <div className="editor-topbar-end flex items-center gap-1 sm:gap-2 shrink-0">
         {/* Zoom Controls */}
         <div className="relative" ref={zoomMenuRef}>
         <button type="button" aria-label="画布缩放设置" aria-expanded={showZoomMenu} onClick={()=>setShowZoomMenu(!showZoomMenu)}
@@ -891,6 +904,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         const doc = documents.find((d) => d.id === thumb.id);
         return doc ? <DocThumbnail key={doc.id} project={doc.project} name={doc.name} x={thumb.x} y={thumb.y} editing={thumb.editing}
           onEnter={()=>window.clearTimeout(thumbTimer.current)} onLeave={leaveThumb}
+          onEditingEnd={()=>setThumb(current=>current?{...current,editing:false}:null)}
           onRename={name=>onRenameDocument(doc.id,name)}
           onClose={documents.length>1?()=>{hideThumb();onCloseDocument(doc.id);}:undefined}/> : null;
       })()}

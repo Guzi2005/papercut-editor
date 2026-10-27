@@ -25,24 +25,25 @@ export const DocumentTabImage=React.memo(function DocumentTabImage({project}:{pr
 });
 
 /** Preview card shown under a document tab after a short hover. */
-export const DocThumbnail: React.FC<{ project: PapercutProject; name: string; x: number; y: number; editing?:boolean; onRename?:(name:string)=>void; onClose?:()=>void; onEnter?:()=>void; onLeave?:()=>void }> = ({ project, name, x, y, editing=false,onRename,onClose,onEnter,onLeave }) => {
+export const DocThumbnail: React.FC<{ project: PapercutProject; name: string; x: number; y: number; editing?:boolean; onRename?:(name:string)=>void; onClose?:()=>void; onEnter?:()=>void; onLeave?:()=>void; onEditingEnd?:()=>void }> = ({ project, name, x, y, editing=false,onRename,onClose,onEnter,onLeave,onEditingEnd }) => {
   const maxW = 220, maxH = 160;
   const k = Math.min(maxW / project.width, maxH / project.height);
   const w = Math.round(project.width * k), h = Math.round(project.height * k);
-  const left = Math.max(8, Math.min(x, window.innerWidth - w - 24));
+  const cardWidth=Math.min(Math.max(w+18,208),window.innerWidth-16);
+  const left = Math.max(8, Math.min(x, window.innerWidth-cardWidth-8));
   return (
     <div
       data-document-details
       onPointerEnter={onEnter} onPointerLeave={onLeave}
       onFocusCapture={onEnter} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))onLeave?.();}}
       className="fixed z-[70] p-2 rounded-lg bg-(--ui-panel) border border-(--ui-border-strong) shadow-lg animate-in fade-in zoom-in-95 duration-150"
-      style={{ left, top: y }}
+      style={{ left, top: y, width:cardWidth, maxHeight:`calc(100dvh - ${y+8}px)`, overflowY:'auto' }}
     >
-      <div className="rounded-md overflow-hidden border border-(--ui-border)" style={{ width: w, height: h, background: '#FAF8F2' }}>
+      <div className="rounded-md overflow-hidden border border-(--ui-border)" style={{ width: w, maxWidth:'100%', height: h, marginInline:'auto' }}>
         <img src={thumbUrl(project)} width={w} height={h} alt="" draggable={false} />
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-[11px]">
-        {onRename?<InlineName key={`${name}-${editing}`} value={name} onCommit={onRename} initialEditing={editing} label="文档名称" className="flex-1 font-medium text-(--ui-strong) max-w-[150px]"/>:<span className="font-medium text-(--ui-strong) truncate max-w-[150px]">{name}</span>}
+        {onRename?<InlineName key={String(editing)} value={name} onCommit={onRename} initialEditing={editing} onEditingEnd={onEditingEnd} label="文档名称" className="flex-1 font-medium text-(--ui-strong) max-w-[150px]"/>:<span className="font-medium text-(--ui-strong) truncate max-w-[150px]">{name}</span>}
         <span className="ml-auto font-mono text-[10px] text-(--ui-muted)">
           {project.width}×{project.height}
         </span>

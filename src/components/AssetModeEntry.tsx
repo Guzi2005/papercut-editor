@@ -74,7 +74,7 @@ export const AssetModeEntry: React.FC<AssetModeEntryProps> = ({
     preferred?.focus();
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) closeMenu(true);
+      if (!rootRef.current?.contains(event.target as Node)) closeMenu(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;

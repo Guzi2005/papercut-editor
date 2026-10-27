@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+:root { --editor-header-height:52px; }
+.document-mosaic-strip { display:flex; flex:1 1 0; min-width:0; height:100%; align-items:stretch; }
+@media (max-width:639px) {
+ :root { --editor-header-height:80px; }
+ .editor-topbar { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:44px 36px; height:80px; column-gap:4px; row-gap:0; padding-inline:8px; }
+ .editor-topbar-start { grid-column:1; grid-row:1; }
+ .editor-topbar-end { grid-column:2; grid-row:1; }
+ .document-mosaic-strip { grid-column:1 / -1; grid-row:2; margin-inline:-8px; }
+}
 /* A horizontal mosaic of live document artwork, fitted to the header's height. */
 .document-mosaic-tab {
- flex:var(--document-aspect,1) 1 0; min-width:24px; height:100%; overflow:hidden;
+ flex:var(--document-aspect,1) 1 0; min-width:44px; height:100%; overflow:hidden;
  background:var(--ui-panel-2); border:0;
  transition:border-color 100ms ease,background-color 100ms ease;
 }
