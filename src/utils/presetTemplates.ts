@@ -6,6 +6,7 @@
 import { PapercutProject, Layer, LayerGroup, CanvasBackground } from '../types/papercut';
 import { createDoubleFishPreset } from './weavePresets';
 import { createUkrainianTreePreset } from './ukrainianPreset';
+import { createChineseToysPreset } from './chineseToysPreset';
 
 /** Weave and Wander 色卡：取样自「针脚与远方」设定图 */
 export const FOLK_PALETTE = [
@@ -105,6 +106,12 @@ export const PRESET_PROJECTS: { id: string; name: string; desc: string; factory:
     name: '乌克兰剪纸 · 生命树',
     desc: '蓝底白纸，双鸟、人物与生命树的左右对称剪纸',
     factory: createUkrainianTreePreset,
+  },
+  {
+    id: 'chinese_toys',
+    name: '中国玩具',
+    desc: '悬挂纸玩具、七轮风车与彩绘泥玩具：贴片内柳叶笔和矢量连线',
+    factory: createChineseToysPreset,
   },
   {
     id: 'double_fish',

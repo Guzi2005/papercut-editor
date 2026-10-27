@@ -40,7 +40,7 @@ try {
       raster:doc.querySelectorAll('image').length, xmlErrors:doc.querySelectorAll('parsererror').length,
       mismatch:mismatch/total, symmetry:p.symmetry.kind };
   });
-  expect(result.ids).toEqual(['ukrainian_tree','double_fish']);
+  expect(result.ids).toEqual(['ukrainian_tree','chinese_toys','double_fish']);
   expect(result.cuts).toBeGreaterThan(40);
   expect(result.raster).toBe(0);expect(result.xmlErrors).toBe(0);
   expect(result.mismatch).toBeLessThan(.002);

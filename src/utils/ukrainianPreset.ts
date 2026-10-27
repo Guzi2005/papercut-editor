@@ -2,6 +2,13 @@ import type { CutoutPath, PapercutProject } from '../types/papercut';
 import { UKRAINIAN_TRACE } from './ukrainianTrace';
 import { transformPathD, type Matrix } from './pathTransform';
 import { applySymmetry } from './symmetry';
+import { ukrainianKnifeCut, type UkrainianHoleKind } from './ukrainianKnifeCuts';
+
+const CUT_LABEL: Partial<Record<UkrainianHoleKind, string>> = {
+  diamond: '菱形刀口',
+  arrowhead: '箭尾刀口',
+  opening: '结构开口',
+};
 
 /** One folded white sheet, with actual editable holes rather than blue painted marks. */
 export function createUkrainianTreePreset(): PapercutProject {
@@ -17,9 +24,12 @@ export function createUkrainianTreePreset(): PapercutProject {
       const coords = d.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
       const y = coords[1] ?? 0;
       const motif = y < 220 ? '花叶镂空' : y < 600 ? '鸟羽与枝叶' : y < 920 ? '人物衣袖刀纹' : '裙边与花纹';
-      cutouts.push({ id: `ua_cut_${cutouts.length}`, name: `${motif} ${cutouts.length + 1}`,
-        type: 'custom_polygon', d: applySymmetry(d, matrices), isHole: true,
-        createdAt: cutouts.length, symmetrySource: { d, matrices } });
+      const cut = ukrainianKnifeCut(d);
+      const label = CUT_LABEL[cut.kind];
+      const name = `${label ? `${motif}·${label}` : motif} ${cutouts.length + 1}`;
+      cutouts.push({ id: `ua_cut_${cutouts.length}`, name,
+        type: 'custom_polygon', d: applySymmetry(cut.d, matrices), isHole: true,
+        createdAt: cutouts.length, symmetrySource: { d: cut.d, matrices } });
     }
   }
   const d = edges.join(' ');
