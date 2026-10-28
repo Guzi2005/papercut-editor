@@ -14,13 +14,13 @@ export class DrapeConstraint {
   for(let j=0;j<=this.rows;j++)for(let i=0;i<this.width;i++){const at=j*this.width+i;if(j)this.warp[at]=this.distance(rest,at,at-this.width);this.thickness[at]=this.distance(rest,at,at+this.shell);}
  }
  private distance(p:Float32Array,a:number,b:number){return Math.hypot(p[a*3]-p[b*3],p[a*3+1]-p[b*3+1],p[a*3+2]-p[b*3+2]);}
- apply(p:Float32Array,n:Float32Array,d:DrapeValues,amount:number,action:string='stand',shapeRest:Float32Array=this.rest){
+ apply(p:Float32Array,n:Float32Array,d:DrapeValues,amount:number,action:string='stand',shapeRest:Float32Array=this.rest,kneeDrop=0){
   if(amount<=0)return;const w=this.width,cols=w-1,rows=this.rows;
   // The legacy corrective cage expands radial offsets around bent knees.
   // Use a monotone garment envelope for seated/lying poses instead, then
   // enforce material lengths below. The cage still owns the waist attachment.
   const source=p.slice(0,this.shell*3),blend=amount*amount*(3-2*amount);
-  if(action==='sit')seatedEnvelope(p,shapeRest,w,rows,d,blend);
+  if(action==='sit')seatedEnvelope(p,shapeRest,w,rows,d,blend,kneeDrop);
   for(let row=1;row<=rows;row++)for(let col=0;col<cols;col++){
    const v=row/rows,at=(row*w+col)*3;
    if(action==='lie'){
@@ -61,7 +61,7 @@ export class DrapeConstraint {
   if(action==='sit'){
    // Alternate contact and inextensible material constraints. End on length
    // projection so broad folds consume spare cloth instead of stretching it.
-   for(let i=0;i<3;i++){supportSeatedBody(p,w,rows,blend);this.projectLengths(p);}
+   for(let i=0;i<3;i++){supportSeatedBody(p,w,rows,blend,kneeDrop);this.projectLengths(p);}
   }else this.projectLengths(p);
   this.finishSurface(p,n);
  }

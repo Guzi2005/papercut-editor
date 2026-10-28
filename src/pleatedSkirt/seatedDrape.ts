@@ -10,14 +10,14 @@ function pointAt({points,lengths}:Path,distance:number):number[]{
 }
 /** Waist-to-hem material paths drape over the lap and gather behind the pelvis.
  * Each path is sampled by its material arc length, not the height of a cone. */
-export function seatedEnvelope(p:Float32Array,rest:Float32Array,width:number,rows:number,d:DrapeValues,blend:number){
+export function seatedEnvelope(p:Float32Array,rest:Float32Array,width:number,rows:number,d:DrapeValues,blend:number,kneeDrop=0){
  const cols=width-1;
  for(let col=0;col<cols;col++){
   const u=col/cols,angle=u*Math.PI*2,front=(1-Math.cos(angle))*.5,rear=1-front,side=Math.sin(angle),root=col*3;
   const waist=[p[root],p[root+1],p[root+2]],radial=Math.abs(rest[(rows*width+col)*3])/Math.max(.001,Math.abs(side));
   const sideRoom=Math.min(.21,Math.max(0,radial-.28))*(.3+.4*d.bending);
   const hipX=side*(.29+sideRoom*.3),kneeX=side*(.29+sideRoom),seat=1.04;
-  const frontPath=path([waist,[hipX,1.255,.29],[kneeX,1.255,.50],[kneeX,1.18,.66],[kneeX,1.05,.69]]);
+  const frontPath=path([waist,[hipX,1.255-kneeDrop*.45,.29],[kneeX,1.255-kneeDrop,.50],[kneeX,1.18-kneeDrop,.66],[kneeX,1.05-kneeDrop,.69]]);
   // More bending resistance produces larger, rounder folds; soft fabric packs tightly.
   const fold=.025+.055*d.bending,backX=side*(.30+sideRoom);
   const rearPath=path([waist,[hipX,1.12,-.23],[backX,seat+fold,-.27],[backX,seat+fold*.45,-.12],[backX,seat+fold,-.34],[backX,seat+.025,-.23],[backX,seat+.015,-.38],[backX,seat-.10,-.39]]);
@@ -35,13 +35,13 @@ export function seatedEnvelope(p:Float32Array,rest:Float32Array,width:number,row
 
 /** Keep a finite cloth envelope around the buttocks, thighs, knees and calves.
  * Geometric contacts complement material-length projection; no self-collision. */
-export function supportSeatedBody(p:Float32Array,width:number,rows:number,strength:number){
+export function supportSeatedBody(p:Float32Array,width:number,rows:number,strength:number,kneeDrop=0){
  for(let row=1;row<=rows;row++)for(let col=0;col<width-1;col++){
   const at=(row*width+col)*3;
   projectEllipsoid(p,at,[0,1.17,-.015],[.295,.15,.245],strength);
   for(const side of [-1,1]){
-   projectCapsule(p,at,[side*.15,1.14,.035],[side*.15,1.14,.52],.135,strength);
-   projectCapsule(p,at,[side*.15,1.12,.52],[side*.15,.66,.52],.107,strength);
+   projectCapsule(p,at,[side*.15,1.14,.035],[side*.15,1.14-kneeDrop,.52],.135,strength);
+   projectCapsule(p,at,[side*.15,1.12-kneeDrop,.52],[side*.15,.66-kneeDrop,.52],.107,strength);
   }
  }
 }

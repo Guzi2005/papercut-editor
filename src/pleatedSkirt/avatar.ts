@@ -2,7 +2,7 @@ import type {MeshData} from './geometry';
 
 export type AvatarAction='stand'|'walk'|'sit'|'lie';
 export type PreviewAction=AvatarAction|'display'|'spin';
-export interface AvatarFrame {offset:number;bounds:{min:number[];max:number[]}}
+export interface AvatarFrame {offset:number;bounds:{min:number[];max:number[]};joints?:Record<string,number[]>}
 export interface AvatarClip {fps:number;frames:AvatarFrame[]}
 export interface AvatarManifest {
   version:number;vertexCount:number;frameStride:number;indices:number[];colors:number[];
@@ -18,7 +18,7 @@ export function loadAvatar():Promise<AvatarAsset>{
     fetch('/pleated-avatar/frames.bin').then(r=>{if(!r.ok)throw Error('角色动作载入失败');return r.arrayBuffer();}),
   ]).then(([manifest,buffer])=>{
     const data=new Float32Array(buffer);
-    if(manifest.version!==1||manifest.vertexCount<1||manifest.vertexCount>100000||manifest.colors.length!==manifest.vertexCount*3)throw Error('角色资料格式无效');
+    if(![1,2].includes(manifest.version)||manifest.vertexCount<1||manifest.vertexCount>100000||manifest.colors.length!==manifest.vertexCount*3)throw Error('角色资料格式无效');
     for(const clip of Object.values(manifest.actions))for(const frame of clip.frames){if(frame.offset<0||frame.offset+manifest.frameStride>data.length)throw Error('角色动作数据不完整');}
     return {manifest,data};
   }).catch(e=>{pending=undefined;throw e;});

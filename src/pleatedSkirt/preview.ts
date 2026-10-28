@@ -1,3 +1,4 @@
+import {restFrame,transformRestCloth,settleRecliningCloth} from './restFrame';
 import {SkirtInertia,naturalEnvelope} from './skirtDynamics';
 import {PoseTransition} from './poseTransition';
 import {defaultStance,limitStance,poseStance,stanceDrop,type Stance} from './stance';
@@ -140,21 +141,15 @@ export class SkirtPreview {
  setRenderMode(mode:PreviewRenderMode){this.renderMode=mode;try{localStorage.setItem(MODE_KEY,mode);}catch{/* Preview remains usable with storage disabled. */}this.canvas.dataset.renderMode=mode;this.draw();}
  setWorn(worn:boolean){this.worn=worn;this.transition.cancel();this.pose();this.draw();this.schedule();}
  setPlaying(playing:boolean){this.playing=playing;this.last=0;this.onProgress?.(this.progress,playing);if(!playing){cancelAnimationFrame(this.raf);this.raf=0;}this.schedule();}
- setProgress(progress:number){this.transition.cancel();this.benchAppearance=1;this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*(this.action==='display'?5:this.action==='spin'?1/this.motion.speed:1.2);this.setPlaying(false);this.pose();this.draw();}
+ setProgress(progress:number){this.transition.cancel();this.benchAppearance=1;this.progress=Math.max(0,Math.min(1,progress));this.elapsed=this.progress*(this.action==='display'?5:this.action==='spin'?1/this.motion.speed:this.action==='lie'?3.2:this.action==='sit'?1.6:1.2);this.setPlaying(false);this.pose();this.draw();}
  private pose(){
   if(!this.mesh||!this.garment)return;
   if(!this.worn||!this.avatar||!this.binding||!this.body){this.updateVertices(this.garment,this.standalone!.positions,this.standalone!.normals);return;}
   const {manifest:m,data}=this.avatar,n=m.vertexCount*3;
   const sample=(action:AvatarAction,progress:number,index:number)=>{const clip=m.actions[action],s=sampleClip(clip,progress,action==='walk');return data[s.a.offset+index]*(1-s.mix)+data[s.b.offset+index]*s.mix;};
   const base:AvatarAction=this.action==='display'||this.action==='spin'?'stand':this.action;
-  let fromAction:AvatarAction=base,toAction:AvatarAction=base,fromProgress=this.progress,toProgress=this.progress,mix=0;
-  if(this.action==='lie'){
-   if(this.progress<.4){fromAction='stand';fromProgress=0;toAction='sit';toProgress=1;mix=this.progress/.4;}
-   else if(this.progress<.55){fromAction='sit';fromProgress=1;toAction='sit';toProgress=1;mix=0;}
-   else{fromAction='sit';fromProgress=1;toAction='lie';toProgress=1;mix=(this.progress-.55)/.45;}
-  }
-  for(let i=0;i<n;i++){this.bodyPositions[i]=sample(fromAction,fromProgress,i)*(1-mix)+sample(toAction,toProgress,i)*mix;this.bodyNormals[i]=sample(fromAction,fromProgress,n+i)*(1-mix)+sample(toAction,toProgress,n+i)*mix;}
-  for(let i=0;i<this.cage.length;i++){const at=n*2+i;this.cage[i]=sample(fromAction,fromProgress,at)*(1-mix)+sample(toAction,toProgress,at)*mix;}
+  for(let i=0;i<n;i++){this.bodyPositions[i]=sample(base,this.progress,i);this.bodyNormals[i]=sample(base,this.progress,n+i);}
+  for(let i=0;i<this.cage.length;i++)this.cage[i]=sample(base,this.progress,n*2+i);
   const weight=this.transition.weight,needsBench=this.action==='sit'||this.action==='lie';
   this.benchVisibility=this.fromBenchVisibility*(1-weight)+(needsBench?this.benchAppearance:0)*weight;
   if(this.bench&&this.benchSit&&this.benchLie&&this.benchData){
@@ -171,8 +166,18 @@ export class SkirtPreview {
     this.constraint.projectLengths(this.binding.positions);
    }else{
     const relaxed=this.fittedRest.slice();naturalEnvelope(relaxed,this.fittedRest,this.design,this.design.parameters.pleat_count*8+1);this.constraint.projectLengths(relaxed);
+    const resting=this.action==='sit'||this.action==='lie';
+    const support=resting?restFrame(m.actions[base],this.progress):undefined;
+    if(support)transformRestCloth(this.binding.positions,support,true);
     for(let i=0;i<this.binding.positions.length;i++)this.binding.positions[i]+=relaxed[i]-this.fittedRest[i];
-    this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),this.action==='walk'?.35:this.progress,this.action,relaxed);
+    const restProgress=this.action==='lie'?Math.min(1,this.progress/.4):this.progress;
+    const amount=this.action==='walk'?.35:restProgress*restProgress*(3-2*restProgress);
+    this.constraint.apply(this.binding.positions,this.binding.normals,effectiveDrape(this.design),amount,resting?'sit':this.action,relaxed,support ? .2*Math.cos(support.angle) : 0);
+    if(support){
+     transformRestCloth(this.binding.positions,support);
+     settleRecliningCloth(this.binding.positions,this.design.parameters.pleat_count*8+1,24,support.angle,effectiveDrape(this.design).weight,()=>this.constraint!.projectLengths(this.binding!.positions));
+    }
+
    }
   }
   this.applyMotion();
@@ -220,7 +225,7 @@ export class SkirtPreview {
    else if(this.action==='spin')this.progress=(this.elapsed*this.motion.speed)%1;
    else if(this.action==='walk')this.progress=(this.elapsed%1.2)/1.2;
    else if(this.action==='stand')this.progress=0;
-   else{const t=this.elapsed%3.6;this.progress=t<1.2?t/1.2:t<1.8?1:t<3?1-(t-1.8)/1.2:0;}
+   else{const duration=this.action==='lie'?3.2:1.6,t=this.elapsed%(duration*2+1.8);this.progress=t<duration?t/duration:t<duration+1.2?1:t<duration*2+1.2?1-(t-duration-1.2)/duration:0;}
    this.pose();this.draw();this.schedule();
   });
  }

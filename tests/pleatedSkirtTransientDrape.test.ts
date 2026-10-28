@@ -1,3 +1,4 @@
+import {restFrame,transformRestCloth} from '../src/pleatedSkirt/restFrame';
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {TransientCue} from '../src/pleatedSkirt/transientCue';
 import {DrapeConstraint} from '../src/pleatedSkirt/drapeConstraint';
@@ -14,6 +15,7 @@ test('seated gathers preserve pinned waist and material length, are deterministi
   binding.deform(new Float32Array(manifest.cage.restPositions));const solver=new DrapeConstraint(mesh,binding.positions);
   const frame=manifest.actions.sit.frames.at(-1),offset=frame.offset+manifest.vertexCount*6;
   binding.deform(data.subarray(offset,offset+manifest.cage.vertexCount*3));
+ transformRestCloth(binding.positions,restFrame(manifest.actions.sit,1),true);
   const source=binding.positions.slice(),normals=binding.normals.slice(),width=64*8+1;
   const soft=source.slice(),stiff=source.slice();
   solver.apply(soft,normals,{weight:.6,bending:.1,opening:.7},1,'sit');solver.apply(stiff,normals,{weight:.6,bending:.9,opening:.7},1,'sit');
@@ -27,7 +29,8 @@ test('seated cloth wraps pelvic volume and draws the rear hem upward into seat f
  const design=createDesign(),mesh=buildMesh(design.parameters),binding=new GarmentBinding(mesh,manifest.cage,88);
  binding.deform(new Float32Array(manifest.cage.restPositions));const rest=binding.positions.slice(),solver=new DrapeConstraint(mesh,rest);
  const frame=manifest.actions.sit.frames.at(-1),offset=frame.offset+manifest.vertexCount*6;binding.deform(data.subarray(offset,offset+manifest.cage.vertexCount*3));
- solver.apply(binding.positions,binding.normals,{weight:.6,bending:.5,opening:.5},1,'sit',rest);
+ transformRestCloth(binding.positions,restFrame(manifest.actions.sit,1),true);
+ solver.apply(binding.positions,binding.normals,{weight:.6,bending:.5,opening:.5},1,'sit',rest,.2);
  const width=design.parameters.pleat_count*8+1,rear=(24*width)*3,front=(24*width+(width-1)/2)*3;
  assert.ok(binding.positions[rear+1]>rest[rear+1]+.2,'rear cloth is gathered upward instead of hanging as a standing cone');
  assert.ok(binding.positions[rear+1]>binding.positions[front+1]+.1,'rear folds use more material than the front drape');
