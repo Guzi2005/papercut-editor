@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Weave & Wander Maker · 资产编辑器",
+  "short_name": "WW Maker",
+  "description": "剪纸画板、矢量素材、裙装制作与三维动作预览",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f0ec",
+  "theme_color": "#354b50",
+  "icons": [
+    {"src": "/icons/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/icons/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}
